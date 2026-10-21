@@ -32,4 +32,6 @@
 * `to` names the R type a column must become.
 * `arrow_array()` and `arrow_stream()` build arrays and streams from R
   vectors and data frames, checking every value against a given schema.
+  The exact text that `lossy = "character"` returns is written back as the
+  type its `arrow_type` attribute names.
 * `arrow_types()` lists the built-in type table.

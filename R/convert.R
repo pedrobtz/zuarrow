@@ -22,6 +22,11 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' number for `int64`, is a `zuarrow_lossy_error` naming the row. `POSIXct`
 #' and `difftime` values are rounded to the schema's unit.
 #'
+#' A character vector with an `arrow_type` attribute, as `arrow_to_r()`
+#' returns under `lossy = "character"`, is written back as that type: each
+#' value is parsed, and text that is not the type's form, or holds more
+#' precision than the type, is an error. So the exact text round-trips.
+#'
 #' Every `NA` becomes a null with a zeroed slot. `NaN` stays a value.
 #'
 #' @param x An R vector or a data frame.

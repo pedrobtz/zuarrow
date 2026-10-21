@@ -224,3 +224,87 @@ test_that("a target that cannot take the column is a type error", {
 test_that("an unknown policy is an error", {
   expect_error(arrow_to_r(arrow_array(1L), lossy = "round"))
 })
+
+test_that("the exact text is written back as the type it names", {
+  arrays <- list(
+    test_array(
+      "l",
+      2,
+      list(NULL, c(le_hex("0020000000000001"), le_int(-5, 8L)))
+    ),
+    test_array("L", 1, list(NULL, le_hex("FFFFFFFFFFFFFFFF"))),
+    test_fixed("i", -2147483648, 4L),
+    test_fixed("c", c(-128, 127), 1L),
+    test_fixed("d:5,2", c(12345, -12345, 5, 0), 16L),
+    test_fixed("d:9,3,32", c(-999999999, 1), 4L),
+    test_fixed("d:18,0,64", c(123456789012345), 8L),
+    test_fixed("d:40,3,256", c(1, -2), 32L),
+    test_fixed("tsn:UTC", c(1500000001, -1), 8L),
+    test_fixed("tsu:", c(0, -1, 1761040800123456), 8L),
+    test_fixed("tss:Europe/Lisbon", c(-62135596800, 253402300799), 8L),
+    test_fixed("tdm", c(86400000, -1), 8L),
+    test_fixed("tts", c(3723, 86399), 4L),
+    test_fixed("ttm", 3723004, 4L),
+    test_fixed("ttn", c(3723000000005, 0), 8L),
+    test_fixed("tDs", c(90, -3), 8L),
+    test_fixed("tDn", 1, 8L)
+  )
+  for (array in arrays) {
+    # to = character() asks for the text even where the default is exact.
+    text <- arrow_to_r(array, to = character())
+    back <- arrow_array(text)
+    expect_true(
+      arrow_equal(back, array, metadata = FALSE),
+      info = attr(text, "arrow_type")
+    )
+  }
+})
+
+test_that("text written back keeps its nulls", {
+  array <- test_array(
+    "l",
+    2,
+    list(as.raw(0x02), le_int(c(0, 7), 8L)),
+    null_count = 1
+  )
+  text <- arrow_to_r(array, to = character())
+  expect_identical(as.vector(text), c(NA, "7"))
+  expect_true(arrow_equal(arrow_array(text), array))
+})
+
+test_that("text that is not the type's form is a type error", {
+  bad <- function(text, type) arrow_array(structure(text, arrow_type = type))
+  expect_error(bad("12a", "l"), class = "zuarrow_type_error")
+  expect_error(bad("", "l"), class = "zuarrow_type_error")
+  expect_error(bad("1.5", "d:5,0"), class = "zuarrow_lossy_error")
+  expect_error(bad("123.456", "d:5,2"), class = "zuarrow_lossy_error")
+  expect_error(bad("1234.5", "d:5,2"), class = "zuarrow_lossy_error")
+  expect_error(
+    bad("2026-02-30T00:00:00Z", "tss:UTC"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    bad("2026-10-21T00:00:00", "tss:UTC"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    bad("2026-10-21T00:00:00.5Z", "tss:UTC"),
+    class = "zuarrow_lossy_error"
+  )
+  expect_error(bad("01:02", "tts"), class = "zuarrow_type_error")
+  expect_error(bad("300", "c"), class = "zuarrow_lossy_error")
+  expect_error(bad("-1", "L"), class = "zuarrow_type_error")
+  expect_error(bad("9223372036854775808", "l"), class = "zuarrow_lossy_error")
+  expect_error(
+    arrow_array(structure("1", arrow_type = c("l", "i"))),
+    class = "zuarrow_type_error"
+  )
+})
+
+test_that("a parsed decimal at full precision round-trips", {
+  text <- structure(c("99999.99", "-0.01", "0"), arrow_type = "d:7,2")
+  expect_identical(
+    as.vector(arrow_to_r(arrow_array(text), lossy = "character")),
+    c("99999.99", "-0.01", "0.00")
+  )
+})

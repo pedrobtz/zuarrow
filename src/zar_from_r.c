@@ -318,6 +318,155 @@ static int zar_build_blobs(struct ArrowArray *array, enum ArrowType t,
   return NANOARROW_OK;
 }
 
+/* ---- the exact text forms, read back ----------------------------------- */
+
+static int zar_has_text_target(enum ArrowType t) {
+  switch (t) {
+    case NANOARROW_TYPE_INT8:
+    case NANOARROW_TYPE_INT16:
+    case NANOARROW_TYPE_INT32:
+    case NANOARROW_TYPE_INT64:
+    case NANOARROW_TYPE_UINT8:
+    case NANOARROW_TYPE_UINT16:
+    case NANOARROW_TYPE_UINT32:
+    case NANOARROW_TYPE_UINT64:
+    case NANOARROW_TYPE_DECIMAL32:
+    case NANOARROW_TYPE_DECIMAL64:
+    case NANOARROW_TYPE_DECIMAL128:
+    case NANOARROW_TYPE_DECIMAL256:
+    case NANOARROW_TYPE_DATE32:
+    case NANOARROW_TYPE_DATE64:
+    case NANOARROW_TYPE_TIMESTAMP:
+    case NANOARROW_TYPE_TIME32:
+    case NANOARROW_TYPE_TIME64:
+    case NANOARROW_TYPE_DURATION:
+      return 1;
+    default:
+      return 0;
+  }
+}
+
+static int zar_text_digits(enum ArrowTimeUnit unit) {
+  switch (unit) {
+    case NANOARROW_TIME_UNIT_SECOND:
+      return 0;
+    case NANOARROW_TIME_UNIT_MILLI:
+      return 3;
+    case NANOARROW_TIME_UNIT_MICRO:
+      return 6;
+    default:
+      return 9;
+  }
+}
+
+/* Writes a character vector as the type its text names (section 6.3). */
+static int zar_build_text(struct ArrowArray *array,
+                          const struct ArrowSchemaView *sv, SEXP x,
+                          R_xlen_t start, int64_t n, struct zar_build *b) {
+  enum ArrowType t = sv->type;
+  if (zar_set_validity(array, x, start, n, zar_na_chr, b) != NANOARROW_OK) {
+    return EINVAL;
+  }
+  int decimal = t == NANOARROW_TYPE_DECIMAL32 || t == NANOARROW_TYPE_DECIMAL64 ||
+                t == NANOARROW_TYPE_DECIMAL128 || t == NANOARROW_TYPE_DECIMAL256;
+  int64_t width = decimal ? sv->decimal_bitwidth / 8 : zar_type_bytes(t);
+  uint8_t *data = (uint8_t *)zar_data(array, 1, n * width, b);
+  if (data == NULL && n > 0) return zar_build_fail(b, NULL, NA_REAL);
+
+  for (int64_t i = 0; i < n; i++) {
+    R_xlen_t k = start + (R_xlen_t)i;
+    SEXP chr = STRING_ELT(x, k);
+    if (chr == NA_STRING) continue;
+    const char *text = Rf_translateCharUTF8(chr);
+    int code;
+    int64_t v = 0;
+    if (decimal) {
+      struct ArrowDecimal dec;
+      ArrowDecimalInit(&dec, sv->decimal_bitwidth, sv->decimal_precision,
+                       sv->decimal_scale);
+      code = zar_parse_decimal(text, &dec);
+      if (code == NANOARROW_OK) {
+        uint8_t bytes[32];
+        ArrowDecimalGetBytes(&dec, bytes);
+        memcpy(data + i * width, bytes, (size_t)width);
+      }
+    } else {
+      switch (t) {
+        case NANOARROW_TYPE_UINT8:
+        case NANOARROW_TYPE_UINT16:
+        case NANOARROW_TYPE_UINT32:
+        case NANOARROW_TYPE_UINT64: {
+          uint64_t u;
+          code = zar_parse_uint64(text, &u);
+          if (code == NANOARROW_OK &&
+              !zar_int_fits(t, (double)u) && t != NANOARROW_TYPE_UINT64) {
+            code = ERANGE;
+          }
+          if (code == NANOARROW_OK) {
+            if (t == NANOARROW_TYPE_UINT64) {
+              ((uint64_t *)data)[i] = u;
+            } else {
+              zar_store_int(data, t, i, (double)u);
+            }
+          }
+          break;
+        }
+        case NANOARROW_TYPE_DATE32:
+          code = zar_parse_date(text, &v);
+          if (code == NANOARROW_OK && (v < INT32_MIN || v > INT32_MAX)) {
+            code = ERANGE;
+          }
+          if (code == NANOARROW_OK) ((int32_t *)data)[i] = (int32_t)v;
+          break;
+        case NANOARROW_TYPE_DATE64:
+          code = zar_parse_instant(text, 3, 1, &v);
+          if (code == NANOARROW_OK) ((int64_t *)data)[i] = v;
+          break;
+        case NANOARROW_TYPE_TIMESTAMP:
+          code = zar_parse_instant(
+              text, zar_text_digits(sv->time_unit),
+              sv->timezone != NULL && sv->timezone[0] != '\0', &v);
+          if (code == NANOARROW_OK) ((int64_t *)data)[i] = v;
+          break;
+        case NANOARROW_TYPE_TIME32:
+        case NANOARROW_TYPE_TIME64:
+          code = zar_parse_time(text, zar_text_digits(sv->time_unit), &v);
+          if (code == NANOARROW_OK && t == NANOARROW_TYPE_TIME32) {
+            if (v < INT32_MIN || v > INT32_MAX) {
+              code = ERANGE;
+            } else {
+              ((int32_t *)data)[i] = (int32_t)v;
+            }
+          } else if (code == NANOARROW_OK) {
+            ((int64_t *)data)[i] = v;
+          }
+          break;
+        default: /* signed integers and durations */
+          code = zar_parse_int64(text, &v);
+          if (code == NANOARROW_OK && t != NANOARROW_TYPE_INT64 &&
+              t != NANOARROW_TYPE_DURATION && !zar_int_fits(t, (double)v)) {
+            code = ERANGE;
+          }
+          if (code == NANOARROW_OK) {
+            if (t == NANOARROW_TYPE_INT64 || t == NANOARROW_TYPE_DURATION) {
+              ((int64_t *)data)[i] = v;
+            } else {
+              zar_store_int(data, t, i, (double)v);
+            }
+          }
+          break;
+      }
+    }
+    if (code != NANOARROW_OK) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " holds \"%s\", which is not %s %s",
+                    (int64_t)k + 1, text, code == ERANGE ? "exactly a" : "the text of a",
+                    ArrowTypeString(t));
+      return zar_build_fail(b, code == ERANGE ? "lossy" : "type", (double)k + 1);
+    }
+  }
+  return NANOARROW_OK;
+}
+
 /* ---- dispatch ---------------------------------------------------------- */
 
 static double zar_difftime_seconds(SEXP x) {
@@ -404,6 +553,9 @@ static int zar_build_array(struct ArrowArray *array,
   if (Rf_xlength(x) < start + n) {
     ArrowErrorSet(&b->error, "the vector is shorter than its rows");
     return zar_build_fail(b, "type", NA_REAL);
+  }
+  if (type == STRSXP && zar_has_text_target(t)) {
+    return zar_build_text(array, &sv, x, start, n, b);
   }
 
   switch (t) {

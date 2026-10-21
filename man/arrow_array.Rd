@@ -38,6 +38,11 @@ integer that does not fit \code{int8}, or a double that is not a whole
 number for \code{int64}, is a \code{zuarrow_lossy_error} naming the row. \code{POSIXct}
 and \code{difftime} values are rounded to the schema's unit.
 
+A character vector with an \code{arrow_type} attribute, as \code{arrow_to_r()}
+returns under \code{lossy = "character"}, is written back as that type: each
+value is parsed, and text that is not the type's form, or holds more
+precision than the type, is an error. So the exact text round-trips.
+
 Every \code{NA} becomes a null with a zeroed slot. \code{NaN} stays a value.
 }
 \examples{
