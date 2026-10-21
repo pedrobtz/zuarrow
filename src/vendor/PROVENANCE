@@ -21,6 +21,7 @@ Vendored dependency: Apache Arrow nanoarrow C library, core and ipc
                  0010-metadata-strings.patch
                  0011-list-view-sizes.patch
                  0012-offsets-buffer-size.patch
+                 0013-encode-batches.patch
 
 src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py
 run on the archive with --symbol-namespace=zuarrow --with-ipc
@@ -76,6 +77,12 @@ Patches:
       only from a buffer that holds them: a zero-length array with a
       short offsets buffer was read past its end (found by the fuzz
       target).
+  0013-encode-batches.patch  adds ArrowIpcEncoderEncodeBatch(): a
+      record batch or a dictionary batch, each buffer written through a
+      caller's callback that may compress it, with the body's codec; and
+      lets a batch hold dictionary-encoded columns, and writes the footer's
+      dictionary blocks, with the padding of each footer block zeroed so
+      files are reproducible (nanoarrow #622).
 
 SHA-256 of every vendored file:
   abdc436530c715318d843424f4f9b7b817f80f592678526942c2070ace3cba71  LICENSE.txt
@@ -118,6 +125,6 @@ SHA-256 of every vendored file:
   17cfa18dbb6f81adb0006a9c7adf2776093f54fc760a89112e619ce796b67aa6  flatcc/portable/pwarnings.h
   26b17204fd4513648cadaecd295e508aab82f48b10b0beced7b5872596240a1e  nanoarrow.c
   222837c5aa58c3703606a64f5209312459e8ca350cfdffc16766e0074fa3856e  nanoarrow.h
-  86ca042beae07c45baaa85b6beeb25f66da5da630d8887a037787f1714d98e36  nanoarrow_ipc.c
-  7dde3d9779aa92ad7ae018e2288b8ba8d018bfc6dac1f800180ca4bb1bb8c2c4  nanoarrow_ipc.h
+  7f72b46054674bd8f9c44ecccd438e15780e6b8fa0252eb4f0ba4da666e6d795  nanoarrow_ipc.c
+  f75b394226d48394d22f394985e2c3cf0df671387847288148ab3204e2d91ce8  nanoarrow_ipc.h
   aac2319a8fb8b382e40a10304ac4ed32f772b9ee469e0a083c26d7d76e8ebae0  nanoarrow_ipc_flatcc_generated.h
