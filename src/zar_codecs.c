@@ -94,4 +94,40 @@ int zar_codec_decompress(const void *table, int codec, const uint8_t *src,
   return NANOARROW_OK;
 }
 
+/* Compresses `n` bytes into `dst` (of `cap` bytes) as an IPC body buffer.
+   Sets *written; returns non-zero with `error` set on failure. */
+int zar_codec_compress(const void *table, int codec, int level, const uint8_t *src,
+                       int64_t n, uint8_t *dst, int64_t cap, int64_t *written,
+                       struct ArrowError *error) {
+  const zukomp_api_v1 *api = (const zukomp_api_v1 *)table;
+  if (api == NULL) {
+    ArrowErrorSet(error, "zukomp's C table is unavailable");
+    return ENOTSUP;
+  }
+  zu_codec id = zar_codec_id(codec);
+  zu_encoder_opts opts;
+  memset(&opts, 0, sizeof(opts));
+  opts.struct_size = (uint32_t)sizeof(opts);
+  opts.codec = id;
+  opts.level = level;
+  size_t out = 0;
+  zu_status status = api->compress_one(&opts, src, (size_t)n, dst, (size_t)cap, &out);
+  if (status != ZU_OK && status != ZU_STREAM_END) {
+    ArrowErrorSet(error, "%s compression failed: %s",
+                  id == ZU_CODEC_ZSTD ? "zstd" : "lz4-frame", api->status_string(status));
+    return EINVAL;
+  }
+  *written = (int64_t)out;
+  return NANOARROW_OK;
+}
+
+int64_t zar_codec_bound(const void *table, int codec, int level, int64_t n) {
+  const zukomp_api_v1 *api = (const zukomp_api_v1 *)table;
+  size_t out = 0;
+  if (api == NULL || api->compress_bound(zar_codec_id(codec), level, (size_t)n, &out) != ZU_OK) {
+    return -1;
+  }
+  return (int64_t)out;
+}
+
 #endif /* ZAR_STANDALONE */
