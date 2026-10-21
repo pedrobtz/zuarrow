@@ -36,7 +36,7 @@ Two dependencies outside this repository shape the plan:
 | 4 | [Nested types, dictionaries, extensions and the registry](#stage-4--nested-types-dictionaries-extensions-and-the-registry) | quick | [#6](https://github.com/pedrobtz/zuarrow/issues/6) | [#19](https://github.com/pedrobtz/zuarrow/pull/19) | 2026-10-21 |
 | 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | [#20](https://github.com/pedrobtz/zuarrow/pull/20) | 2026-10-21 |
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | [#22](https://github.com/pedrobtz/zuarrow/pull/22) | 2026-10-21 |
-| 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | | |
+| 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | [#23](https://github.com/pedrobtz/zuarrow/pull/23) | 2026-10-21 |
 | 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | | |
 | 9 | [v0.1.0 readiness](#stage-9--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | | |
 
