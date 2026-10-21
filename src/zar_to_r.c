@@ -762,7 +762,9 @@ static void zar_format_instant(char *out, size_t n, int64_t value, int digits,
                                int utc) {
   int64_t scale = zar_unit_scale(digits);
   int64_t secs = zar_floor_div(value, scale);
-  int64_t frac = value - secs * scale;
+  /* The remainder, not value - secs * scale, which overflows near INT64_MIN. */
+  int64_t frac = value % scale;
+  if (frac < 0) frac += scale;
   int64_t days = zar_floor_div(secs, 86400);
   int64_t sod = secs - days * 86400;
   int len = zar_format_date(out, n, days);
