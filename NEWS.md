@@ -2,7 +2,7 @@
 
 * Initial CRAN submission.
 
-## Handles and schema tools
+## Handles
 
 * `arrow_schema()` makes a schema handle from an Arrow format string, from
   an R object, or from any schema, array or stream handle, and `format()`
@@ -20,7 +20,7 @@
 * Every error inherits from `zuarrow_error`, and the lossy warning from
   `zuarrow_warning`.
 
-## Conversion
+## Converting to and from R
 
 * `arrow_to_r()` converts an array to an R vector and a stream or struct
   array to a data frame; `as.data.frame()` and `as.vector()` do the same,
@@ -36,7 +36,7 @@
   type its `arrow_type` attribute names.
 * `arrow_types()` lists the built-in type table.
 
-## Nested types, dictionaries, extensions and the registry
+## Nested types, dictionaries and the registry
 
 * Structs convert to nested data frames, lists of every kind to list
   columns, fixed-size lists to list columns or, with `arrow_matrix()`, to
@@ -51,7 +51,7 @@
   package make a lossy type exact with its own R class, by format string,
   prefix pattern or extension name, in both directions.
 
-## Reading IPC
+## The IPC file and stream formats
 
 * `arrow_read()` reads the Arrow IPC file format (`.arrow`, Feather
   version 2) and stream format (`.arrows`) from a path, a raw vector or a
@@ -64,11 +64,8 @@
   is used, and every batch passes full validation, so hostile input is a
   `zuarrow_format_error` or `zuarrow_limit_error`. Big-endian input is
   refused.
-* Full validation now also checks that every binary or string view points
+* Full validation also checks that every binary or string view points
   inside its buffers, which the bundled C library does not.
-
-## Writing IPC
-
 * `arrow_write()` writes data frames, struct arrays and streams as the
   Arrow IPC file or stream format, to a path, a connection or a raw vector,
   in record batches of `batch` rows.
@@ -78,4 +75,5 @@
 * `compression = "lz4"` or `"zstd"` compresses each buffer through
   'zukomp', at the codec's own `level`; the default is uncompressed, so
   every reader opens the output.
-* The same input gives the same bytes on every platform.
+* The output is deterministic: the same input gives the same bytes, with
+  no timestamps and every padding byte zeroed.
