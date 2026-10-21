@@ -1,0 +1,111 @@
+#!/usr/bin/env Rscript
+# Times the design's section 10 operations on its input: a data frame of
+# 10^7 rows with four double, two integer, two ten-byte character, one
+# factor (100 levels) and one Date column. Prints one Markdown table row per
+# operation, the median of `--reps` runs in milliseconds, for
+# .agents/benchmarks.md. Run from the package root:
+#
+#   tools/run-benchmarks [--rows N] [--reps R]
+#
+# Rows whose package is not installed are reported as "not installed". The
+# zuarrow rows are added as the stages that implement them land.
+
+args <- commandArgs(trailingOnly = TRUE)
+arg <- function(name, default) {
+  i <- match(name, args)
+  if (is.na(i)) default else as.numeric(args[[i + 1L]])
+}
+rows <- arg("--rows", 1e7)
+reps <- arg("--reps", 3)
+
+has <- function(pkg) requireNamespace(pkg, quietly = TRUE)
+
+# arrow returns lazy ALTREP vectors by default, which defers its copy past
+# the timing. zuarrow copies once into ordinary vectors (D8), so arrow is
+# timed materialising too.
+options(arrow.use_altrep = FALSE)
+
+make_input <- function(n) {
+  set.seed(20261021)
+  # Ten-byte strings drawn from a pool of a million, so R's string cache
+  # stays small on an 8 GB machine; Arrow still stores every value's bytes.
+  pool <- vapply(
+    seq_len(1e6),
+    function(i) paste(sample(letters, 10, TRUE), collapse = ""),
+    ""
+  )
+  data.frame(
+    d1 = stats::runif(n), d2 = stats::rnorm(n),
+    d3 = stats::runif(n) * 1e6, d4 = stats::rnorm(n, 100),
+    i1 = sample.int(1e6, n, TRUE), i2 = sample.int(.Machine$integer.max, n, TRUE),
+    s1 = sample(pool, n, TRUE), s2 = sample(pool, n, TRUE),
+    f = factor(sample(sprintf("level%03d", 1:100), n, TRUE)),
+    date = as.Date("2000-01-01") + sample.int(1e4, n, TRUE),
+    stringsAsFactors = FALSE
+  )
+}
+
+time_ms <- function(expr) {
+  expr <- substitute(expr)
+  env <- parent.frame()
+  times <- vapply(seq_len(reps), function(i) {
+    gc(FALSE)
+    unname(system.time(eval(expr, env))[["elapsed"]]) * 1000
+  }, 0)
+  stats::median(times)
+}
+
+row <- function(operation, ms, note = "") {
+  value <- if (is.na(ms)) "not installed" else sprintf("%.0f ms", ms)
+  cat(sprintf("| %s | %s | %s |\n", operation, value, note))
+}
+
+cat(sprintf("Input: %d rows, 10 columns; median of %d runs.\n\n", rows, reps))
+df <- make_input(rows)
+dir <- tempfile("zuarrow-bench-")
+dir.create(dir)
+plain <- file.path(dir, "plain.arrow")
+lz4 <- file.path(dir, "lz4.arrow")
+stream <- file.path(dir, "data.arrows")
+parquet <- file.path(dir, "data.parquet")
+
+cat("| Operation | Time | Note |\n| --- | --- | --- |\n")
+
+if (has("arrow")) {
+  arrow::write_feather(df, plain, compression = "uncompressed")
+  arrow::write_feather(df, lz4, compression = "lz4")
+  arrow::write_ipc_stream(df, stream)
+  row("`arrow::read_feather()`, plain file",
+      time_ms(arrow::read_feather(plain)))
+  row("`arrow::read_feather()`, lz4 file",
+      time_ms(arrow::read_feather(lz4)))
+  row("`arrow::write_feather()`, plain file",
+      time_ms(arrow::write_feather(df, plain, compression = "uncompressed")))
+} else {
+  for (op in c("read_feather() plain", "read_feather() lz4", "write_feather()")) {
+    row(op, NA)
+  }
+}
+
+if (has("nanoarrow") && file.exists(stream)) {
+  row("`nanoarrow::read_nanoarrow()` + `as.data.frame()`, stream",
+      time_ms(as.data.frame(nanoarrow::read_nanoarrow(stream))))
+  strings <- df$s1
+  row("`nanoarrow::as_nanoarrow_array()`, 10^7 strings",
+      time_ms(nanoarrow::as_nanoarrow_array(strings)))
+  doubles <- nanoarrow::as_nanoarrow_array(df$d1)
+  row("`nanoarrow::convert_array()`, 10^7 doubles",
+      time_ms(nanoarrow::convert_array(doubles, double())),
+      "reference for the 30 ms target")
+} else {
+  row("`nanoarrow` rows", NA)
+}
+
+if (has("qio")) {
+  qio::write_parquet(df, parquet)
+  row("`qio::read_parquet()`", time_ms(qio::read_parquet(parquet)))
+} else {
+  row("`qio::read_parquet()`", NA)
+}
+
+unlink(dir, recursive = TRUE)
