@@ -21,6 +21,13 @@ test_that("a difference carries a reason", {
   expect_null(attr(arrow_equal(arrow_schema("i"), arrow_schema("i")), "reason"))
 })
 
+test_that("the reason is not set on R's shared FALSE", {
+  result <- arrow_equal(arrow_schema("i"), arrow_schema("l"))
+  expect_false(result)
+  expect_null(attributes(!TRUE))
+  expect_null(attributes(identical(1, 2)))
+})
+
 test_that("metadata counts unless metadata = FALSE", {
   x <- arrow_schema("i")
   y <- x

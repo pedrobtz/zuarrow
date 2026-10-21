@@ -164,8 +164,12 @@ static int zar_schema_equal(const struct ArrowSchema *x,
   return 1;
 }
 
+/* A fresh logical: Rf_ScalarLogical() returns R's shared TRUE and FALSE,
+   and an attribute set on one of those would be set on every TRUE or
+   FALSE in the session. */
 static SEXP zar_equal_result(int equal, const char *reason) {
-  SEXP out = PROTECT(Rf_ScalarLogical(equal ? TRUE : FALSE));
+  SEXP out = PROTECT(Rf_allocVector(LGLSXP, 1));
+  LOGICAL(out)[0] = equal ? TRUE : FALSE;
   if (!equal) {
     SEXP why = PROTECT(zar_scalar_utf8(reason));
     Rf_setAttrib(out, Rf_install("reason"), why);
