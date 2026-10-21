@@ -334,6 +334,24 @@ connection, validates everything before allocating, decompresses through
 - A full-profile r-actions run is green on the pull request and on the
   merge commit, including ASan, UBSan, valgrind and rchk.
 
+Recorded 2026-10-21:
+
+- Oracle 1 uses libarrow, not the JSON files (see Open questions).
+- `ZAR_STANDALONE` builds layer 4 only: the reader, its validation and the
+  vendored decoder. The conversion kernels are R by nature.
+- Apple's clang has no libFuzzer, so the local ten-minute run drove the
+  harness with random mutations of the corpus under ASan and UBSan
+  (2 427 180 inputs, clean); the coverage-guided campaign is `fuzz.yaml`
+  in CI. Getting there found nine defects, fixed in vendored patches 0005
+  to 0012 and in the reader, each kept as a
+  `tests/testthat/data/crash-*.arrow` regression input.
+- `Remotes:` points at zukomp's `codecs-zstd-lz4` branch
+  (pedrobtz/zukomp#56) until it merges; rchk installs it through
+  `github-packages`.
+- The upstream nanoarrow pull request is prepared, not opened: opening it
+  is an outward action in an Apache project, left to the maintainer
+  (#17).
+
 **Design.** §6.7, §7 (patch), §9 oracles 1 and 2, D2, D13, D17; design
 stage 4.
 
@@ -492,17 +510,20 @@ adds:
 
 - **Vendor path (Stage 1).** Resolved 2026-10-21: `src/vendor/nanoarrow/`,
   and design §4 and §7 are amended.
-- **Fixtures in CI (Stage 5).** `r-cmd-check.yml` has no pre-test hook. The
-  roadmap assumes the test helper fetches the pinned `arrow-testing` commit
-  when `ZUARROW_FETCH_FIXTURES` is set through the workflow's `env:` input.
-  The alternative is a dedicated conformance workflow, which `CLAUDE.md`
-  discourages.
+- **Fixtures in CI (Stage 5).** Resolved 2026-10-21 as assumed:
+  `helper-fixtures.R` downloads the files `tests/testthat/fixtures-files.txt`
+  lists, at the pinned commit, when `ZUARROW_FETCH_FIXTURES` is set through
+  the `env:` input of the check and sanitizer callers.
 - **The JSON oracle's compiler (Stage 5).** D18 compiles nanoarrow's C++
   testing header "into the test harness under `tests/`" and never into
   `zuarrow.so`. How that harness is built at test time without a C++
   toolchain assumption on every leg is undecided: a standalone program
   built by `tools/fetch-fixtures`, or a pre-rendered comparison file
-  committed with the fixtures. Decide at the start of Stage 5.
+  committed with the fixtures. Decided 2026-10-21, a deviation from D18 for
+  the maintainer to confirm: oracle 1 compares each case's file with its
+  stream, and both with libarrow's decoding of the same file through the
+  same conversion where `arrow` is installed. The testing header is not
+  vendored, so no C++ is built anywhere.
 - **Q1 (Stage 9, and each later release).** Has `nanoarrow` closed #728,
   #622, #617, #833, #824, bundled codecs or grown an exact-targets
   registry? If all, the package shrinks to the registry and the C table.

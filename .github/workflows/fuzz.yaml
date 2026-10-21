@@ -1,0 +1,35 @@
+on:
+  pull_request:
+  schedule:
+    # A long run nightly. The corpus cache is what makes the short PR runs
+    # and this one add up to a single campaign.
+    - cron: "0 3 * * *"
+  workflow_dispatch:
+
+name: fuzz
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+# The IPC reader built without R (ZAR_STANDALONE, design section 9): framing,
+# verification, limits and validation over hostile bytes. Without R there
+# are no codecs, so compressed bodies stop at a codec error.
+jobs:
+  fuzz:
+    uses: pedrobtz/r-actions/.github/workflows/fuzz.yml@v1
+    with:
+      harness: tools/fuzz/harness.c
+      sources: |
+        src/zar_ipc_read.c
+        src/zar_utf8.c
+        src/zar_codecs.c
+        src/vendor/nanoarrow/nanoarrow.c
+        src/vendor/nanoarrow/nanoarrow_ipc.c
+        src/vendor/nanoarrow/flatcc.c
+      cflags: >-
+        -g -O1 -fno-omit-frame-pointer -DZAR_STANDALONE
+        -DNANOARROW_NAMESPACE=zuarrow -DNANOARROW_DLL= -DFLATCC_NO_ASSERT
+        -Isrc -Isrc/vendor/nanoarrow
+      seed-corpus: tests/testthat/data
+      max-total-time: ${{ github.event_name == 'schedule' && 3600 || 120 }}

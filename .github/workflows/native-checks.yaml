@@ -19,6 +19,8 @@ jobs:
     uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@v1
     with:
       asan: true
+      env: |
+        ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
 
   valgrind:
@@ -36,6 +38,10 @@ jobs:
 
   rchk:
     uses: pedrobtz/r-actions/.github/workflows/rchk.yml@v1
+    with:
+      # zukomp's codecs are not on CRAN yet; drop this once they are.
+      github-packages: |
+        pedrobtz/zukomp@codecs-zstd-lz4
 
   analyzers:
     uses: pedrobtz/r-actions/.github/workflows/analyzers.yml@v1
