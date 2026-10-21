@@ -1,0 +1,26 @@
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -1,8 +1,10 @@
+ /*
+  * Modified for the zuarrow R package: dictionary batches with compressed
+  * bodies are decompressed (tools/patches/0003-dictionary-compression.patch),
+- * and the reader decodes the binary-view, string-view, list-view and
+- * run-end-encoded layouts (tools/patches/0004-ipc-views-and-ree.patch).
++ * the reader decodes the binary-view, string-view, list-view and
++ * run-end-encoded layouts (tools/patches/0004-ipc-views-and-ree.patch), and
++ * a bad file trailer is reported without reading past the input
++ * (tools/patches/0005-footer-magic-read.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -1793,7 +1795,9 @@
+   const char* footer_size_data = magic - sizeof(int32_t);
+ 
+   if (memcmp(magic, NANOARROW_IPC_MAGIC, strlen(NANOARROW_IPC_MAGIC)) != 0) {
+-    ArrowErrorSet(error, "Expected file to end with ARROW1 but got %s", data_end);
++    // The input is not NUL-terminated: print the six bytes compared, not a
++    // string starting one past the end of the buffer.
++    ArrowErrorSet(error, "Expected file to end with ARROW1 but got %.6s", magic);
+     return EINVAL;
+   }
+ 

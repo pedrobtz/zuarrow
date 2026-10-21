@@ -1,0 +1,36 @@
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -4,7 +4,9 @@
+  * the reader decodes the binary-view, string-view, list-view and
+  * run-end-encoded layouts (tools/patches/0004-ipc-views-and-ree.patch), and
+  * a bad file trailer is reported without reading past the input
+- * (tools/patches/0005-footer-magic-read.patch).
++ * (tools/patches/0005-footer-magic-read.patch), and a message length near
++ * INT32_MAX is rejected before it overflows
++ * (tools/patches/0006-header-size-overflow.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -1707,8 +1709,6 @@
+     length = ArrowIpcReadInt32LE(data_mut, swap_endian);
+     *prefix_size_bytes = sizeof(continuation) + sizeof(length);
+   }
+-  decoder->header_size_bytes = *prefix_size_bytes + length;
+-
+   if (length < 0) {
+     ArrowErrorSet(error,
+                   "Expected message size > 0 but found message size of %" PRId32 " bytes",
+@@ -1716,6 +1716,13 @@
+     return EINVAL;
+   }
+ 
++  // The prefix and the length together must still fit the int32_t field.
++  if (length > INT32_MAX - *prefix_size_bytes) {
++    ArrowErrorSet(error, "Message size of %" PRId32 " bytes is too large", length);
++    return EINVAL;
++  }
++  decoder->header_size_bytes = *prefix_size_bytes + length;
++
+   if (length == 0) {
+     ArrowErrorSet(error, "End of Arrow stream");
+     return ENODATA;

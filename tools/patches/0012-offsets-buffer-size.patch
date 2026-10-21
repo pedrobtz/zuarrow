@@ -1,0 +1,56 @@
+--- a/nanoarrow.c
++++ b/nanoarrow.c
+@@ -1,6 +1,8 @@
+ /*
+  * Modified for the zuarrow R package: minimal validation sizes a list view's
+- * sizes buffer (tools/patches/0011-list-view-sizes.patch).
++ * sizes buffer (tools/patches/0011-list-view-sizes.patch), and default
++ * validation reads offsets only from a buffer that holds them
++ * (tools/patches/0012-offsets-buffer-size.patch).
+  */
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+@@ -3825,7 +3827,9 @@
+   switch (array_view->storage_type) {
+     case NANOARROW_TYPE_STRING:
+     case NANOARROW_TYPE_BINARY:
+-      if (array_view->buffer_views[1].size_bytes != 0) {
++      // A zero-length array may carry a short offsets buffer; read its
++      // offsets only when the buffer holds them.
++      if (array_view->buffer_views[1].size_bytes >= (offset_plus_length + 1) * 4) {
+         first_offset = array_view->buffer_views[1].data.as_int32[array_view->offset];
+         if (first_offset < 0) {
+           ArrowErrorSet(error, "Expected first offset >= 0 but found %" PRId64,
+@@ -3861,7 +3865,9 @@
+ 
+     case NANOARROW_TYPE_LARGE_STRING:
+     case NANOARROW_TYPE_LARGE_BINARY:
+-      if (array_view->buffer_views[1].size_bytes != 0) {
++      // A zero-length array may carry a short offsets buffer; read its
++      // offsets only when the buffer holds them.
++      if (array_view->buffer_views[1].size_bytes >= (offset_plus_length + 1) * 8) {
+         first_offset = array_view->buffer_views[1].data.as_int64[array_view->offset];
+         if (first_offset < 0) {
+           ArrowErrorSet(error, "Expected first offset >= 0 but found %" PRId64,
+@@ -3910,7 +3916,9 @@
+ 
+     case NANOARROW_TYPE_LIST:
+     case NANOARROW_TYPE_MAP:
+-      if (array_view->buffer_views[1].size_bytes != 0) {
++      // A zero-length array may carry a short offsets buffer; read its
++      // offsets only when the buffer holds them.
++      if (array_view->buffer_views[1].size_bytes >= (offset_plus_length + 1) * 4) {
+         first_offset = array_view->buffer_views[1].data.as_int32[array_view->offset];
+         if (first_offset < 0) {
+           ArrowErrorSet(error, "Expected first offset >= 0 but found %" PRId64,
+@@ -3938,7 +3946,9 @@
+       break;
+ 
+     case NANOARROW_TYPE_LARGE_LIST:
+-      if (array_view->buffer_views[1].size_bytes != 0) {
++      // A zero-length array may carry a short offsets buffer; read its
++      // offsets only when the buffer holds them.
++      if (array_view->buffer_views[1].size_bytes >= (offset_plus_length + 1) * 8) {
+         first_offset = array_view->buffer_views[1].data.as_int64[array_view->offset];
+         if (first_offset < 0) {
+           ArrowErrorSet(error, "Expected first offset >= 0 but found %" PRId64,

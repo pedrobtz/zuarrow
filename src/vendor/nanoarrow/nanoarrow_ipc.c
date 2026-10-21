@@ -1,8 +1,20 @@
 /*
  * Modified for the zuarrow R package: dictionary batches with compressed
  * bodies are decompressed (tools/patches/0003-dictionary-compression.patch),
- * and the reader decodes the binary-view, string-view, list-view and
- * run-end-encoded layouts (tools/patches/0004-ipc-views-and-ree.patch).
+ * the reader decodes the binary-view, string-view, list-view and
+ * run-end-encoded layouts (tools/patches/0004-ipc-views-and-ree.patch), and
+ * a bad file trailer is reported without reading past the input
+ * (tools/patches/0005-footer-magic-read.patch), and a message length near
+ * INT32_MAX is rejected before it overflows
+ * (tools/patches/0006-header-size-overflow.patch), and a dictionary encoding
+ * without an index type reads as int32, as the format says
+ * (tools/patches/0007-dictionary-index-type.patch), and a message, footer or
+ * field whose union names a table it does not carry is an error, not a NULL
+ * read (tools/patches/0008-absent-tables.patch), and a dictionary batch's
+ * field nodes and buffers are counted against its schema like a record
+ * batch's (tools/patches/0009-dictionary-batch-counts.patch), and metadata
+ * keys and values are read by their stored length, absent ones as empty
+ * (tools/patches/0010-metadata-strings.patch).
  */
 #include "nanoarrow_ipc_flatcc_generated.h"
 // Licensed to the Apache Software Foundation (ASF) under one
@@ -881,10 +893,14 @@ static int ArrowIpcDecoderSetMetadata(struct ArrowSchema* schema,
   for (int64_t i = 0; i < n_pairs; i++) {
     kv = ns(KeyValue_vec_at(kv_vec, i));
 
-    key.data = ns(KeyValue_key(kv));
-    key.size_bytes = strlen(key.data);
-    value.data = ns(KeyValue_value(kv));
-    value.size_bytes = strlen(value.data);
+    // Both strings are optional, and a value may hold NUL bytes: read each by
+    // its stored length, an absent one as empty.
+    flatbuffers_string_t kv_key = kv == NULL ? NULL : ns(KeyValue_key(kv));
+    flatbuffers_string_t kv_value = kv == NULL ? NULL : ns(KeyValue_value(kv));
+    key.data = kv_key == NULL ? "" : kv_key;
+    key.size_bytes = kv_key == NULL ? 0 : (int64_t)flatbuffers_string_len(kv_key);
+    value.data = kv_value == NULL ? "" : kv_value;
+    value.size_bytes = kv_value == NULL ? 0 : (int64_t)flatbuffers_string_len(kv_value);
 
     result = ArrowMetadataBuilderAppend(&buf, key, value);
     if (result != NANOARROW_OK) {
@@ -1312,6 +1328,10 @@ static int ArrowIpcDecoderSetTypeUnion(struct ArrowSchema* schema,
 static int ArrowIpcDecoderSetType(struct ArrowSchema* schema, ns(Field_table_t) field,
                                   int64_t n_children, struct ArrowError* error) {
   int type_type = ns(Field_type_type(field));
+  if (ns(Field_type_get(field)) == NULL) {
+    ArrowErrorSet(error, "Field has a type of kind %d but no type table", type_type);
+    return EINVAL;
+  }
   switch (type_type) {
     case ns(Type_Null):
       return ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_NA, error);
@@ -1415,8 +1435,14 @@ static int ArrowIpcSetDictionaryEncoding(
                                      error);
   NANOARROW_RETURN_NOT_OK_WITH_ERROR(ArrowSchemaSetName(schema->dictionary, ""), error);
 
-  NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderSetTypeInt(
-      schema, ns(DictionaryEncoding_indexType_get(dictionary_encoding)), error));
+  // indexType is optional: "If omitted, int32 is assumed" (Schema.fbs).
+  if (ns(DictionaryEncoding_indexType_is_present(dictionary_encoding))) {
+    NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderSetTypeInt(
+        schema, ns(DictionaryEncoding_indexType_get(dictionary_encoding)), error));
+  } else {
+    NANOARROW_RETURN_NOT_OK(
+        ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_INT32, error));
+  }
 
   if (ns(DictionaryEncoding_isOrdered_get(dictionary_encoding))) {
     schema->flags |= ARROW_FLAG_DICTIONARY_ORDERED;
@@ -1705,14 +1731,19 @@ static inline int ArrowIpcDecoderReadHeaderPrefix(struct ArrowIpcDecoder* decode
     length = ArrowIpcReadInt32LE(data_mut, swap_endian);
     *prefix_size_bytes = sizeof(continuation) + sizeof(length);
   }
-  decoder->header_size_bytes = *prefix_size_bytes + length;
-
   if (length < 0) {
     ArrowErrorSet(error,
                   "Expected message size > 0 but found message size of %" PRId32 " bytes",
                   length);
     return EINVAL;
   }
+
+  // The prefix and the length together must still fit the int32_t field.
+  if (length > INT32_MAX - *prefix_size_bytes) {
+    ArrowErrorSet(error, "Message size of %" PRId32 " bytes is too large", length);
+    return EINVAL;
+  }
+  decoder->header_size_bytes = *prefix_size_bytes + length;
 
   if (length == 0) {
     ArrowErrorSet(error, "End of Arrow stream");
@@ -1793,7 +1824,9 @@ ArrowErrorCode ArrowIpcDecoderPeekFooter(struct ArrowIpcDecoder* decoder,
   const char* footer_size_data = magic - sizeof(int32_t);
 
   if (memcmp(magic, NANOARROW_IPC_MAGIC, strlen(NANOARROW_IPC_MAGIC)) != 0) {
-    ArrowErrorSet(error, "Expected file to end with ARROW1 but got %s", data_end);
+    // The input is not NUL-terminated: print the six bytes compared, not a
+    // string starting one past the end of the buffer.
+    ArrowErrorSet(error, "Expected file to end with ARROW1 but got %.6s", magic);
     return EINVAL;
   }
 
@@ -1902,6 +1935,11 @@ ArrowErrorCode ArrowIpcDecoderDecodeHeader(struct ArrowIpcDecoder* decoder,
   }
 
   flatbuffers_generic_t message_header = ns(Message_header_get(message));
+  if (message_header == NULL) {
+    ArrowErrorSet(error, "Message has a header of kind %d but no header table",
+                  (int)decoder->message_type);
+    return EINVAL;
+  }
   switch (decoder->message_type) {
     case ns(MessageHeader_Schema):
       NANOARROW_RETURN_NOT_OK(
@@ -2006,6 +2044,10 @@ ArrowErrorCode ArrowIpcDecoderDecodeFooter(struct ArrowIpcDecoder* decoder,
   const uint8_t* footer_data =
       data.data.as_uint8 + data.size_bytes - footer_and_size_and_magic_size;
   ns(Footer_table_t) footer = ns(Footer_as_root(footer_data));
+  if (footer == NULL || ns(Footer_schema(footer)) == NULL) {
+    ArrowErrorSet(error, "Footer has no schema");
+    return EINVAL;
+  }
 
   NANOARROW_RETURN_NOT_OK(
       ArrowIpcDecoderDecodeSchemaHeader(decoder, ns(Footer_schema(footer)), error));
@@ -3025,6 +3067,16 @@ static ArrowErrorCode ArrowIpcDecoderDecodeDictionaryInternal(
       (struct ArrowIpcDecoderPrivate*)dictionary->decoder.private_data;
   dictionary->decoder.message_type = NANOARROW_IPC_MESSAGE_TYPE_RECORD_BATCH;
   dictionary_decoder_private_data->last_message = record_batch;
+
+  // Check the dictionary's field nodes and buffers against its schema, as a
+  // record batch's are, before the walk indexes them.
+  if (record_batch == NULL) {
+    ArrowErrorSet(error, "DictionaryBatch has no data");
+    return EINVAL;
+  }
+  dictionary->decoder.metadata_version = decoder->metadata_version;
+  NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderDecodeRecordBatchHeader(
+      &dictionary->decoder, (flatbuffers_generic_t)record_batch, error));
 
   // A DictionaryBatch's data is a RecordBatch and may be compressed like one:
   // give the dictionary's decoder its codec and a borrowed reference to this
