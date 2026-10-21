@@ -1,8 +1,6 @@
 on:
   push:
     branches: [main, master]
-    paths-ignore:
-      - ".github/badges/coverage.svg"
   pull_request:
 
 name: coverage
@@ -13,6 +11,12 @@ concurrency:
 
 jobs:
   coverage:
-    uses: pedrobtz/r-actions/.github/workflows/coverage.yml@v1
+    # Pinned to a commit because this call holds a write token; bump it
+    # deliberately, reading the diff.
+    uses: pedrobtz/r-actions/.github/workflows/coverage.yml@17264ce002a9359a492e0183852a555a5bb866e7 # v1.23.0
     permissions:
       contents: write
+    with:
+      # main requires pull requests, so the badge commit goes to gh-pages.
+      badge-branch: gh-pages
+      badge-path: badges/coverage.svg

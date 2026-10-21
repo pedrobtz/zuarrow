@@ -243,6 +243,12 @@ The `zar_` prefix was checked on 2026-10-21 against the prefixes the
 family's RFCs record (`zu_`, `zuf_`, `zb_`, `zuc_`, `zux_`, `zuh_`,
 `znp_`, `ztp_`); Stage 0 verifies it against the installed packages.
 
+Stage 0 verified it on 2026-10-21: `nm` over the shared objects of every
+installed `zu*` package (`zucbor`, `zucrypt`, `zucsv`, `zufuzz`, `zuhttp`,
+`zujson`, `zukomp`, `zumime`, `zurand`, `zusat`, `zusmt`, `zuxlsx`,
+`zuxml`) and of `decimal`, `nanoarrow` 0.9.0 and `arrow` 25.0.1 found no
+symbol beginning `zar_` or `ZAR_`.
+
 **Relationships, as decided rather than as hoped:**
 
 - **`nanoarrow`**: `Suggests`. Never `Imports` or `LinkingTo`: zuarrow
@@ -938,7 +944,12 @@ them. None was discussed before writing.
   exports under it (`arrow_table`, `arrow_info`, `arrow_available` and
   the rest, listed by Stage 0) except `arrow_array()`, which zuarrow also
   needs and which is documented as a known mask (§15 Q3); the condition
-  root is `zuarrow_error`, the internal C prefix `zar_`.
+  root is `zuarrow_error`, the internal C prefix `zar_`. Stage 0 listed
+  `arrow` 25.0.1's exports that begin `arrow_` on 2026-10-21:
+  `arrow_array`, `arrow_info`, `arrow_table`, `arrow_with_acero`,
+  `arrow_with_dataset`, `arrow_with_gcs`, `arrow_with_json`,
+  `arrow_with_parquet`, `arrow_with_s3` and `arrow_with_substrait`. Of the
+  names in §5, `arrow_array()` is the one known mask; no other collides.
 - **D13 (C).** Little-endian only in v0.1.0. The format's `endianness`
   field is read and a big-endian schema is a `zuarrow_format_error`; no
   CRAN platform in the r-actions matrix is big-endian, and byte swapping
