@@ -35,8 +35,24 @@
     <div class="section level2">
 <h2 class="pkg-version" data-toc-text="0.0.0.9000" id="zuarrow-0009000">zuarrow 0.0.0.9000<a class="anchor" aria-label="anchor" href="#zuarrow-0009000"></a></h2>
 <ul><li>Initial CRAN submission.</li>
+</ul><div class="section level3">
+<h3 id="handles-and-schema-tools-0-0-0-9000">Handles and schema tools<a class="anchor" aria-label="anchor" href="#handles-and-schema-tools-0-0-0-9000"></a></h3>
+<ul><li>
+<code><a href="../reference/arrow_schema.html">arrow_schema()</a></code> makes a schema handle from an Arrow format string, from an R object, or from any schema, array or stream handle, and <code><a href="https://rdrr.io/r/base/format.html" class="external-link">format()</a></code> and <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> show Arrow’s type notation.</li>
+<li>Handles share the ‘nanoarrow’ package’s layout and inherit from its classes, so handles cross between the two packages without conversion.</li>
+<li>
+<code><a href="../reference/arrow_validate.html">arrow_validate()</a></code> runs the bundled ‘nanoarrow’ C library’s validation at <code>"minimal"</code>, <code>"default"</code> or <code>"full"</code>; <code>"full"</code> also checks that every string is valid UTF-8.</li>
+<li>
+<code><a href="../reference/arrow_equal.html">arrow_equal()</a></code> compares two schemas, arrays or streams, and says why they differ.</li>
+<li>
+<code><a href="../reference/arrow_metadata.html">arrow_metadata()</a></code> and <code>arrow_metadata&lt;-</code> read and write schema metadata, keeping binary values as raw vectors.</li>
+<li>
+<code><a href="../reference/zuarrow_info.html">zuarrow_info()</a></code> reports the versions zuarrow is built from.</li>
+<li>Every condition inherits from <code>zuarrow_error</code>.</li>
 </ul></div>
-  </main></div>
+</div>
+  </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
+    </nav></aside></div>
 
 
     <footer><div class="pkgdown-footer-left">

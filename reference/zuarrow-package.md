@@ -8,6 +8,8 @@ raises an error that names the column and the R type that would hold it
 exactly. A registry lets other packages declare which R class is the
 exact form of which 'Arrow' type. Handles share the layout of the
 'nanoarrow' package, so objects pass between the two without conversion.
+The bundled 'nanoarrow' C library
+(<https://github.com/apache/arrow-nanoarrow>) needs no system library.
 The format is specified at
 <https://arrow.apache.org/docs/format/Columnar.html>.
 
@@ -28,3 +30,14 @@ Useful links:
 Authors:
 
 - Pedro Baltazar <pedrobtz@gmail.com> \[copyright holder\]
+
+Other contributors:
+
+- The Apache Software Foundation (nanoarrow, bundled in
+  src/vendor/nanoarrow) \[copyright holder\]
+
+- Mikkel F. Jørgensen (flatcc runtime, bundled in src/vendor/nanoarrow)
+  \[copyright holder\]
+
+- Paul Hsieh (pstdint.h in the bundled flatcc runtime) \[copyright
+  holder\]
