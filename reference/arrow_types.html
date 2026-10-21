@@ -60,50 +60,64 @@ exactly.</p>
     <div class="section level2">
     <h2 id="ref-examples">Examples<a class="anchor" aria-label="anchor" href="#ref-examples"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span class="r-in"><span><span class="fu">arrow_types</span><span class="op">(</span><span class="op">)</span></span></span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                                           arrow             format</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                          null                  n</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                          bool                  b</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3                    int8, int16, uint8, uint16         c, s, C, S</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                         int32                  i</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                        uint32                  I</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6                     half_float, float, double            e, f, g</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                         int64                  l</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                        uint64                  L</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9                   utf8, large_utf8, utf8_view           u, U, vu</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10            binary, large_binary, binary_view           z, Z, vz</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11                            fixed_size_binary                w:n</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                       date32                tdD</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                       date64                tdm</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14                  timestamp[s], timestamp[ms]         tss:, tsm:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15                 timestamp[us], timestamp[ns]         tsu:, tsn:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16                               time32, time64 tts, ttm, ttu, ttn</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                     duration tDs, tDm, tDu, tDn</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18 decimal32, decimal64, decimal128, decimal256              d:p,s</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                     interval      tiM, tiD, tin</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                    dense_union, sparse_union         +ud:, +us:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                       struct                 +s</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                           r                     exact</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1              logical (NA)                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2                   logical                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3                   integer                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4                   integer unless a value is INT_MIN</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                    double                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6                    double                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7                    double            within +/-2^53</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8                    double                up to 2^53</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9                 character  unless a value holds NUL</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10              list of raw                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11 list of raw, arrow_width                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12                     Date                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                                 no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14                  POSIXct      within +/-2^53 units</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15                                                 no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                                 no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                                 no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                                 no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                                 no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                                 no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21               data.frame                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                           arrow                   format</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                          null                        n</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                          bool                        b</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                    int8, int16, uint8, uint16               c, s, C, S</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                         int32                        i</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                        uint32                        I</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                     half_float, float, double                  e, f, g</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                         int64                        l</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                        uint64                        L</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                   utf8, large_utf8, utf8_view                 u, U, vu</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10            binary, large_binary, binary_view                 z, Z, vz</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                            fixed_size_binary                      w:n</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                       date32                      tdD</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                       date64                      tdm</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                  timestamp[s], timestamp[ms]               tss:, tsm:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                 timestamp[us], timestamp[ns]               tsu:, tsn:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                               time32, time64       tts, ttm, ttu, ttn</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                     duration       tDs, tDm, tDu, tDn</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18 decimal32, decimal64, decimal128, decimal256                    d:p,s</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                     interval            tiM, tiD, tin</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                    dense_union, sparse_union               +ud:, +us:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                       struct                       +s</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22 list, large_list, list_view, large_list_view         +l, +L, +vl, +vL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                              fixed_size_list                     +w:n</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 24                                          map                       +m</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 25                        dictionary of strings             index + utf8</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 26                   dictionary of other values           index + values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 27                              run_end_encoded                       +r</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 28                        arrow.bool8 extension c + ARROW:extension:name</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                          r                     exact</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                             logical (NA)                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                  logical                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                  integer                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                  integer unless a value is INT_MIN</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                   double                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                   double                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                   double            within +/-2^53</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                   double                up to 2^53</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                character  unless a value holds NUL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                             list of raw                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                list of raw, arrow_width                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                    Date                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                                                no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                 POSIXct      within +/-2^53 units</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                                                                no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                                                no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                                                no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                                                no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                                                no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                                                no</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                              data.frame                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                             list column                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23 list column; matrix with arrow_matrix()                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 24    list column of key/value data frames                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 25                                  factor                       yes</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 26                      the values' R form             as the values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 27                      the values' R form             as the values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 28                                 logical                       yes</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span>                            lossy_r exact_with</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 1                                            </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 2                                            </span>
@@ -126,6 +140,13 @@ exactly.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 19                            none    zutempo</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 20                            none           </span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 21                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 24                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 25                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 26                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 27                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 28                                           </span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

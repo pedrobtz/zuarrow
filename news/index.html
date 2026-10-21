@@ -62,6 +62,14 @@
 <li>
 <code><a href="../reference/arrow_types.html">arrow_types()</a></code> lists the built-in type table.</li>
 </ul></div>
+<div class="section level3">
+<h3 id="nested-types-dictionaries-extensions-and-the-registry-0-0-0-9000">Nested types, dictionaries, extensions and the registry<a class="anchor" aria-label="anchor" href="#nested-types-dictionaries-extensions-and-the-registry-0-0-0-9000"></a></h3>
+<ul><li>Structs convert to nested data frames, lists of every kind to list columns, fixed-size lists to list columns or, with <code><a href="../reference/arrow_matrix.html">arrow_matrix()</a></code>, to matrices, and maps to lists of key/value data frames. Each converts back.</li>
+<li>Factors convert to and from <code>dictionary&lt;int32, utf8&gt;</code>, ordered factors included; a stream’s batches read as the union of their levels. Other dictionaries and run-end encoded arrays decode to their values.</li>
+<li>Extension types keep their name and metadata as attributes and are restored on export; <code>arrow.bool8</code> reads as logical. Field metadata round-trips through the <code>arrow_field_metadata</code> attribute.</li>
+<li>
+<code><a href="../reference/arrow_register.html">arrow_register()</a></code>, <code><a href="../reference/arrow_register.html">arrow_unregister()</a></code> and <code><a href="../reference/arrow_register.html">arrow_registry()</a></code> let a package make a lossy type exact with its own R class, by format string, prefix pattern or extension name, in both directions.</li>
+</ul></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

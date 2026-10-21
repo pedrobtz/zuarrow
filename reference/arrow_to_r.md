@@ -63,9 +63,25 @@ Intervals and unions have no R form and always fail.
 
 `to` names the R type a column must become:
 [`character()`](https://rdrr.io/r/base/character.html),
-[`double()`](https://rdrr.io/r/base/double.html) or
-[`integer()`](https://rdrr.io/r/base/integer.html). A target that cannot
-take the column is a `zuarrow_type_error`, never a silent fallback.
+[`double()`](https://rdrr.io/r/base/double.html),
+[`integer()`](https://rdrr.io/r/base/integer.html), or
+[`arrow_matrix()`](https://pedrobtz.github.io/zuarrow/reference/arrow_matrix.md)
+for a `fixed_size_list`. A target that cannot take the column is a
+`zuarrow_type_error`, never a silent fallback.
+
+Nested types follow the table too. A `struct` becomes a data frame
+column; `list`, `large_list` and the list views become list columns,
+`NULL` for a null list; a `map` becomes a list of data frames with
+columns `key` and `value`. A dictionary of strings becomes a factor,
+ordered when the dictionary is, with the union of every batch's levels;
+a dictionary of other values, and a run-end encoded array, decode to
+their values' R form. An extension type converts as its storage and
+keeps its name and metadata in the `arrow_extension` and
+`arrow_extension_metadata` attributes, so writing the column back
+restores it. Field metadata becomes the `arrow_field_metadata`
+attribute. A type registered with
+[`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
+goes through its handler.
 
 ## See also
 

@@ -94,9 +94,22 @@ precision. The column carries the Arrow format string in its
 <li><p><code>"allow"</code> converts to the nearest R type silently. An <code>int64</code> column
 becomes <code>bit64</code>'s <code>integer64</code>, exactly, when <code>bit64</code> is loaded.</p></li>
 </ul><p>Intervals and unions have no R form and always fail.</p>
-<p><code>to</code> names the R type a column must become: <code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code>, <code><a href="https://rdrr.io/r/base/double.html" class="external-link">double()</a></code>
-or <code><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer()</a></code>. A target that cannot take the column is a
-<code>zuarrow_type_error</code>, never a silent fallback.</p>
+<p><code>to</code> names the R type a column must become: <code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code>, <code><a href="https://rdrr.io/r/base/double.html" class="external-link">double()</a></code>,
+<code><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer()</a></code>, or <code><a href="arrow_matrix.html">arrow_matrix()</a></code> for a <code>fixed_size_list</code>. A target that
+cannot take the column is a <code>zuarrow_type_error</code>, never a silent
+fallback.</p>
+<p>Nested types follow the table too. A <code>struct</code> becomes a data frame
+column; <code>list</code>, <code>large_list</code> and the list views become list columns,
+<code>NULL</code> for a null list; a <code>map</code> becomes a list of data frames with
+columns <code>key</code> and <code>value</code>. A dictionary of strings becomes a factor,
+ordered when the dictionary is, with the union of every batch's levels;
+a dictionary of other values, and a run-end encoded array, decode to
+their values' R form. An extension type converts as its storage and
+keeps its name and metadata in the <code>arrow_extension</code> and
+<code>arrow_extension_metadata</code> attributes, so writing the column back
+restores it. Field metadata becomes the <code>arrow_field_metadata</code>
+attribute. A type registered with <code><a href="arrow_register.html">arrow_register()</a></code> goes through its
+handler.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

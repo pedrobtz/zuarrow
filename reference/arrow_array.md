@@ -35,10 +35,17 @@ handle.
 
 Without a `schema`, each R class maps to one Arrow type: `logical` to
 `bool`, `integer` to `int32`, `double` to `double`, `character` to
-`utf8` (`large_utf8` past 2^31 - 1 bytes), `Date` to `date32`, `POSIXct`
-to `timestamp[us]` in its time zone or UTC, `difftime` to
-`duration[us]`, a list of raw vectors to `binary`, and a data frame to a
-`struct`. Any other class is a `zuarrow_type_error`.
+`utf8` (`large_utf8` past 2^31 - 1 bytes), `factor` to
+`dictionary<int32, utf8>`, `Date` to `date32`, `POSIXct` to
+`timestamp[us]` in its time zone or UTC, `difftime` to `duration[us]`, a
+list of raw vectors to `binary`, any other list to `list<T>` with `T`
+from its elements, and a data frame to a `struct`. A class registered
+with
+[`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
+goes through its `from` handler, and a matrix is written as a
+`fixed_size_list` with `schema = arrow_matrix()`. The attributes
+`arrow_extension`, `arrow_extension_metadata` and `arrow_field_metadata`
+become field metadata. Any other class is a `zuarrow_type_error`.
 
 With a `schema`, the values are written as that type and checked: an
 integer that does not fit `int8`, or a double that is not a whole number

@@ -52,3 +52,23 @@
   `arrow_type` attribute names.
 - [`arrow_types()`](https://pedrobtz.github.io/zuarrow/reference/arrow_types.md)
   lists the built-in type table.
+
+### Nested types, dictionaries, extensions and the registry
+
+- Structs convert to nested data frames, lists of every kind to list
+  columns, fixed-size lists to list columns or, with
+  [`arrow_matrix()`](https://pedrobtz.github.io/zuarrow/reference/arrow_matrix.md),
+  to matrices, and maps to lists of key/value data frames. Each converts
+  back.
+- Factors convert to and from `dictionary<int32, utf8>`, ordered factors
+  included; a stream’s batches read as the union of their levels. Other
+  dictionaries and run-end encoded arrays decode to their values.
+- Extension types keep their name and metadata as attributes and are
+  restored on export; `arrow.bool8` reads as logical. Field metadata
+  round-trips through the `arrow_field_metadata` attribute.
+- [`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md),
+  [`arrow_unregister()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
+  and
+  [`arrow_registry()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
+  let a package make a lossy type exact with its own R class, by format
+  string, prefix pattern or extension name, in both directions.

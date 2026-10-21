@@ -75,10 +75,16 @@ stream handle.</p>
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
     <p>Without a <code>schema</code>, each R class maps to one Arrow type: <code>logical</code> to
 <code>bool</code>, <code>integer</code> to <code>int32</code>, <code>double</code> to <code>double</code>, <code>character</code> to
-<code>utf8</code> (<code>large_utf8</code> past 2^31 - 1 bytes), <code>Date</code> to <code>date32</code>, <code>POSIXct</code>
-to <code>timestamp[us]</code> in its time zone or UTC, <code>difftime</code> to
-<code>duration[us]</code>, a list of raw vectors to <code>binary</code>, and a data frame to a
-<code>struct</code>. Any other class is a <code>zuarrow_type_error</code>.</p>
+<code>utf8</code> (<code>large_utf8</code> past 2^31 - 1 bytes), <code>factor</code> to
+<code>dictionary&lt;int32, utf8&gt;</code>, <code>Date</code> to <code>date32</code>, <code>POSIXct</code> to
+<code>timestamp[us]</code> in its time zone or UTC, <code>difftime</code> to <code>duration[us]</code>,
+a list of raw vectors to <code>binary</code>, any other list to <code>list&lt;T&gt;</code> with <code>T</code>
+from its elements, and a data frame to a <code>struct</code>. A class registered
+with <code><a href="arrow_register.html">arrow_register()</a></code> goes through its <code>from</code> handler, and a matrix is
+written as a <code>fixed_size_list</code> with <code>schema = arrow_matrix()</code>. The
+attributes <code>arrow_extension</code>, <code>arrow_extension_metadata</code> and
+<code>arrow_field_metadata</code> become field metadata. Any other class is a
+<code>zuarrow_type_error</code>.</p>
 <p>With a <code>schema</code>, the values are written as that type and checked: an
 integer that does not fit <code>int8</code>, or a double that is not a whole
 number for <code>int64</code>, is a <code>zuarrow_lossy_error</code> naming the row. <code>POSIXct</code>
