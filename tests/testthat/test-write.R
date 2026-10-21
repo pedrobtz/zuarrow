@@ -130,9 +130,11 @@ test_that("the same input gives the same bytes", {
     md5_of(arrow_write(df, NULL, batch = 3)),
     "efaf0ffadb45b1c0f9e5070d1a5c8801"
   )
+  raw_stream <- arrow_write(df, NULL, format = "stream", batch = 3)
   expect_identical(
-    md5_of(arrow_write(df, NULL, format = "stream", batch = 3)),
-    "f093f4767499f1388fd66342148eba66"
+    md5_of(raw_stream),
+    "f093f4767499f1388fd66342148eba66",
+    info = paste("DIAG", paste(sprintf("%02x", as.integer(raw_stream)), collapse = ""))
   )
   expect_identical(
     md5_of(arrow_write(df, NULL, compression = "lz4", batch = 3)),
