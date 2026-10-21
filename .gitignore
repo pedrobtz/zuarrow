@@ -1,0 +1,54 @@
+# RStudio / R session
+.Rproj.user
+.Rhistory
+.Rapp.history
+.RData
+.RDataTmp
+.Ruserdata
+
+# Secrets: environment variables and cached OAuth tokens
+.Renviron
+.httr-oauth
+
+# Compiled objects and shared libraries, anywhere under src/. Unanchored on
+# purpose: src/*.o would miss src/vendor/<lib>/*.o.
+*.o
+*.so
+*.dll
+*.dylib
+*.a
+
+# R CMD build / check output
+/*.tar.gz
+/*.Rcheck/
+*-Ex.R
+
+# Built vignettes: devtools::build_vignettes() writes inst/doc (older
+# versions /doc and /Meta), and knitting by hand leaves output in vignettes/
+inst/doc
+/doc/
+/Meta/
+vignettes/*.html
+vignettes/*.pdf
+vignettes/*.R
+
+# knitr / R Markdown / Quarto caches and temporaries
+*_cache/
+*.knit.md
+*.utf8.md
+.quarto/
+
+# pkgdown site
+docs
+
+# Translation temp files
+po/*~
+
+# Written by devtools::submit_cran(); records one submission, not the source.
+CRAN-SUBMISSION
+
+# macOS
+.DS_Store
+
+# Claude Code local settings
+.claude/settings.local.json
