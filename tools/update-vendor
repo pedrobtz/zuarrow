@@ -85,6 +85,12 @@ PROV=src/vendor/PROVENANCE
   echo "      only from a buffer that holds them: a zero-length array with a"
   echo "      short offsets buffer was read past its end (found by the fuzz"
   echo "      target)."
+  echo "  0013-encode-batches.patch  adds ArrowIpcEncoderEncodeBatch(): a"
+  echo "      record batch or a dictionary batch, each buffer written through a"
+  echo "      caller's callback that may compress it, with the body's codec; and"
+  echo "      lets a batch hold dictionary-encoded columns, and writes the footer's"
+  echo "      dictionary blocks, with the padding of each footer block zeroed so"
+  echo "      files are reproducible (nanoarrow #622)."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |

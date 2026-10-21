@@ -183,10 +183,19 @@ test_that("arrow reads what arrow wrote, the same way", {
   expect_identical(ours$d, theirs$d)
 })
 
+test_that("fields that share a dictionary must share its value type", {
+  # Two fields with dictionary id 0 and different value types, one of them
+  # large string: the batch was decoded as one type and read as the other.
+  expect_error(
+    arrow_read(test_path("data", "crash-shared-dictionary.arrow")),
+    class = "zuarrow_format_error"
+  )
+})
+
 test_that("inputs the fuzz target found are refused cleanly", {
   # Each crashed or tripped a sanitizer in zuarrow's reader or the vendored
   # decoder before its fix (tools/patches/0005 to 0012, and the reader's own
-  # footer, field-node, alignment and view checks).
+  # footer, field-node, alignment, view and shared-dictionary checks).
   files <- list.files(test_path("data"), "^crash-", full.names = TRUE)
   expect_gte(length(files), 10L)
   for (f in files) {

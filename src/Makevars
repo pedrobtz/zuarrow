@@ -17,6 +17,6 @@ VENDOR_OBJECTS = vendor/nanoarrow/nanoarrow.o \
 
 ZAR_OBJECTS = zuarrow.o zar_xptr.o zar_validate.o zar_build.o zar_utf8.o \
   zar_to_r.o zar_from_r.o zar_parse.o \
-  zar_ipc_read.o zar_codecs.o
+  zar_ipc_read.o zar_ipc_write.o zar_codecs.o
 
 OBJECTS = $(ZAR_OBJECTS) $(VENDOR_OBJECTS)

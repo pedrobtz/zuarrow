@@ -1,3 +1,7 @@
+/*
+ * Modified for the zuarrow R package: declares ArrowIpcEncoderEncodeBatch
+ * (tools/patches/0013-encode-batches.patch).
+ */
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -88,6 +92,8 @@
   NANOARROW_SYMBOL(NANOARROW_NAMESPACE, ArrowIpcEncoderEncodeSchema)
 #define ArrowIpcEncoderEncodeSimpleRecordBatch \
   NANOARROW_SYMBOL(NANOARROW_NAMESPACE, ArrowIpcEncoderEncodeSimpleRecordBatch)
+#define ArrowIpcEncoderEncodeBatch \
+  NANOARROW_SYMBOL(NANOARROW_NAMESPACE, ArrowIpcEncoderEncodeBatch)
 #define ArrowIpcOutputStreamInitBuffer \
   NANOARROW_SYMBOL(NANOARROW_NAMESPACE, ArrowIpcOutputStreamInitBuffer)
 #define ArrowIpcOutputStreamInitFile \
@@ -794,6 +800,28 @@ NANOARROW_DLL ArrowErrorCode ArrowIpcEncoderEncodeSchema(struct ArrowIpcEncoder*
 NANOARROW_DLL ArrowErrorCode ArrowIpcEncoderEncodeSimpleRecordBatch(
     struct ArrowIpcEncoder* encoder, const struct ArrowArrayView* array_view,
     struct ArrowBuffer* body_buffer, struct ArrowError* error);
+
+/// \brief Writes one buffer of a batch's body
+///
+/// Called for each buffer in order; stores where the buffer landed in the body
+/// in offset and length, and keeps body_length at the body's size so far.
+typedef ArrowErrorCode (*ArrowIpcEncodeBufferFunction)(struct ArrowBufferView buffer,
+                                                       void* state, int64_t* offset,
+                                                       int64_t* length,
+                                                       int64_t* body_length,
+                                                       struct ArrowError* error);
+
+/// \brief Encode a struct ArrayView as a RecordBatch, or as a DictionaryBatch
+///
+/// With dictionary_id >= 0 the message is a DictionaryBatch of that id whose
+/// data holds the array view's one child. Each buffer goes through
+/// encode_buffer, which may compress it; codec is recorded as the body's
+/// BodyCompression. Added for the zuarrow R package.
+NANOARROW_DLL ArrowErrorCode ArrowIpcEncoderEncodeBatch(
+    struct ArrowIpcEncoder* encoder, const struct ArrowArrayView* array_view,
+    ArrowIpcEncodeBufferFunction encode_buffer, void* state,
+    enum ArrowIpcCompressionType codec, int64_t dictionary_id, char is_delta,
+    struct ArrowError* error);
 
 /// \brief An user-extensible output data sink
 struct ArrowIpcOutputStream {

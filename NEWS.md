@@ -66,3 +66,16 @@
   refused.
 * Full validation now also checks that every binary or string view points
   inside its buffers, which the bundled C library does not.
+
+## Writing IPC
+
+* `arrow_write()` writes data frames, struct arrays and streams as the
+  Arrow IPC file or stream format, to a path, a connection or a raw vector,
+  in record batches of `batch` rows.
+* Factors are written as dictionaries, one dictionary batch before the
+  first record batch, or as strings with `dictionary = FALSE`; schema and
+  field metadata and extension names are kept.
+* `compression = "lz4"` or `"zstd"` compresses each buffer through
+  'zukomp', at the codec's own `level`; the default is uncompressed, so
+  every reader opens the output.
+* The same input gives the same bytes on every platform.
