@@ -4,6 +4,15 @@
 
 - **Pedro Baltazar**. Author, maintainer, copyright holder.
 
+- **The Apache Software Foundation**. Copyright holder.  
+  nanoarrow, bundled in src/vendor/nanoarrow
+
+- **Mikkel F. Jørgensen**. Copyright holder.  
+  flatcc runtime, bundled in src/vendor/nanoarrow
+
+- **Paul Hsieh**. Copyright holder.  
+  pstdint.h in the bundled flatcc runtime
+
 ## Citation
 
 Source:

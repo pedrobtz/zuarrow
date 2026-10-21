@@ -99,9 +99,16 @@ Rscript -e 'devtools::check()'                   # R CMD check
 air format .                                     # format R sources
 ```
 
-No package-specific commands yet. The design plans
-`tools/update-vendor`, `tools/fetch-fixtures` and `tools/run-benchmarks`
-(§7, §9, §10); add each here when its stage lands.
+``` sh
+tools/update-vendor                              # re-vendor nanoarrow, rewrite PROVENANCE
+tools/verify-vendor                              # vendored tree is upstream plus patches
+tools/verify-vendor --canary                     # the verifier catches a missing patch
+tools/run-benchmarks [--rows N] [--reps R]       # design §10 timings, as Markdown rows
+NOT_CRAN=true Rscript -e 'devtools::test(filter = "abi")'   # symbol checks (skip on CRAN)
+```
+
+The design also plans `tools/fetch-fixtures` (§9); add it here when
+Stage 5 lands.
 
 ## Architecture
 
@@ -271,20 +278,48 @@ the main thing slowing roadmaps down, so:
 
 ## Vendored native code
 
-Planned, not yet vendored: the nanoarrow C library’s core and ipc
-components, Apache-2.0, at tag `apache-arrow-nanoarrow-0.9.0`, under
-`src/nanoarrow/` (design §7, D1). Its integration-testing header goes
-into the test harness only, never into `zuarrow.so` (D18). lz4 and zstd
-are not vendored; they come from `zukomp` (D2). Fill in the commit,
-checksums and patch list when Stage 0 vendors it.
+The nanoarrow C library’s core and ipc components, Apache-2.0, release
+`apache-arrow-nanoarrow-0.9.0` (commit `9fad802`), live under
+`src/vendor/nanoarrow/` (design §7, D1), with the flatcc runtime
+nanoarrow bundles. `src/vendor/PROVENANCE` holds the tag, commit,
+archive SHA-512, the SHA-256 of every file and the patch list;
+`inst/COPYRIGHTS` and `LICENSE.note` carry the notices, including three
+MIT and one BSD flatcc header. Its integration-testing header goes into
+the test harness only, never into `zuarrow.so` (D18). lz4 and zstd are
+not vendored; they come from `zukomp` (D2).
+
+- **The tree is derived, never edited.** `tools/derive-vendor` downloads
+  the release, checks the SHA-512 Apache publishes, runs upstream’s
+  `ci/scripts/bundle.py --symbol-namespace=zuarrow --with-ipc --with-flatcc`,
+  splits the generated FlatBuffers code into
+  `nanoarrow_ipc_flatcc_generated.h` and applies `tools/patches/` in
+  order. `tools/update-vendor` writes the tree and `PROVENANCE`;
+  `tools/verify-vendor` re-derives and fails on any byte of difference,
+  and `--canary` proves it would catch a missing patch.
+
+- **Patches.** `0001-no-suppressing-pragmas` removes flatcc’s
+  `#pragma diagnostic ignored` lines (a NOTE); `0002-unused-locals`
+  fixes the two generated macros whose unused locals `-Wall` then
+  reports (R CMD check counts “warning: unused” as significant). Every
+  patched file carries a “Modified for the zuarrow R package” notice.
+
+- **Visibility.** `src/Makevars` defines `NANOARROW_DLL` empty, because
+  nanoarrow otherwise marks its API `visibility("default")` and hidden
+  visibility would not hide it. `src/zuarrow-win.def` exports
+  `R_init_zuarrow` alone on Windows. `test-abi.R` checks both, and that
+  nothing CRAN’s compiled-code check reports is referenced.
 
 - Pin a stable upstream release, never `master` or a release candidate.
+
 - Record the tag, the commit and the checksums, and write down the
   update procedure so the next bump is mechanical.
+
 - Keep upstream `LICENSE` and `NOTICE` under `src/vendor/<lib>/`,
   declare the vendored code in `DESCRIPTION` and `inst/COPYRIGHTS`.
+
 - Keep the vendor tree clearly separated from first-party source, and
   record every local patch and why it exists.
+
 - **CRAN’s compiled-code check applies to vendored code too.** No
   `stdout` or `stderr`, no `printf`, `abort`, `exit` or system RNG may
   be linked, even behind a debug switch that never runs. Remove them
@@ -295,6 +330,7 @@ checksums and patch list when Stage 0 vendors it.
   `tools/patches/0002-no-stdio.patch` and `tools/verify-vendor`. zuxml’s
   first upload was archived because it justified such a symbol instead
   of patching it.
+
 - Guard against regressions in CI: run `nm -u` on the built objects and
   fail on any of those symbols, so an upstream bump cannot bring them
   back.
