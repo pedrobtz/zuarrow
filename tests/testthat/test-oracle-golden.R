@@ -48,6 +48,10 @@ test_that("the view and run-end encoded cases of cpp-21.0.0 decode", {
 
 test_that("libarrow decodes the golden files to the same values", {
   skip_if_not_installed("arrow")
+  skip_if_not(
+    arrow::codec_is_available("zstd") && arrow::codec_is_available("lz4_frame"),
+    "arrow was built without its codecs"
+  )
   for (version in c("1.0.0-littleendian", "2.0.0-compression", "cpp-21.0.0")) {
     cases <- golden_cases(version)
     for (case in names(cases)) {

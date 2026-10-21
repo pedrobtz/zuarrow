@@ -174,6 +174,8 @@ test_that("bad arguments are type errors", {
 
 test_that("arrow reads what arrow wrote, the same way", {
   skip_if_not_installed("arrow")
+  # A minimal arrow build has no zstd: the portability gap D2 removes.
+  skip_if_not(arrow::codec_is_available("zstd"), "arrow was built without zstd")
   path <- test_data("basic-zstd.arrow")
   ours <- without_metadata(arrow_read(path))
   theirs <- as.data.frame(arrow::read_feather(path))
