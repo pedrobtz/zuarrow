@@ -140,6 +140,36 @@ static int64_t zar_count_fields(const struct ArrowSchema *s) {
   return n;
 }
 
+/* Whether two schemas have the same type: format strings, children and
+   dictionaries, recursively. Names, flags and metadata do not matter. */
+static int zar_same_type(const struct ArrowSchema *a, const struct ArrowSchema *b) {
+  if (a == NULL || b == NULL) return a == b;
+  if (strcmp(a->format, b->format) != 0 || a->n_children != b->n_children) return 0;
+  for (int64_t i = 0; i < a->n_children; i++) {
+    if (!zar_same_type(a->children[i], b->children[i])) return 0;
+  }
+  return zar_same_type(a->dictionary, b->dictionary);
+}
+
+/* Fields may share a dictionary id, but a dictionary batch is decoded with
+   one value type, so every field that shares it must have that type. */
+static int zar_check_shared_dictionaries(struct zar_reader *r) {
+  const struct ArrowIpcDictionaryEncoding *e =
+      (const struct ArrowIpcDictionaryEncoding *)r->encodings.encodings.data;
+  int64_t n = r->encodings.encodings.size_bytes / (int64_t)sizeof(*e);
+  for (int64_t i = 0; i < n; i++) {
+    for (int64_t j = i + 1; j < n; j++) {
+      if (e[i].id == e[j].id && !zar_same_type(e[i].schema->dictionary, e[j].schema->dictionary)) {
+        ArrowErrorSet(&r->error,
+                      "two fields share dictionary %" PRId64 " with different value types",
+                      e[i].id);
+        return zar_reader_fail(r, "format", EINVAL);
+      }
+    }
+  }
+  return NANOARROW_OK;
+}
+
 /* After the schema: the depth limit, little-endian only (D13), the
    decoder set up for batches and the dictionaries for their values. */
 static int zar_reader_set_schema(struct zar_reader *r) {
@@ -152,6 +182,7 @@ static int zar_reader_set_schema(struct zar_reader *r) {
                   r->limits.max_depth);
     return zar_reader_fail(r, "limit", EINVAL);
   }
+  if (zar_check_shared_dictionaries(r) != NANOARROW_OK) return EINVAL;
   int code = ArrowIpcDecoderSetSchemaWithDictionaries(&r->decoder, &r->schema,
                                                       &r->encodings, &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, code == ENOTSUP ? "format" : "format", code);
