@@ -1,0 +1,55 @@
+--- a/flatcc/portable/pdiagnostic.h
++++ b/flatcc/portable/pdiagnostic.h
+@@ -1,6 +1,12 @@
+  /* There is intentionally no include guard in this file. */
+ 
++/*
++ * Modified for the zuarrow R package: the '#pragma GCC/clang diagnostic
++ * ignored' lines are removed, because R CMD check reports pragmas that
++ * suppress diagnostics. See tools/patches/0001-no-suppressing-pragmas.patch.
++ */
+ 
++
+ /*
+  * Usage: optionally disable any of these before including.
+  *
+@@ -43,9 +49,7 @@
+ 
+ #if defined(PDIAGNOSTIC_IGNORE_UNUSED_FUNCTION) || defined(PDIAGNOSTIC_IGNORE_UNUSED)
+ #if PDIAGNOSTIC_AWARE_CLANG
+-#pragma clang diagnostic ignored "-Wunused-function"
+ #elif PDIAGNOSTIC_AWARE_GCC
+-#pragma GCC diagnostic ignored "-Wunused-function"
+ #endif
+ #endif
+ #undef PDIAGNOSTIC_IGNORE_UNUSED_FUNCTION
+@@ -54,18 +58,14 @@
+ #if PDIAGNOSTIC_AWARE_MSVC
+ #pragma warning(disable: 4101) /* unused local variable */
+ #elif PDIAGNOSTIC_AWARE_CLANG
+-#pragma clang diagnostic ignored "-Wunused-variable"
+ #elif PDIAGNOSTIC_AWARE_GCC
+-#pragma GCC diagnostic ignored "-Wunused-variable"
+ #endif
+ #endif
+ #undef PDIAGNOSTIC_IGNORE_UNUSED_VARIABLE
+ 
+ #if defined(PDIAGNOSTIC_IGNORE_UNUSED_PARAMETER) || defined(PDIAGNOSTIC_IGNORE_UNUSED)
+ #if PDIAGNOSTIC_AWARE_CLANG
+-#pragma clang diagnostic ignored "-Wunused-parameter"
+ #elif PDIAGNOSTIC_AWARE_GCC
+-#pragma GCC diagnostic ignored "-Wunused-parameter"
+ #endif
+ #endif
+ #undef PDIAGNOSTIC_IGNORE_UNUSED_PARAMETER
+@@ -75,10 +75,7 @@
+ #if defined (__cplusplus) && __cplusplus < 201103L
+ #if PDIAGNOSTIC_AWARE_CLANG
+ /* Needed for < C++11 clang C++ static_assert */
+-#pragma clang diagnostic ignored "-Wc11-extensions"
+ /* Needed for empty macro arguments. */
+-#pragma clang diagnostic ignored "-Wc99-extensions"
+ /* Needed for trailing commas. */
+-#pragma clang diagnostic ignored "-Wc++11-extensions"
+ #endif
+ #endif

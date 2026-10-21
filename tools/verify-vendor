@@ -1,0 +1,82 @@
+#!/bin/sh
+# Verify that src/vendor/nanoarrow is the pinned nanoarrow release run
+# through upstream's bundler plus exactly the patch series in tools/patches/,
+# byte for byte, and that src/vendor/PROVENANCE lists those patches and the
+# tree's checksums. Exits non-zero on any difference. Run from the package
+# root.
+#
+#   tools/verify-vendor            the gate
+#   tools/verify-vendor --canary   re-derive with the first patch left out
+#                                  and require verification to FAIL
+set -eu
+
+CANARY=0
+[ "${1:-}" = "--canary" ] && CANARY=1
+
+PROV=src/vendor/PROVENANCE
+[ -f "$PROV" ] || { echo "missing $PROV" >&2; exit 1; }
+
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+FAILURES="$WORK/failures"
+: > "$FAILURES"
+
+if [ "$CANARY" -eq 1 ]; then
+  tools/derive-vendor "$WORK/tree" --skip-first-patch
+else
+  tools/derive-vendor "$WORK/tree"
+fi
+
+# Every file must match, and nothing may be present that the derivation did
+# not produce. Object files are ignored: R builds in place.
+(cd "$WORK/tree" && find . -type f | LC_ALL=C sort) > "$WORK/derived"
+(cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort) > "$WORK/local"
+if ! cmp -s "$WORK/derived" "$WORK/local"; then
+  echo "FAIL: the file list differs from the derivation:" >> "$FAILURES"
+  diff "$WORK/derived" "$WORK/local" >> "$FAILURES" || true
+fi
+while read -r f; do
+  [ -f "src/vendor/nanoarrow/$f" ] || continue
+  cmp -s "$WORK/tree/$f" "src/vendor/nanoarrow/$f" ||
+    echo "FAIL: src/vendor/nanoarrow/${f#./} differs from upstream plus patches" >> "$FAILURES"
+done < "$WORK/derived"
+
+# The patch series must be exactly what PROVENANCE lists, in order.
+awk '/^  Local patches:/ {on = 1; sub(/.*from tools\/patches\//, ""); next}
+     on && /^ +[^ ]+\.patch$/ {print $1; next} on {exit}' "$PROV" > "$WORK/listed"
+(ls tools/patches/*.patch 2>/dev/null || true) | xargs -n1 basename > "$WORK/present"
+cmp -s "$WORK/listed" "$WORK/present" ||
+  echo "FAIL: tools/patches/ does not match the patch list in $PROV" >> "$FAILURES"
+
+# The recorded checksums must be the tree's.
+sed -n 's/^  \([0-9a-f]\{64\}\)  \(.*\)$/\1  \2/p' "$PROV" > "$WORK/recorded"
+(cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |
+  while read -r f; do
+    printf '%s  %s\n' "$(shasum -a 256 "$f" | cut -d' ' -f1)" "${f#./}"
+  done) > "$WORK/actual"
+cmp -s "$WORK/recorded" "$WORK/actual" ||
+  echo "FAIL: the SHA-256 list in $PROV is not the tree's" >> "$FAILURES"
+
+# Apache-2.0 section 4(b): every file a patch modifies says so.
+for p in tools/patches/*.patch; do
+  [ -f "$p" ] || continue
+  sed -n 's#^+++ b/\([^[:space:]]*\).*#\1#p' "$p" | while read -r f; do
+    grep -q "Modified for the zuarrow R package" "src/vendor/nanoarrow/$f" ||
+      echo "FAIL: $f is modified but carries no modification notice" >> "$FAILURES"
+  done
+done
+
+if [ "$CANARY" -eq 1 ]; then
+  if [ -s "$FAILURES" ]; then
+    echo "==> canary OK: verification failed with a patch left out"
+    exit 0
+  fi
+  echo "CANARY FAILED: verification passed with a patch left out" >&2
+  exit 1
+fi
+
+if [ -s "$FAILURES" ]; then
+  cat "$FAILURES" >&2
+  exit 1
+fi
+echo "==> src/vendor/nanoarrow is upstream plus exactly the listed patches"
