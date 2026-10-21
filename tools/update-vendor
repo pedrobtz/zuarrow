@@ -1,0 +1,59 @@
+#!/bin/sh
+# Re-vendor nanoarrow into src/vendor/nanoarrow and rewrite
+# src/vendor/PROVENANCE. Run from the package root, then run
+# tools/verify-vendor. To bump nanoarrow: change TAG and SHA512 in
+# tools/derive-vendor (the digest is the .sha512 file Apache publishes beside
+# the tarball), COMMIT below, refresh or drop each patch in tools/patches/,
+# and run this script.
+set -eu
+
+COMMIT=9fad80292360d0f3978264c11ba865ccc94020d8
+
+tools/derive-vendor src/vendor/nanoarrow
+
+TAG=$(sed -n 's/^TAG=//p' tools/derive-vendor)
+SHA512=$(sed -n 's/^SHA512=//p' tools/derive-vendor)
+PROV=src/vendor/PROVENANCE
+
+{
+  echo "Vendored dependency: Apache Arrow nanoarrow C library, core and ipc"
+  echo
+  echo "  Upstream:      https://github.com/apache/arrow-nanoarrow"
+  echo "  Tag:           $TAG"
+  echo "  Commit:        $COMMIT"
+  echo "  Archive:       https://github.com/apache/arrow-nanoarrow/releases/download/$TAG/$TAG.tar.gz"
+  echo "  SHA-512:       $SHA512"
+  echo "  License:       Apache-2.0 (src/vendor/nanoarrow/LICENSE.txt and"
+  echo "                 NOTICE.txt); the bundled flatcc runtime is also"
+  echo "                 Apache-2.0, copyright Mikkel F. Joergensen, dvide.com"
+  echo "  Local patches: applied in this order, from tools/patches/"
+  for p in tools/patches/*.patch; do
+    [ -f "$p" ] && echo "                 $(basename "$p")"
+  done
+  echo
+  echo "src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py"
+  echo "run on the archive with --symbol-namespace=zuarrow --with-ipc"
+  echo "--with-flatcc, without the C++ .hpp wrappers, plus LICENSE.txt and"
+  echo "NOTICE.txt, with exactly the patches above applied. One layout change:"
+  echo "the bundler pastes ipc/flatcc_generated.h into nanoarrow_ipc.c, and"
+  echo "here it is kept as nanoarrow_ipc_flatcc_generated.h and included, so"
+  echo "clang does not warn about its unused static inline functions. The"
+  echo "upstream lines are unchanged and in the bundler's order. tools/derive-vendor"
+  echo "is the derivation and tools/verify-vendor re-runs it and fails on any"
+  echo "difference."
+  echo
+  echo "Patches:"
+  echo "  0001-no-suppressing-pragmas.patch  removes the '#pragma GCC/clang"
+  echo "      diagnostic ignored' lines from flatcc's pdiagnostic.h, because R"
+  echo "      CMD check reports pragmas that suppress diagnostics."
+  echo "  0002-unused-locals.patch  drops an unused local from one generated"
+  echo "      FlatBuffers macro and marks an assert-only local as read, so -Wall"
+  echo "      reports no unused variable without the pragmas 0001 removes."
+  echo
+  echo "SHA-256 of every vendored file:"
+  (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |
+    while read -r f; do
+      printf '  %s  %s\n' "$(shasum -a 256 "$f" | cut -d' ' -f1)" "${f#./}"
+    done)
+} > "$PROV"
+echo "==> wrote src/vendor/nanoarrow and $PROV"

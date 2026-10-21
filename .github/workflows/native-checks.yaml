@@ -1,0 +1,46 @@
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+
+name: native-checks
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+# `profile` goes to the four workflows it changes: quick skips the asan
+# containers, valgrind and cran-special, and runs gctorture at step 500
+# instead of 20. lto, rchk and analyzers take minutes either way and run on
+# every push.
+jobs:
+  sanitizers:
+    uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@v1
+    with:
+      asan: true
+      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+
+  valgrind:
+    uses: pedrobtz/r-actions/.github/workflows/valgrind.yml@v1
+    with:
+      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+
+  lto:
+    uses: pedrobtz/r-actions/.github/workflows/lto.yml@v1
+
+  gctorture:
+    uses: pedrobtz/r-actions/.github/workflows/gctorture.yml@v1
+    with:
+      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+
+  rchk:
+    uses: pedrobtz/r-actions/.github/workflows/rchk.yml@v1
+
+  analyzers:
+    uses: pedrobtz/r-actions/.github/workflows/analyzers.yml@v1
+
+  cran-special:
+    uses: pedrobtz/r-actions/.github/workflows/cran-special.yml@v1
+    with:
+      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}

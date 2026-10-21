@@ -1,8 +1,15 @@
 Package: zuarrow
 Title: Exact Conversion Between R Vectors and 'Apache Arrow' Columns
 Version: 0.0.0.9000
-Authors@R: 
-    person("Pedro", "Baltazar", , "pedrobtz@gmail.com", role = c("aut", "cre", "cph"))
+Authors@R: c(
+    person("Pedro", "Baltazar", , "pedrobtz@gmail.com",
+           role = c("aut", "cre", "cph")),
+    person("The Apache Software Foundation", role = "cph",
+           comment = "nanoarrow, bundled in src/vendor/nanoarrow"),
+    person("Mikkel F.", "Jørgensen", role = "cph",
+           comment = "flatcc runtime, bundled in src/vendor/nanoarrow"),
+    person("Paul", "Hsieh", role = "cph",
+           comment = "pstdint.h in the bundled flatcc runtime"))
 Description: Moves columns between R and the 'Apache Arrow' columnar
     format: the C data interface in memory and the inter-process
     communication ('IPC') stream and file formats on disk. Every 'Arrow'
@@ -11,9 +18,12 @@ Description: Moves columns between R and the 'Apache Arrow' columnar
     R type that would hold it exactly. A registry lets other packages
     declare which R class is the exact form of which 'Arrow' type. Handles
     share the layout of the 'nanoarrow' package, so objects pass between
-    the two without conversion. The format is specified at
+    the two without conversion. The bundled 'nanoarrow' C library
+    (<https://github.com/apache/arrow-nanoarrow>) needs no system library.
+    The format is specified at
     <https://arrow.apache.org/docs/format/Columnar.html>.
 License: MIT + file LICENSE
+Copyright: file inst/COPYRIGHTS
 URL: https://github.com/pedrobtz/zuarrow,
     https://pedrobtz.github.io/zuarrow/
 BugReports: https://github.com/pedrobtz/zuarrow/issues

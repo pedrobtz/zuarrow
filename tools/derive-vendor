@@ -1,0 +1,83 @@
+#!/bin/sh
+# Derive the vendored nanoarrow tree from the pinned release: download the
+# Apache source tarball, check its SHA-512, run upstream's own bundler with
+# the zuarrow symbol namespace, keep the C files, and apply tools/patches/ in
+# order. Writes the tree to the directory given as $1. Shared by
+# tools/update-vendor and tools/verify-vendor. Run from the package root.
+#
+#   tools/derive-vendor <out-dir> [--skip-first-patch]
+set -eu
+
+OUT=$1
+SKIP_FIRST=0
+[ "${2:-}" = "--skip-first-patch" ] && SKIP_FIRST=1
+
+TAG=apache-arrow-nanoarrow-0.9.0
+URL="https://github.com/apache/arrow-nanoarrow/releases/download/$TAG/$TAG.tar.gz"
+SHA512=2fbdfe3274da9dcba5e3215ba0a7ff66da9f65395d1800841f0dc9a6bbc00b8cc224f900bcb946c91969b3c6e79d132ad5077c9a537f861502c4763dbffb33b8
+
+ROOT=$(pwd)
+WORK=$(mktemp -d)
+trap 'rm -rf "$WORK"' EXIT
+
+# --retry, because this runs on every push in CI. Integrity rests on the
+# SHA-512 comparison, the digest Apache publishes beside the release.
+curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused \
+  -o "$WORK/src.tar.gz" "$URL"
+ACTUAL=$(shasum -a 512 "$WORK/src.tar.gz" | cut -d' ' -f1)
+if [ "$ACTUAL" != "$SHA512" ]; then
+  echo "FAIL: $TAG.tar.gz sha512 mismatch" >&2
+  echo "  expected $SHA512" >&2
+  echo "  actual   $ACTUAL" >&2
+  exit 1
+fi
+tar xzf "$WORK/src.tar.gz" -C "$WORK"
+SRC="$WORK/$TAG"
+
+# Upstream's bundler, as nanoarrow's own R package uses it, with zuarrow as
+# the symbol namespace. -I keeps Python from importing anything from the
+# extracted tree's directories.
+BUNDLE="$WORK/bundle"
+mkdir "$BUNDLE"
+(cd "$SRC" && python3 -I ci/scripts/bundle.py \
+  --symbol-namespace=zuarrow --header-namespace= \
+  --include-output-dir="$BUNDLE" --source-output-dir="$BUNDLE" \
+  --with-ipc --with-flatcc > /dev/null)
+
+# The bundler pastes the generated FlatBuffers header into nanoarrow_ipc.c.
+# Clang warns about every unused static inline function defined in a main
+# source file, which is thousands of them, and R CMD check counts "warning:
+# unused" as significant. Rebuild nanoarrow_ipc.c from the same upstream
+# sources in the same order, but include the generated code as a header,
+# where clang does not warn. No upstream line changes.
+GEN="$SRC/src/nanoarrow/ipc/flatcc_generated.h"
+sed 's#^\#include "nanoarrow/\([^"]*\)"#\#include "\1"#' "$GEN" \
+  > "$BUNDLE/nanoarrow_ipc_flatcc_generated.h"
+{
+  echo '#include "nanoarrow_ipc_flatcc_generated.h"'
+  for f in codecs decoder encoder reader writer; do
+    cat "$SRC/src/nanoarrow/ipc/$f.c"
+  done
+} | sed -e '/^#include "nanoarrow\/ipc\/flatcc_generated.h"$/d' \
+  -e 's#^\#include "nanoarrow/\([^"]*\)"#\#include "\1"#' \
+  > "$BUNDLE/nanoarrow_ipc.c"
+
+# C only: the .hpp wrappers stay out of zuarrow.so (D18).
+rm -f "$BUNDLE"/*.hpp
+cp "$SRC/LICENSE.txt" "$SRC/NOTICE.txt" "$BUNDLE/"
+
+first=1
+for p in "$ROOT"/tools/patches/*.patch; do
+  [ -f "$p" ] || continue
+  if [ "$SKIP_FIRST" -eq 1 ] && [ "$first" -eq 1 ]; then
+    first=0
+    continue
+  fi
+  first=0
+  patch -s -p1 -d "$BUNDLE" < "$p"
+done
+find "$BUNDLE" \( -name '*.orig' -o -name '*.rej' \) -delete
+
+rm -rf "$OUT"
+mkdir -p "$(dirname "$OUT")"
+cp -R "$BUNDLE" "$OUT"

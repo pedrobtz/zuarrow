@@ -1,0 +1,25 @@
+The zuarrow package bundles the Apache Arrow nanoarrow C library and the
+flatcc runtime it ships with. zuarrow is distributed under the MIT license.
+nanoarrow and flatcc are distributed under the Apache License, Version 2.0,
+except three flatcc portable headers under the MIT license and one under a
+three-clause BSD license. The licences apply to their respective files; the
+package as a whole is not MIT-licensed. inst/COPYRIGHTS lists each file and
+its notice.
+
+
+zuarrow
+=======
+
+Copyright (c) 2026 Pedro Baltazar
+
+Covers everything in the package except src/vendor/. Full text in
+LICENSE.md in the source repository; CRAN's YEAR/COPYRIGHT HOLDER form is
+in LICENSE.
+
+
+nanoarrow and flatcc
+====================
+
+Bundled in src/vendor/nanoarrow/. Apache License, Version 2.0; the full text
+is src/vendor/nanoarrow/LICENSE.txt and upstream's NOTICE is
+src/vendor/nanoarrow/NOTICE.txt.

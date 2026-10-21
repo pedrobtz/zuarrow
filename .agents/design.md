@@ -296,7 +296,7 @@ symbol beginning `zar_` or `ZAR_`.
 
 Five layers, the first vendored:
 
-1. **nanoarrow** (`src/nanoarrow/`, §7). The C Data Interface helpers
+1. **nanoarrow** (`src/vendor/nanoarrow/`, §7). The C Data Interface helpers
    (`ArrowSchemaInit*`, `ArrowArrayView*`, the validation routines) and
    the IPC decoder and encoder with its generated FlatBuffers header.
    Compiled with `NANOARROW_NAMESPACE` set to `zuarrow` so its symbols
@@ -701,8 +701,8 @@ Four things the C library has and the nanoarrow binding does not reach:
 
 | Component | Version | Licence | Where |
 | --- | --- | --- | --- |
-| nanoarrow core (`common/`) | 0.9.0 | Apache-2.0 | `src/nanoarrow/` |
-| nanoarrow ipc (`ipc/`) | 0.9.0 | Apache-2.0 | `src/nanoarrow/ipc/` |
+| nanoarrow core (`common/`) | 0.9.0 | Apache-2.0 | `src/vendor/nanoarrow/` |
+| nanoarrow ipc (`ipc/`) | 0.9.0 | Apache-2.0 | `src/vendor/nanoarrow/` |
 | nanoarrow testing header | 0.9.0 | Apache-2.0 | `tests/` harness only |
 
 Sizes at the pinned tag: the core is about 290 KB of C and inline
@@ -713,6 +713,15 @@ for the Arrow integration JSON format; it is compiled into the test
 harness under `tests/` and never into `zuarrow.so`, so the package's
 compiled code stays C (D18). lz4 and zstd are not vendored: they come
 from `zukomp` (D2).
+
+Stage 1 (2026-10-21) put the tree under `src/vendor/nanoarrow/`, the
+family's vendor path, rather than `src/nanoarrow/`. It is the output of
+upstream's own `ci/scripts/bundle.py` with `--symbol-namespace=zuarrow`, as
+nanoarrow's R package vendors it: `nanoarrow.c`, `nanoarrow_ipc.c`,
+`flatcc.c` and their headers. The generated FlatBuffers code is kept as
+its own header so clang does not warn about its unused inline functions,
+and two patches replace flatcc's diagnostic-suppressing pragmas.
+`src/vendor/PROVENANCE` records the details.
 
 Not vendored: nanoarrow's `device/` and `integration/` directories, the
 rest of `hpp/`, and flatcc's runtime beyond the pieces the generated
