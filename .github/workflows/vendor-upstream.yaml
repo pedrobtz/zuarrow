@@ -1,0 +1,19 @@
+on:
+  schedule:
+    # Weekly. A new upstream release is not urgent.
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+name: vendor-upstream
+
+jobs:
+  upstream:
+    uses: pedrobtz/r-actions/.github/workflows/vendor-upstream.yml@v1
+    permissions:
+      contents: read
+      issues: write
+    with:
+      upstream-repo: apache/arrow-nanoarrow
+      current-version: sed -n 's/^TAG=//p' tools/derive-vendor
+      # Releases only, not the release-candidate tags.
+      tag-pattern: '^apache-arrow-nanoarrow-[0-9]+\.[0-9]+\.[0-9]+$'

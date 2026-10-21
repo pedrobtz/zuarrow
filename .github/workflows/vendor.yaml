@@ -1,0 +1,24 @@
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+
+name: vendor
+
+permissions: read-all
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+# Re-derives src/vendor/nanoarrow from the pinned release and the patch
+# series, and on pull requests fails when the vendored files change without
+# src/vendor/PROVENANCE changing too.
+jobs:
+  vendor:
+    uses: pedrobtz/r-actions/.github/workflows/vendor.yml@v1
+    with:
+      vendor-dir: src/vendor
+      verify: tools/verify-vendor
+      must-update: |
+        src/vendor/PROVENANCE
