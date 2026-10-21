@@ -1,3 +1,9 @@
+/*
+ * Modified for the zuarrow R package: dictionary batches with compressed
+ * bodies are decompressed (tools/patches/0003-dictionary-compression.patch),
+ * and the reader decodes the binary-view, string-view, list-view and
+ * run-end-encoded layouts (tools/patches/0004-ipc-views-and-ree.patch).
+ */
 #include "nanoarrow_ipc_flatcc_generated.h"
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
@@ -252,6 +258,9 @@ struct ArrowIpcField {
   // Dictionary identifier (or NANOARROW_IPC_NO_DICTIONARY_ID if this is not a
   // dictionary-encoded field)
   int64_t dictionary_id;
+  // The number of binary-view and string-view nodes preceding this node, which
+  // indexes RecordBatch.variadicBufferCounts.
+  int64_t view_index;
 };
 
 // Internal data specific to the read/decode process
@@ -287,6 +296,8 @@ struct ArrowIpcDecoderPrivate {
   struct ArrowIpcFooter footer;
   // Decompressor for compression support
   struct ArrowIpcDecompressor decompressor;
+  // The number of binary-view and string-view nodes in the schema
+  int64_t n_view_fields;
 };
 
 ArrowErrorCode ArrowIpcCheckRuntime(struct ArrowError* error) {
@@ -1321,15 +1332,13 @@ static int ArrowIpcDecoderSetType(struct ArrowSchema* schema, ns(Field_table_t) 
       return ArrowIpcDecoderSetTypeFixedSizeBinary(schema, ns(Field_type_get(field)),
                                                    error);
     case ns(Type_BinaryView):
-      ArrowErrorSet(error, "BinaryView not yet supported in IPC reader");
-      return ENOTSUP;
+      return ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_BINARY_VIEW, error);
     case ns(Type_Utf8):
       return ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_STRING, error);
     case ns(Type_LargeUtf8):
       return ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_LARGE_STRING, error);
     case ns(Type_Utf8View):
-      ArrowErrorSet(error, "Utf8View not yet supported in IPC reader");
-      return ENOTSUP;
+      return ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_STRING_VIEW, error);
     case ns(Type_Date):
       return ArrowIpcDecoderSetTypeDate(schema, ns(Field_type_get(field)), error);
     case ns(Type_Time):
@@ -1350,17 +1359,16 @@ static int ArrowIpcDecoderSetType(struct ArrowSchema* schema, ns(Field_table_t) 
       return ArrowIpcDecoderSetTypeFixedSizeList(schema, ns(Field_type_get(field)),
                                                  error);
     case ns(Type_ListView):
+      return ArrowIpcDecoderSetTypeSimpleNested(schema, "+vl", error);
     case ns(Type_LargeListView):
-      ArrowErrorSet(error, "ListView/LargeListView not yet supported in IPC reader");
-      return ENOTSUP;
+      return ArrowIpcDecoderSetTypeSimpleNested(schema, "+vL", error);
     case ns(Type_Map):
       return ArrowIpcDecoderSetTypeMap(schema, ns(Field_type_get(field)), error);
     case ns(Type_Union):
       return ArrowIpcDecoderSetTypeUnion(schema, ns(Field_type_get(field)), n_children,
                                          error);
     case ns(Type_RunEndEncoded):
-      ArrowErrorSet(error, "RunEndEncoded not yet supported in IPC reader");
-      return ENOTSUP;
+      return ArrowIpcDecoderSetTypeSimpleNested(schema, "+r", error);
     default:
       ArrowErrorSet(error, "Unrecognized Field type with value %d", type_type);
       return EINVAL;
@@ -1581,6 +1589,32 @@ static int ArrowIpcDecoderDecodeRecordBatchHeader(struct ArrowIpcDecoder* decode
   }
 
   int64_t n_expected_buffers = private_data->n_buffers;
+
+  // Each binary-view or string-view node adds the variadic data buffers its
+  // entry in variadicBufferCounts names.
+  if (ns(RecordBatch_variadicBufferCounts_is_present(batch))) {
+    flatbuffers_int64_vec_t counts = ns(RecordBatch_variadicBufferCounts(batch));
+    int64_t n_counts = (int64_t)flatbuffers_int64_vec_len(counts);
+    if (n_counts != private_data->n_view_fields) {
+      ArrowErrorSet(error,
+                    "Expected %" PRId64 " variadic buffer counts in message but found %" PRId64,
+                    private_data->n_view_fields, n_counts);
+      return EINVAL;
+    }
+    for (int64_t i = 0; i < n_counts; i++) {
+      int64_t count = flatbuffers_int64_vec_at(counts, (size_t)i);
+      if (count < 0 || count > n_buffers) {
+        ArrowErrorSet(error, "Invalid variadic buffer count %" PRId64, count);
+        return EINVAL;
+      }
+      n_expected_buffers += count;
+    }
+  } else if (private_data->n_view_fields > 0) {
+    ArrowErrorSet(error, "Expected variadic buffer counts for %" PRId64 " view fields",
+                  private_data->n_view_fields);
+    return EINVAL;
+  }
+
   if (decoder->metadata_version < NANOARROW_IPC_METADATA_VERSION_V5) {
     // Unions had null buffers before arrow 1.0, so expect one extra buffer per union
     // field
@@ -2022,12 +2056,16 @@ static ArrowErrorCode ArrowIpcDecoderInitFields(
     struct ArrowIpcField* fields, const struct ArrowSchema* schema,
     const struct ArrowIpcDictionaryEncodings* dictionary_encodings,
     struct ArrowArrayView* array_view, struct ArrowArray* array, int64_t* n_fields,
-    int64_t* n_buffers, int64_t* n_union_fields, struct ArrowError* error) {
+    int64_t* n_buffers, int64_t* n_union_fields, int64_t* n_view_fields,
+    struct ArrowError* error) {
   struct ArrowIpcField* field = fields + (*n_fields);
   field->array_view = array_view;
   field->array = array;
   field->buffer_offset = *n_buffers;
   field->dictionary_id = NANOARROW_IPC_NO_DICTIONARY_ID;
+  field->view_index = *n_view_fields;
+  *n_view_fields += array_view->storage_type == NANOARROW_TYPE_BINARY_VIEW ||
+                    array_view->storage_type == NANOARROW_TYPE_STRING_VIEW;
 
   if (schema->dictionary != NULL) {
     if (dictionary_encodings == NULL) {
@@ -2069,7 +2107,7 @@ static ArrowErrorCode ArrowIpcDecoderInitFields(
   for (int64_t i = 0; i < array_view->n_children; i++) {
     NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderInitFields(
         fields, schema->children[i], dictionary_encodings, array_view->children[i],
-        array->children[i], n_fields, n_buffers, n_union_fields, error));
+        array->children[i], n_fields, n_buffers, n_union_fields, n_view_fields, error));
   }
 
   return NANOARROW_OK;
@@ -2086,6 +2124,7 @@ ArrowErrorCode ArrowIpcDecoderSetSchemaWithDictionaries(
   private_data->n_buffers = 0;
   private_data->n_fields = 0;
   private_data->n_union_fields = 0;
+  private_data->n_view_fields = 0;
   ArrowArrayViewReset(&private_data->array_view);
   if (private_data->array.release != NULL) {
     ArrowArrayRelease(&private_data->array);
@@ -2122,7 +2161,7 @@ ArrowErrorCode ArrowIpcDecoderSetSchemaWithDictionaries(
   NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderInitFields(
       private_data->fields, schema, dictionary_encodings, &private_data->array_view,
       &private_data->array, &field_i, &private_data->n_buffers,
-      &private_data->n_union_fields, error));
+      &private_data->n_union_fields, &private_data->n_view_fields, error));
 
   return NANOARROW_OK;
 }
@@ -2467,6 +2506,9 @@ struct ArrowIpcArraySetter {
   struct ArrowIpcBufferFactory factory;
   enum ArrowIpcMetadataVersion version;
   struct ArrowIpcDictionaries* dictionaries;
+  // RecordBatch.variadicBufferCounts (NULL when absent) and the next entry
+  flatbuffers_int64_vec_t variadic_counts;
+  int64_t variadic_i;
 };
 
 static int ArrowIpcDecoderMakeBuffer(struct ArrowIpcArraySetter* setter, int64_t offset,
@@ -2503,14 +2545,35 @@ static int ArrowIpcDecoderMakeBuffer(struct ArrowIpcArraySetter* setter, int64_t
   return NANOARROW_OK;
 }
 
+static int ArrowIpcIsViewType(enum ArrowType type) {
+  return type == NANOARROW_TYPE_BINARY_VIEW || type == NANOARROW_TYPE_STRING_VIEW;
+}
+
 static int ArrowIpcDecoderWalkGetArray(struct ArrowArrayView* array_view,
                                        struct ArrowArray* array, struct ArrowArray* out,
                                        struct ArrowError* error) {
   out->length = array_view->length;
   out->null_count = array_view->null_count;
 
-  for (int64_t i = 0; i < array->n_buffers; i++) {
-    struct ArrowBufferView view = array_view->buffer_views[i];
+  // A view node's variadic buffers and sizes come after its fixed buffers.
+  int is_view = ArrowIpcIsViewType(array_view->storage_type);
+  int64_t n_fixed = is_view ? NANOARROW_BINARY_VIEW_FIXED_BUFFERS : array->n_buffers;
+  if (is_view && array_view->n_variadic_buffers > ArrowArrayVariadicBufferCount(out)) {
+    NANOARROW_RETURN_NOT_OK_WITH_ERROR(
+        ArrowArrayAddVariadicBuffers(out, array_view->n_variadic_buffers -
+                                              ArrowArrayVariadicBufferCount(out)),
+        error);
+  }
+
+  for (int64_t i = 0; i < n_fixed + (is_view ? array_view->n_variadic_buffers : 0);
+       i++) {
+    struct ArrowBufferView view;
+    if (i < n_fixed) {
+      view = array_view->buffer_views[i];
+    } else {
+      view.data.data = array_view->variadic_buffers[i - n_fixed];
+      view.size_bytes = array_view->variadic_buffer_sizes[i - n_fixed];
+    }
     struct ArrowBuffer* scratch_buffer = ArrowArrayBuffer(array, i);
     struct ArrowBuffer* buffer_out = ArrowArrayBuffer(out, i);
 
@@ -2542,6 +2605,56 @@ static int ArrowIpcDecoderWalkGetArray(struct ArrowArrayView* array_view,
     ArrowArrayMove(array->dictionary, out->dictionary);
   }
 
+  return NANOARROW_OK;
+}
+
+// Reads the variadic data buffers of a binary-view or string-view node into the
+// scratch array and points the array view at them.
+static int ArrowIpcDecoderWalkSetVariadic(struct ArrowIpcArraySetter* setter,
+                                          struct ArrowArrayView* array_view,
+                                          struct ArrowArray* array,
+                                          struct ArrowError* error) {
+  int64_t n = 0;
+  if (setter->variadic_counts != NULL) {
+    n = flatbuffers_int64_vec_at(setter->variadic_counts, (size_t)setter->variadic_i);
+  }
+  setter->variadic_i += 1;
+
+  int32_t have = ArrowArrayVariadicBufferCount(array);
+  if (have < n) {
+    NANOARROW_RETURN_NOT_OK_WITH_ERROR(
+        ArrowArrayAddVariadicBuffers(array, (int32_t)(n - have)), error);
+  }
+  struct ArrowArrayPrivateData* array_private =
+      (struct ArrowArrayPrivateData*)array->private_data;
+  struct ArrowBuffer* sizes = ArrowArrayBuffer(array, array->n_buffers - 1);
+  NANOARROW_RETURN_NOT_OK_WITH_ERROR(
+      ArrowBufferResize(sizes, (n > 0 ? n : 1) * (int64_t)sizeof(int64_t), 0), error);
+
+  for (int64_t k = 0; k < n; k++) {
+    ns(Buffer_struct_t) buffer =
+        ns(Buffer_vec_at(setter->buffers, (size_t)setter->buffer_i));
+    setter->buffer_i += 1;
+    struct ArrowBuffer* buffer_dst = ArrowArrayBuffer(array, 2 + k);
+    if (buffer_dst->allocator.private_data != NULL) {
+      ArrowBufferReset(buffer_dst);
+    } else {
+      buffer_dst->size_bytes = 0;
+    }
+    setter->src.data_type = NANOARROW_TYPE_UINT8;
+    setter->src.element_size_bits = 8;
+    struct ArrowBufferView view;
+    NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderMakeBuffer(setter, ns(Buffer_offset(buffer)),
+                                                      ns(Buffer_length(buffer)), &view,
+                                                      buffer_dst, error));
+    array_private->buffer_data[NANOARROW_BINARY_VIEW_FIXED_BUFFERS + k] = view.data.data;
+    ((int64_t*)sizes->data)[k] = view.size_bytes;
+  }
+
+  array_view->n_variadic_buffers = (int32_t)n;
+  array_view->variadic_buffers =
+      array_private->buffer_data + NANOARROW_BINARY_VIEW_FIXED_BUFFERS;
+  array_view->variadic_buffer_sizes = (int64_t*)sizes->data;
   return NANOARROW_OK;
 }
 
@@ -2647,6 +2760,11 @@ static int ArrowIpcDecoderWalkSetArrayView(struct ArrowIpcDecoder* decoder,
                                   &array_view->buffer_views[i], buffer_dst, error));
   }
 
+  if (ArrowIpcIsViewType(array_view->storage_type)) {
+    NANOARROW_RETURN_NOT_OK(
+        ArrowIpcDecoderWalkSetVariadic(setter, array_view, array, error));
+  }
+
   for (int64_t i = 0; i < array_view->n_children; i++) {
     NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderWalkSetArrayView(
         decoder, setter, array_view->children[i], array->children[i], error));
@@ -2725,6 +2843,14 @@ static ArrowErrorCode ArrowIpcDecoderDecodeArrayViewInternal(
   setter.src.swap_endian = ArrowIpcDecoderNeedsSwapEndian(decoder);
   setter.version = decoder->metadata_version;
   setter.dictionaries = dictionaries;
+  setter.variadic_counts = ns(RecordBatch_variadicBufferCounts_is_present(batch))
+                               ? ns(RecordBatch_variadicBufferCounts(batch))
+                               : NULL;
+  setter.variadic_i = root->view_index;
+  // The variadic buffers of the view nodes before the root precede its buffers.
+  for (int64_t i = 0; setter.variadic_counts != NULL && i < root->view_index; i++) {
+    setter.buffer_i += flatbuffers_int64_vec_at(setter.variadic_counts, (size_t)i);
+  }
 
   // If we are going to need a decompressor here, ensure the default one is
   // initialized.
@@ -2861,6 +2987,12 @@ ArrowErrorCode ArrowIpcDecoderDecodeArrayFromShared(
                                                               validation_level, error);
 }
 
+// The release callback of a decompressor borrowed from another decoder: the
+// owner releases it.
+static void ArrowIpcDecompressorReleaseBorrowed(struct ArrowIpcDecompressor* decompressor) {
+  decompressor->release = NULL;
+}
+
 static ArrowErrorCode ArrowIpcDecoderDecodeDictionaryInternal(
     struct ArrowIpcDecoder* decoder, struct ArrowIpcBufferFactory factory,
     enum ArrowValidationLevel validation_level, struct ArrowIpcDictionaries* dictionaries,
@@ -2893,6 +3025,36 @@ static ArrowErrorCode ArrowIpcDecoderDecodeDictionaryInternal(
       (struct ArrowIpcDecoderPrivate*)dictionary->decoder.private_data;
   dictionary->decoder.message_type = NANOARROW_IPC_MESSAGE_TYPE_RECORD_BATCH;
   dictionary_decoder_private_data->last_message = record_batch;
+
+  // A DictionaryBatch's data is a RecordBatch and may be compressed like one:
+  // give the dictionary's decoder its codec and a borrowed reference to this
+  // decoder's decompressor, which it would otherwise never see.
+  dictionary->decoder.codec = NANOARROW_IPC_COMPRESSION_TYPE_NONE;
+  if (ns(RecordBatch_compression_is_present(record_batch))) {
+    ns(BodyCompression_table_t) compression = ns(RecordBatch_compression(record_batch));
+    switch (ns(BodyCompression_codec(compression))) {
+      case ns(CompressionType_LZ4_FRAME):
+        dictionary->decoder.codec = NANOARROW_IPC_COMPRESSION_TYPE_LZ4_FRAME;
+        break;
+      case ns(CompressionType_ZSTD):
+        dictionary->decoder.codec = NANOARROW_IPC_COMPRESSION_TYPE_ZSTD;
+        break;
+      default:
+        ArrowErrorSet(error, "Unrecognized DictionaryBatch BodyCompression codec value: %d",
+                      (int)ns(BodyCompression_codec(compression)));
+        return EINVAL;
+    }
+    NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderInitDecompressor(private_data));
+    if (dictionary_decoder_private_data->decompressor.release != NULL &&
+        dictionary_decoder_private_data->decompressor.release !=
+            &ArrowIpcDecompressorReleaseBorrowed) {
+      dictionary_decoder_private_data->decompressor.release(
+          &dictionary_decoder_private_data->decompressor);
+    }
+    dictionary_decoder_private_data->decompressor = private_data->decompressor;
+    dictionary_decoder_private_data->decompressor.release =
+        &ArrowIpcDecompressorReleaseBorrowed;
+  }
   // Transfer the endianness setting so that buffers are byte-swapped if needed
   dictionary_decoder_private_data->endianness = private_data->endianness;
 

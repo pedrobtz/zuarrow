@@ -21,6 +21,8 @@ SEXP zar_c_stream_from_arrays(SEXP schema, SEXP arrays);
 SEXP zar_c_array_info(SEXP x);
 SEXP zar_c_stream_next(SEXP x);
 SEXP zar_c_array_child(SEXP x, SEXP k);
+SEXP zar_c_reader_open(SEXP source, SEXP limits);
+SEXP zar_c_reader_select(SEXP stream, SEXP columns);
 SEXP zar_c_to_r(SEXP arrays, SEXP schema, SEXP opts);
 SEXP zar_c_from_r(SEXP x, SEXP schema, SEXP start, SEXP n, SEXP utf8_limit);
 
@@ -45,6 +47,8 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_array_info, 1),
     ZAR_CALL(zar_c_stream_next, 1),
     ZAR_CALL(zar_c_array_child, 2),
+    ZAR_CALL(zar_c_reader_open, 2),
+    ZAR_CALL(zar_c_reader_select, 2),
     ZAR_CALL(zar_c_to_r, 3),
     ZAR_CALL(zar_c_from_r, 5),
     {NULL, NULL, 0}};

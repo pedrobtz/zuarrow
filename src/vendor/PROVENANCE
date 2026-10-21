@@ -11,6 +11,8 @@ Vendored dependency: Apache Arrow nanoarrow C library, core and ipc
   Local patches: applied in this order, from tools/patches/
                  0001-no-suppressing-pragmas.patch
                  0002-unused-locals.patch
+                 0003-dictionary-compression.patch
+                 0004-ipc-views-and-ree.patch
 
 src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py
 run on the archive with --symbol-namespace=zuarrow --with-ipc
@@ -30,6 +32,16 @@ Patches:
   0002-unused-locals.patch  drops an unused local from one generated
       FlatBuffers macro and marks an assert-only local as read, so -Wall
       reports no unused variable without the pragmas 0001 removes.
+  0003-dictionary-compression.patch  gives a DictionaryBatch's decoder the
+      body's codec and the caller's decompressor, so a compressed
+      dictionary is decompressed rather than read as raw bytes. To be
+      offered upstream (pedrobtz/zuarrow#17).
+  0004-ipc-views-and-ree.patch  lets the IPC reader decode the
+      binary-view, string-view, list-view, large-list-view and
+      run-end-encoded layouts (design D17; nanoarrow #833, #824): their
+      schema types, and the variadic data buffers RecordBatch.
+      variadicBufferCounts names for each view node. To be offered
+      upstream.
 
 SHA-256 of every vendored file:
   abdc436530c715318d843424f4f9b7b817f80f592678526942c2070ace3cba71  LICENSE.txt
@@ -72,6 +84,6 @@ SHA-256 of every vendored file:
   17cfa18dbb6f81adb0006a9c7adf2776093f54fc760a89112e619ce796b67aa6  flatcc/portable/pwarnings.h
   ef3c5001fc2c22b28cf018e79ffc9fbcfd4cc810b667664adce9d430ee066c06  nanoarrow.c
   222837c5aa58c3703606a64f5209312459e8ca350cfdffc16766e0074fa3856e  nanoarrow.h
-  61c9f99f351848b81e99f8be8c949359a6f316ed4b24b560ed7a3657c4e9106a  nanoarrow_ipc.c
+  7439d1d90434322d7e7943267510b1a13aa0f68341d065ea79d21c91242122df  nanoarrow_ipc.c
   7dde3d9779aa92ad7ae018e2288b8ba8d018bfc6dac1f800180ca4bb1bb8c2c4  nanoarrow_ipc.h
   aac2319a8fb8b382e40a10304ac4ed32f772b9ee469e0a083c26d7d76e8ebae0  nanoarrow_ipc_flatcc_generated.h

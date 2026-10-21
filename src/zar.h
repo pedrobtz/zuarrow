@@ -64,4 +64,8 @@ int zar_parse_date(const char *s, int64_t *days);
 int zar_parse_instant(const char *s, int digits, int utc, int64_t *out);
 int zar_parse_time(const char *s, int digits, int64_t *out);
 
+/* The condition kind of a reader stream's last failure, or NULL when the
+   stream is not one arrow_read() made (src/zar_ipc_read.c). */
+const char *zar_reader_kind(const struct ArrowArrayStream *stream);
+
 #endif /* ZAR_H */

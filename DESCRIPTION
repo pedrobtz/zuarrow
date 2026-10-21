@@ -29,10 +29,16 @@ URL: https://github.com/pedrobtz/zuarrow,
 BugReports: https://github.com/pedrobtz/zuarrow/issues
 Depends: 
     R (>= 4.1)
+Imports: 
+    zukomp
 Suggests: 
     nanoarrow,
     testthat (>= 3.0.0),
     withr
+LinkingTo: 
+    zukomp
+Remotes: 
+    pedrobtz/zukomp@codecs-zstd-lz4
 Config/testthat/edition: 3
 Encoding: UTF-8
 Language: en-GB

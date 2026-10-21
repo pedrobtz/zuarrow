@@ -49,6 +49,16 @@ PROV=src/vendor/PROVENANCE
   echo "  0002-unused-locals.patch  drops an unused local from one generated"
   echo "      FlatBuffers macro and marks an assert-only local as read, so -Wall"
   echo "      reports no unused variable without the pragmas 0001 removes."
+  echo "  0003-dictionary-compression.patch  gives a DictionaryBatch's decoder the"
+  echo "      body's codec and the caller's decompressor, so a compressed"
+  echo "      dictionary is decompressed rather than read as raw bytes. To be"
+  echo "      offered upstream (pedrobtz/zuarrow#17)."
+  echo "  0004-ipc-views-and-ree.patch  lets the IPC reader decode the"
+  echo "      binary-view, string-view, list-view, large-list-view and"
+  echo "      run-end-encoded layouts (design D17; nanoarrow #833, #824): their"
+  echo "      schema types, and the variadic data buffers RecordBatch."
+  echo "      variadicBufferCounts names for each view node. To be offered"
+  echo "      upstream."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |
