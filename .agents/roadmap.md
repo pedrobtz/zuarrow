@@ -34,7 +34,7 @@ Two dependencies outside this repository shape the plan:
 | 2 | [Handles and schema tools](#stage-2--handles-and-schema-tools) | full | [#4](https://github.com/pedrobtz/zuarrow/issues/4) | [#16](https://github.com/pedrobtz/zuarrow/pull/16) | 2026-10-21 |
 | 3 | [Type table and conversion](#stage-3--type-table-and-conversion) | quick | [#5](https://github.com/pedrobtz/zuarrow/issues/5) | [#18](https://github.com/pedrobtz/zuarrow/pull/18) | 2026-10-21 |
 | 4 | [Nested types, dictionaries, extensions and the registry](#stage-4--nested-types-dictionaries-extensions-and-the-registry) | quick | [#6](https://github.com/pedrobtz/zuarrow/issues/6) | [#19](https://github.com/pedrobtz/zuarrow/pull/19) | 2026-10-21 |
-| 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | | |
+| 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | [#20](https://github.com/pedrobtz/zuarrow/pull/20) | 2026-10-21 |
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | | |
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | | |
 | 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | | |
