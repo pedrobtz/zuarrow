@@ -1,12 +1,45 @@
-#define R_NO_REMAP
-#include <R.h>
-#include <Rinternals.h>
 #include <R_ext/Rdynload.h>
 #include <R_ext/Visibility.h>
 
+#include "zar.h"
+
+SEXP zar_c_handle_status(SEXP x);
+SEXP zar_c_schema_copy(SEXP x);
+SEXP zar_c_schema_format(SEXP x, SEXP recursive);
+SEXP zar_c_schema_from_spec(SEXP spec);
+SEXP zar_c_schema_to_spec(SEXP x);
+SEXP zar_c_schema_metadata(SEXP x);
+SEXP zar_c_schema_with_metadata(SEXP x, SEXP metadata);
+SEXP zar_c_nanoarrow_version(void);
+SEXP zar_c_array_validate(SEXP x, SEXP level);
+SEXP zar_c_stream_validate(SEXP x, SEXP level);
+SEXP zar_c_schema_equal(SEXP x, SEXP y, SEXP metadata);
+SEXP zar_c_array_equal(SEXP x, SEXP y, SEXP metadata);
+SEXP zar_c_stream_equal(SEXP x, SEXP y, SEXP metadata);
+SEXP zar_c_array_from_buffers(SEXP schema, SEXP spec);
+SEXP zar_c_stream_from_arrays(SEXP schema, SEXP arrays);
+SEXP zar_c_array_info(SEXP x);
+
+#define ZAR_CALL(name, n) {#name, (DL_FUNC)&name, n}
+
 static const R_CallMethodDef zar_call_methods[] = {
-  {NULL, NULL, 0}
-};
+    ZAR_CALL(zar_c_handle_status, 1),
+    ZAR_CALL(zar_c_schema_copy, 1),
+    ZAR_CALL(zar_c_schema_format, 2),
+    ZAR_CALL(zar_c_schema_from_spec, 1),
+    ZAR_CALL(zar_c_schema_to_spec, 1),
+    ZAR_CALL(zar_c_schema_metadata, 1),
+    ZAR_CALL(zar_c_schema_with_metadata, 2),
+    ZAR_CALL(zar_c_nanoarrow_version, 0),
+    ZAR_CALL(zar_c_array_validate, 2),
+    ZAR_CALL(zar_c_stream_validate, 2),
+    ZAR_CALL(zar_c_schema_equal, 3),
+    ZAR_CALL(zar_c_array_equal, 3),
+    ZAR_CALL(zar_c_stream_equal, 3),
+    ZAR_CALL(zar_c_array_from_buffers, 2),
+    ZAR_CALL(zar_c_stream_from_arrays, 2),
+    ZAR_CALL(zar_c_array_info, 1),
+    {NULL, NULL, 0}};
 
 void attribute_visible R_init_zuarrow(DllInfo *dll) {
   R_registerRoutines(dll, NULL, zar_call_methods, NULL, NULL);

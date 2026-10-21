@@ -15,4 +15,6 @@ VENDOR_OBJECTS = vendor/nanoarrow/nanoarrow.o \
   vendor/nanoarrow/nanoarrow_ipc.o \
   vendor/nanoarrow/flatcc.o
 
-OBJECTS = zuarrow.o $(VENDOR_OBJECTS)
+ZAR_OBJECTS = zuarrow.o zar_xptr.o zar_validate.o zar_build.o zar_utf8.o
+
+OBJECTS = $(ZAR_OBJECTS) $(VENDOR_OBJECTS)

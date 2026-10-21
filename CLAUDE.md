@@ -105,11 +105,27 @@ lands.
 
 ## Architecture
 
-To be written as stages land; see `.agents/design.md` §4 for the five
-planned layers (vendored nanoarrow, handles, conversion kernels, IPC,
-registry and R surface). The scaffold set up C via `usethis::use_c()`:
-`src/zuarrow.c` and `@useDynLib zuarrow, .registration = TRUE` in
-`R/zuarrow-package.R`.
+Design §4 names five layers. What exists so far:
+
+- **Vendored nanoarrow** in `src/vendor/nanoarrow/` (see Vendored native
+  code).
+- **Handles** in `src/zar_xptr.c`: owning external pointers in nanoarrow's
+  `r.h` layout, readers that accept any producer's handles, the schema
+  copy, printing, metadata, and the *spec* round trip. A spec is the R
+  list `list(format, name, flags, metadata, children, dictionary)` that
+  `R/handles.R` builds schemas from (`zar_c_schema_from_spec`) and reads
+  them back into (`zar_c_schema_to_spec`).
+- **Validation and comparison** in `src/zar_validate.c`, plus a strict
+  UTF-8 pass in `src/zar_utf8.c`, which nanoarrow's full level lacks.
+- **Internal constructors** in `src/zar_build.c`: arrays from raw buffers,
+  built without validation so tests can make malformed arrays, and a
+  stream over arrays. Tests reach them through `helper-arrays.R`.
+
+**C never raises a condition.** An entry point that fails frees what it
+owns and returns a `zar_failure`, `list(kind, message)`. The R caller
+wraps every `.Call()` in `zar_check()`, which raises
+`zuarrow_<kind>_error`. Write the `.Call()` literally at the call site:
+R CMD check cannot see the registered routine through a variable.
 
 ## Invariants that are easy to break
 

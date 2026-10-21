@@ -31,7 +31,7 @@ Two dependencies outside this repository shape the plan:
 | --- | --- | --- | --- | --- | --- |
 | 0 | [Package identity](#stage-0--package-identity) | quick | [#2](https://github.com/pedrobtz/zuarrow/issues/2) | [#14](https://github.com/pedrobtz/zuarrow/pull/14) | 2026-10-21 |
 | 1 | [Vendored nanoarrow](#stage-1--vendored-nanoarrow) | full | [#3](https://github.com/pedrobtz/zuarrow/issues/3) | [#15](https://github.com/pedrobtz/zuarrow/pull/15) | 2026-10-21 |
-| 2 | [Handles and schema tools](#stage-2--handles-and-schema-tools) | full | [#4](https://github.com/pedrobtz/zuarrow/issues/4) | | |
+| 2 | [Handles and schema tools](#stage-2--handles-and-schema-tools) | full | [#4](https://github.com/pedrobtz/zuarrow/issues/4) | [#16](https://github.com/pedrobtz/zuarrow/pull/16) | 2026-10-21 |
 | 3 | [Type table and conversion](#stage-3--type-table-and-conversion) | quick | [#5](https://github.com/pedrobtz/zuarrow/issues/5) | | |
 | 4 | [Nested types, dictionaries, extensions and the registry](#stage-4--nested-types-dictionaries-extensions-and-the-registry) | quick | [#6](https://github.com/pedrobtz/zuarrow/issues/6) | | |
 | 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | | |
