@@ -484,9 +484,8 @@ From design §14, in the order it expects them:
 Design §15's questions, with the stage each blocks, and three the roadmap
 adds:
 
-- **Vendor path (Stage 1).** Design §4 and §7 say `src/nanoarrow/`;
-  `CLAUDE.md`'s template says `src/vendor/<lib>/`. The roadmap assumes
-  `src/vendor/nanoarrow/` and amends the design.
+- **Vendor path (Stage 1).** Resolved 2026-10-21: `src/vendor/nanoarrow/`,
+  and design §4 and §7 are amended.
 - **Fixtures in CI (Stage 5).** `r-cmd-check.yml` has no pre-test hook. The
   roadmap assumes the test helper fetches the pinned `arrow-testing` commit
   when `ZUARROW_FETCH_FIXTURES` is set through the workflow's `env:` input.
