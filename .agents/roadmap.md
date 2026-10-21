@@ -32,7 +32,7 @@ Two dependencies outside this repository shape the plan:
 | 0 | [Package identity](#stage-0--package-identity) | quick | [#2](https://github.com/pedrobtz/zuarrow/issues/2) | [#14](https://github.com/pedrobtz/zuarrow/pull/14) | 2026-10-21 |
 | 1 | [Vendored nanoarrow](#stage-1--vendored-nanoarrow) | full | [#3](https://github.com/pedrobtz/zuarrow/issues/3) | [#15](https://github.com/pedrobtz/zuarrow/pull/15) | 2026-10-21 |
 | 2 | [Handles and schema tools](#stage-2--handles-and-schema-tools) | full | [#4](https://github.com/pedrobtz/zuarrow/issues/4) | [#16](https://github.com/pedrobtz/zuarrow/pull/16) | 2026-10-21 |
-| 3 | [Type table and conversion](#stage-3--type-table-and-conversion) | quick | [#5](https://github.com/pedrobtz/zuarrow/issues/5) | | |
+| 3 | [Type table and conversion](#stage-3--type-table-and-conversion) | quick | [#5](https://github.com/pedrobtz/zuarrow/issues/5) | [#18](https://github.com/pedrobtz/zuarrow/pull/18) | 2026-10-21 |
 | 4 | [Nested types, dictionaries, extensions and the registry](#stage-4--nested-types-dictionaries-extensions-and-the-registry) | quick | [#6](https://github.com/pedrobtz/zuarrow/issues/6) | | |
 | 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | | |
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | | |
@@ -503,11 +503,15 @@ adds:
 - **Q2 (Stage 5).** Union dictionary levels across delta batches in the
   eager reader, or error. The roadmap follows §6.5: union.
 - **Q3 (Stage 0 records, Stage 3 decides).** Whether `arrow_array()` may
-  mask `arrow::arrow_array()` or should be `arrow_from_r()`.
+  mask `arrow::arrow_array()` or should be `arrow_from_r()`. Stage 3
+  (2026-10-21) kept the design's `arrow_array()`; the mask is documented
+  in D12. The maintainer may still rename it before 0.1.0.
 - **Q4 (Stage 3).** Whether `as.data.frame()` takes `lossy = "error"` like
-  everything else. The roadmap follows the design: yes.
+  everything else. The roadmap follows the design: yes, and Stage 3 tests
+  it.
 - **Q5 (board).** CRAN submission or GitHub release for v0.1.0. The board's
   `CRAN intent` field records it; the roadmap assumes `Planned`.
 - **Q6 (Stage 3).** Whether foreign handles get `default` or `minimal`
   validation before conversion, once the cost on a 10⁷-row stream is
-  measured.
+  measured. Resolved 2026-10-21: `default`, 7 ms more than `minimal` on
+  10⁷ rows (design §15 Q6).

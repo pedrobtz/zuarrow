@@ -554,3 +554,42 @@ SEXP zar_c_array_info(SEXP x) {
   UNPROTECT(1);
   return out;
 }
+
+/* ---- reading a stream -------------------------------------------------- */
+
+/* The next batch as an array handle whose tag is the stream's schema, or
+   NULL once the stream has ended (section 6.1). The end is remembered on
+   the handle, so a producer is never asked again after it said so. */
+SEXP zar_c_stream_next(SEXP x) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  SEXP ended_sym = Rf_install("zuarrow_ended");
+  if (TYPEOF(x) == EXTPTRSXP && Rf_getAttrib(x, ended_sym) != R_NilValue) {
+    return R_NilValue;
+  }
+  struct ArrowArrayStream *stream = zar_stream_from_xptr(x, &error);
+  if (stream == NULL) return zar_failure_from_error("handle", &error);
+
+  SEXP schema = PROTECT(zar_schema_copy_of(x));
+  if (Rf_inherits(schema, "zar_failure")) {
+    UNPROTECT(1);
+    return schema;
+  }
+  SEXP out = PROTECT(zar_array_owning_xptr(schema));
+  struct ArrowArray *array = (struct ArrowArray *)R_ExternalPtrAddr(out);
+  int code = stream->get_next(stream, array);
+  if (code != 0) {
+    const char *msg = stream->get_last_error(stream);
+    ArrowErrorSet(&error, "the next batch could not be read: %s",
+                  msg == NULL ? strerror(code) : msg);
+    UNPROTECT(2);
+    return zar_failure_from_error("handle", &error);
+  }
+  if (array->release == NULL) {
+    Rf_setAttrib(x, ended_sym, Rf_ScalarLogical(TRUE));
+    UNPROTECT(2);
+    return R_NilValue;
+  }
+  UNPROTECT(2);
+  return out;
+}

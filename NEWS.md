@@ -17,4 +17,21 @@
 * `arrow_metadata()` and `arrow_metadata<-` read and write schema metadata,
   keeping binary values as raw vectors.
 * `zuarrow_info()` reports the versions zuarrow is built from.
-* Every condition inherits from `zuarrow_error`.
+* Every error inherits from `zuarrow_error`, and the lossy warning from
+  `zuarrow_warning`.
+
+## Conversion
+
+* `arrow_to_r()` converts an array to an R vector and a stream or struct
+  array to a data frame; `as.data.frame()` and `as.vector()` do the same,
+  and `arrow_next()` reads one batch.
+* A conversion is exact or it fails: `lossy = "error"`, the default
+  everywhere, raises `zuarrow_lossy_error` naming the column, the row and
+  the package that would read it exactly. `lossy = "character"` gives the
+  values' exact text, `"warn"` and `"allow"` the nearest R type.
+* `to` names the R type a column must become.
+* `arrow_array()` and `arrow_stream()` build arrays and streams from R
+  vectors and data frames, checking every value against a given schema.
+  The exact text that `lossy = "character"` returns is written back as the
+  type its `arrow_type` attribute names.
+* `arrow_types()` lists the built-in type table.

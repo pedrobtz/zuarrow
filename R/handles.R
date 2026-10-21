@@ -108,7 +108,15 @@ zar_infer_spec <- function(x, name) {
     return(zar_spec(paste0("tsu:", tz), name))
   }
   if (inherits(x, "difftime")) {
-    return(zar_spec("tDs", name))
+    return(zar_spec("tDu", name))
+  }
+  if (is.character(x) && !is.null(attr(x, "arrow_type"))) {
+    # The exact text of section 6.3 is written back as the type it names.
+    type <- attr(x, "arrow_type")
+    if (!is.character(type) || length(type) != 1L || is.na(type)) {
+      zar_abort("type", "The `arrow_type` attribute must be one format string.")
+    }
+    return(zar_spec(type, name))
   }
   if (!is.object(x)) {
     format <- switch(

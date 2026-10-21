@@ -54,4 +54,14 @@ int64_t zar_utf8_invalid_at(const uint8_t *s, int64_t n);
 int zar_view_validate_utf8(const struct ArrowArrayView *view, const char *path,
                            struct ArrowError *error);
 
+/* The exact text forms read back (src/zar_parse.c). Each returns 0, or
+   EINVAL for text that is not of the form, ERANGE for a value the type
+   cannot hold exactly. */
+int zar_parse_int64(const char *s, int64_t *out);
+int zar_parse_uint64(const char *s, uint64_t *out);
+int zar_parse_decimal(const char *s, struct ArrowDecimal *decimal);
+int zar_parse_date(const char *s, int64_t *days);
+int zar_parse_instant(const char *s, int digits, int utc, int64_t *out);
+int zar_parse_time(const char *s, int digits, int64_t *out);
+
 #endif /* ZAR_H */
