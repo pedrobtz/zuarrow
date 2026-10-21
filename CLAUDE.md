@@ -159,6 +159,15 @@ Design §4 names five layers. What exists so far:
   R under `ZAR_STANDALONE` for `tools/fuzz/harness.c`; `src/zar_codecs.c`
   is the zukomp adapter (a stub when standalone).
 
+- **The IPC writer** in `src/zar_ipc_write.c` encodes through
+  `ArrowIpcEncoderEncodeBatch()`, which vendored patch 0013 adds: a record
+  batch or a dictionary batch whose buffers go through zuarrow's callback,
+  8-byte padded with zeros and compressed through zukomp. It writes the
+  schema, each dictionary before the batch that first uses it, the
+  batches, the end-of-stream marker, and for files the footer.
+  `test-write.R` holds the MD5 of a fixed input in each format and codec,
+  so a platform whose bytes differ fails.
+
 **C never raises a condition.** An entry point that fails frees what it
 owns and returns a `zar_failure`, `list(kind, message)`. The R caller
 wraps every `.Call()` in `zar_check()`, which raises
