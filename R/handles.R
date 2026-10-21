@@ -108,7 +108,7 @@ zar_infer_spec <- function(x, name) {
     return(zar_spec(paste0("tsu:", tz), name))
   }
   if (inherits(x, "difftime")) {
-    return(zar_spec("tDs", name))
+    return(zar_spec("tDu", name))
   }
   if (!is.object(x)) {
     format <- switch(

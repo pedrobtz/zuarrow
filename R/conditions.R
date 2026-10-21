@@ -2,7 +2,7 @@
 # raises one: it returns a zar_failure and zar_call() turns it into the
 # condition here, so C can free what it owns first.
 
-zar_abort <- function(kind, message, call = NULL, ...) {
+zar_abort <- function(kind, message, call = NULL, ..., .fields = list()) {
   class <- c(
     if (!is.null(kind)) paste0("zuarrow_", kind, "_error"),
     "zuarrow_error",
@@ -11,7 +11,7 @@ zar_abort <- function(kind, message, call = NULL, ...) {
   )
   stop(structure(
     class = class,
-    list(message = message, call = call, ...)
+    c(list(message = message, call = call, ...), .fields)
   ))
 }
 
@@ -20,7 +20,8 @@ zar_abort <- function(kind, message, call = NULL, ...) {
 # check can see the registered routine.
 zar_check <- function(out, call = sys.call(-1)) {
   if (inherits(out, "zar_failure")) {
-    zar_abort(out$kind, out$message, call = call)
+    fields <- unclass(out)[setdiff(names(out), c("kind", "message"))]
+    zar_abort(out$kind, out$message, call = call, .fields = fields)
   }
   out
 }

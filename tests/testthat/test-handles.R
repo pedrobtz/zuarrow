@@ -74,7 +74,7 @@ test_that("arrow_schema() infers the type an R object is written with", {
     spec(as.POSIXct("2026-10-21", tz = "Europe/Lisbon"))$format,
     "tsu:Europe/Lisbon"
   )
-  expect_identical(spec(as.difftime(1, units = "secs"))$format, "tDs")
+  expect_identical(spec(as.difftime(1, units = "secs"))$format, "tDu")
   expect_identical(spec(list(as.raw(1:2), NULL))$format, "z")
 
   list_spec <- spec(list(1:2, 3L))
