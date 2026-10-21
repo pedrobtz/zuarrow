@@ -2,6 +2,15 @@
 # the toolchain ships: nm on Linux and macOS, objdump on Windows. Names are
 # returned without the leading underscore macOS adds and without a glibc
 # version suffix.
+# Coverage instrumentation adds gcov's own exports and imports, so the
+# symbol tests describe the shipped object only when it is not instrumented.
+abi_skip_instrumented <- function() {
+  testthat::skip_if(
+    identical(Sys.getenv("R_COVR"), "true"),
+    "the shared object is instrumented for coverage"
+  )
+}
+
 abi_dll_path <- function() {
   getLoadedDLLs()[["zuarrow"]][["path"]]
 }
@@ -40,7 +49,7 @@ abi_exports <- function() {
     testthat::skip_if(length(start) != 1L, "no export table found")
     rows <- out[-seq_len(start)]
     rows <- rows[grepl("^\\s*\\[\\s*[0-9]+\\]", rows)]
-    return(sub("^\\s*\\[\\s*[0-9]+\\]\\s+", "", rows))
+    return(sub("^.*\\s", "", trimws(rows)))
   }
   nm <- abi_tool("nm")
   args <- if (Sys.info()[["sysname"]] == "Darwin") {

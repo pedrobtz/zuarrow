@@ -4,8 +4,11 @@
 # nanoarrow marks its API visibility("default") unless NANOARROW_DLL is
 # already defined, so it is defined empty; hidden visibility then keeps every
 # vendored symbol, flatcc's included, out of the export table and
-# R_init_zuarrow is the only exported symbol.
-PKG_CPPFLAGS = -Ivendor/nanoarrow -DNANOARROW_NAMESPACE=zuarrow -DNANOARROW_DLL=
+# R_init_zuarrow is the only exported symbol. FLATCC_NO_ASSERT compiles
+# flatcc's runtime assertions out in every build, not only under -DNDEBUG,
+# so no build links assert()'s abort path.
+PKG_CPPFLAGS = -Ivendor/nanoarrow -DNANOARROW_NAMESPACE=zuarrow -DNANOARROW_DLL= \
+  -DFLATCC_NO_ASSERT
 PKG_CFLAGS = $(C_VISIBILITY)
 
 VENDOR_OBJECTS = vendor/nanoarrow/nanoarrow.o \
