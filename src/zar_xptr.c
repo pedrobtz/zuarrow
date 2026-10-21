@@ -593,3 +593,53 @@ SEXP zar_c_stream_next(SEXP x) {
   UNPROTECT(2);
   return out;
 }
+
+/* ---- a field of a struct array, for a registered handler -------------- */
+
+/* A borrowed array: release only marks it released, because its buffers
+   belong to the parent the handle keeps alive. */
+static void zar_release_borrowed(struct ArrowArray *array) {
+  array->release = NULL;
+}
+
+/* Field k of a struct array as its own array handle (section 6.10). The
+   child is sliced by the parent's offset and length; the handle's
+   protected field holds the parent, so the buffers outlive it. Null rows
+   of the parent are not applied to the field. */
+SEXP zar_c_array_child(SEXP x, SEXP r_k) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  SEXP tag = zar_array_schema_xptr(x, &error);
+  if (tag == NULL) return zar_failure_from_error("handle", &error);
+  struct ArrowSchema *schema = zar_schema_from_xptr(tag, &error);
+  int64_t k = (int64_t)Rf_asReal(r_k);
+  if (k < 0 || k >= array->n_children || k >= schema->n_children) {
+    return zar_failure("handle", "the array has no such field");
+  }
+
+  SEXP child_schema = PROTECT(zar_schema_owning_xptr());
+  struct ArrowSchema *dst_schema =
+      (struct ArrowSchema *)R_ExternalPtrAddr(child_schema);
+  if (ArrowSchemaDeepCopy(schema->children[k], dst_schema) != NANOARROW_OK) {
+    UNPROTECT(1);
+    return zar_failure("handle", "the field's schema could not be copied");
+  }
+  SEXP out = PROTECT(zar_array_owning_xptr(child_schema));
+  struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
+  const struct ArrowArray *src = array->children[k];
+  *dst = *src;
+  dst->offset = src->offset + array->offset;
+  dst->length = array->length;
+  if (src->n_buffers > 0 && src->buffers[0] == NULL) {
+    dst->null_count = 0;
+  } else if (array->offset != 0 || array->length != src->length) {
+    dst->null_count = -1;
+  }
+  dst->private_data = NULL;
+  dst->release = &zar_release_borrowed;
+  R_SetExternalPtrProtected(out, x);
+  UNPROTECT(2);
+  return out;
+}

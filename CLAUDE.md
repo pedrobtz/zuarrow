@@ -130,6 +130,20 @@ Design §4 names five layers. What exists so far:
   the data frame and raises the lossy conditions, naming the family
   package from `zar_exact_target()`.
 
+- **Nested conversion.** A plan is a tree that mirrors the schema. A
+  `zar_slice` reads a node's elements in one batch, either directly or
+  through a map (a dictionary's indices, a run-end encoding's runs), and
+  `up` points at the enclosing struct, whose null rows make its fields NA.
+  Factors take the union of every batch's dictionary through a small hash
+  table. Export takes list columns flattened by `zar_prepare()` in R, so
+  C never calls R.
+- **The registry** lives in `R/registry.R`. Registered columns are
+  converted in R: C leaves them (`to` code 9), `zar_c_array_child()` lends
+  each batch's field to the handler, and the pieces are combined with
+  `c()`. A `from` handler's array is moved into its slot only after the
+  rest is finished, because nanoarrow's finishing walks every child's
+  `private_data` as its own.
+
 **C never raises a condition.** An entry point that fails frees what it
 owns and returns a `zar_failure`, `list(kind, message)`. The R caller
 wraps every `.Call()` in `zar_check()`, which raises

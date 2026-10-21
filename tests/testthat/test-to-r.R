@@ -138,19 +138,6 @@ test_that("schema metadata becomes the frame's arrow_metadata attribute", {
   expect_identical(attr(out, "arrow_metadata"), c(origin = "test"))
 })
 
-test_that("types without a converter yet are a type error", {
-  list_schema <- arrow_schema(list(1L))
-  expect_error(
-    arrow_to_r(test_array(
-      list_schema,
-      0,
-      list(NULL, le_int(0, 4L)),
-      children = list(test_array_spec(0, list(NULL, raw())))
-    )),
-    class = "zuarrow_type_error"
-  )
-})
-
 test_that("conversion does not accept a non-handle", {
   expect_error(arrow_to_r(1:3), class = "zuarrow_handle_error")
   expect_error(arrow_next(1:3), class = "zuarrow_handle_error")

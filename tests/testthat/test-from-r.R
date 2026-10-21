@@ -111,7 +111,6 @@ test_that("strings past utf8's offsets are written as large_utf8", {
 })
 
 test_that("binary checks its elements", {
-  expect_error(arrow_array(list(1L)), class = "zuarrow_type_error")
   expect_error(arrow_array(list(as.raw(1), 1L)), class = "zuarrow_type_error")
   fixed <- arrow_array(list(as.raw(1:2), NULL), schema = "w:2")
   expect_identical(unclass(arrow_to_r(fixed))[1:2], list(as.raw(1:2), NULL))

@@ -33,7 +33,7 @@ Two dependencies outside this repository shape the plan:
 | 1 | [Vendored nanoarrow](#stage-1--vendored-nanoarrow) | full | [#3](https://github.com/pedrobtz/zuarrow/issues/3) | [#15](https://github.com/pedrobtz/zuarrow/pull/15) | 2026-10-21 |
 | 2 | [Handles and schema tools](#stage-2--handles-and-schema-tools) | full | [#4](https://github.com/pedrobtz/zuarrow/issues/4) | [#16](https://github.com/pedrobtz/zuarrow/pull/16) | 2026-10-21 |
 | 3 | [Type table and conversion](#stage-3--type-table-and-conversion) | quick | [#5](https://github.com/pedrobtz/zuarrow/issues/5) | [#18](https://github.com/pedrobtz/zuarrow/pull/18) | 2026-10-21 |
-| 4 | [Nested types, dictionaries, extensions and the registry](#stage-4--nested-types-dictionaries-extensions-and-the-registry) | quick | [#6](https://github.com/pedrobtz/zuarrow/issues/6) | | |
+| 4 | [Nested types, dictionaries, extensions and the registry](#stage-4--nested-types-dictionaries-extensions-and-the-registry) | quick | [#6](https://github.com/pedrobtz/zuarrow/issues/6) | [#19](https://github.com/pedrobtz/zuarrow/pull/19) | 2026-10-21 |
 | 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | | |
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | | |
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | | |
@@ -254,7 +254,13 @@ the typed packages have a registry to make the lossy rows exact.
   the dispatch is tested here without a `Suggests` on an unreleased sibling.
 - Open an issue in `pedrobtz/decimal` for its `decimal128`, `decimal256`
   and `r.decimal` registration (design §3, §11), with the handler contract
-  from §6.10, and link it from this stage's issue.
+  from §6.10, and link it from this stage's issue. Done 2026-10-21:
+  [pedrobtz/decimal#24](https://github.com/pedrobtz/decimal/issues/24).
+- Recorded 2026-10-21: registered handlers apply to top-level columns and
+  the fields of nested data frames, not to the items of a list column. A
+  handler gets each batch's field sliced by its parent's offset and
+  length, without the parent's null rows applied. `arrow_register()`
+  gained `exact = TRUE`, which §6.10 describes and §5's signature omits.
 
 **Exit criteria.**
 

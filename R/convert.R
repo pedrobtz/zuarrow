@@ -12,10 +12,16 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #'
 #' Without a `schema`, each R class maps to one Arrow type: `logical` to
 #' `bool`, `integer` to `int32`, `double` to `double`, `character` to
-#' `utf8` (`large_utf8` past 2^31 - 1 bytes), `Date` to `date32`, `POSIXct`
-#' to `timestamp[us]` in its time zone or UTC, `difftime` to
-#' `duration[us]`, a list of raw vectors to `binary`, and a data frame to a
-#' `struct`. Any other class is a `zuarrow_type_error`.
+#' `utf8` (`large_utf8` past 2^31 - 1 bytes), `factor` to
+#' `dictionary<int32, utf8>`, `Date` to `date32`, `POSIXct` to
+#' `timestamp[us]` in its time zone or UTC, `difftime` to `duration[us]`,
+#' a list of raw vectors to `binary`, any other list to `list<T>` with `T`
+#' from its elements, and a data frame to a `struct`. A class registered
+#' with [arrow_register()] goes through its `from` handler, and a matrix is
+#' written as a `fixed_size_list` with `schema = arrow_matrix()`. The
+#' attributes `arrow_extension`, `arrow_extension_metadata` and
+#' `arrow_field_metadata` become field metadata. Any other class is a
+#' `zuarrow_type_error`.
 #'
 #' With a `schema`, the values are written as that type and checked: an
 #' integer that does not fit `int8`, or a double that is not a whole
@@ -44,10 +50,15 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' stream <- arrow_stream(data.frame(x = 1:5), batch = 2)
 #' as.data.frame(stream)
 arrow_array <- function(x, schema = NULL) {
+  handler <- zar_handler_for_class(x)
+  if (is.null(schema) && !is.null(handler)) {
+    return(zar_from_handler(handler, x))
+  }
   schema <- zar_schema_for(x, schema)
+  prepared <- zar_prepare(x, schema)
   zar_check(.Call(
     zar_c_from_r,
-    x,
+    zar_batch(prepared, 0, zar_nrow(x)),
     schema,
     0,
     zar_nrow(x),
@@ -68,15 +79,17 @@ arrow_stream <- function(x, batch = 65536L, schema = NULL) {
     zar_abort("type", "`batch` must be a positive whole number.")
   }
   schema <- zar_schema_for(x, schema)
+  prepared <- zar_prepare(x, schema)
   n <- zar_nrow(x)
   starts <- if (n == 0) numeric() else seq(0, n - 1, by = batch)
   arrays <- lapply(starts, function(start) {
+    len <- min(batch, n - start)
     zar_check(.Call(
       zar_c_from_r,
-      x,
+      zar_batch(prepared, start, len),
       schema,
       start,
-      min(batch, n - start),
+      len,
       NA_real_
     ))
   })
@@ -90,10 +103,141 @@ zar_utf8_limit <- function() {
 }
 
 zar_nrow <- function(x) {
-  if (is.data.frame(x)) .row_names_info(x, 2L) else length(x)
+  if (is.data.frame(x)) {
+    .row_names_info(x, 2L)
+  } else if (is.matrix(x)) {
+    nrow(x)
+  } else {
+    length(x)
+  }
+}
+
+# Prepares an R object for the C builder against its schema: list columns
+# and matrices become a zar_list_prep, flattened once (C never calls R),
+# and data frames are prepared column by column (section 6.4).
+zar_prepare <- function(x, schema) {
+  zar_prepare_spec(x, .Call(zar_c_schema_to_spec, schema))
+}
+
+zar_prepare_spec <- function(x, spec) {
+  if (!is.null(zar_handler_for_class(x))) {
+    return(structure(list(x = x), class = "zar_registered"))
+  }
+  if (
+    is.data.frame(x) &&
+      identical(spec$format, "+s") &&
+      length(spec$children) == length(x)
+  ) {
+    out <- Map(zar_prepare_spec, x, spec$children)
+    attributes(out) <- attributes(x)
+    return(out)
+  }
+  is_list_type <- spec$format %in%
+    c("+l", "+L") ||
+    startsWith(spec$format, "+w:")
+  if (is_list_type && is.matrix(x)) {
+    width <- ncol(x)
+    return(structure(
+      list(
+        offsets = as.double(seq(0, nrow(x)) * width),
+        null = rep(FALSE, nrow(x)),
+        values = zar_prepare_spec(as.vector(t(x)), spec$children[[1L]])
+      ),
+      class = "zar_list_prep"
+    ))
+  }
+  if (is_list_type && is.list(x) && !is.data.frame(x)) {
+    values <- zar_flatten(x)
+    child <- spec$children[[1L]]
+    if (is.null(values)) {
+      values <- zar_empty_like(child)
+    }
+    return(structure(
+      list(
+        offsets = c(0, cumsum(as.double(lengths(x)))),
+        null = vapply(x, is.null, NA),
+        values = zar_prepare_spec(values, child)
+      ),
+      class = "zar_list_prep"
+    ))
+  }
+  x
+}
+
+# An empty R vector of the type a spec describes, for a list column with
+# no values at all.
+zar_empty_like <- function(spec) {
+  switch(
+    spec$format,
+    n = NULL,
+    b = logical(),
+    i = integer(),
+    g = double(),
+    u = character(),
+    NULL
+  )
+}
+
+# Rows [start, start + n) of the registered columns, built by their
+# handlers. Every other column is sliced by the C builder.
+zar_batch <- function(x, start, n) {
+  if (inherits(x, "zar_registered")) {
+    handler <- zar_handler_for_class(x$x)
+    return(zar_from_handler(handler, x$x[seq_len(n) + start]))
+  }
+  if (is.data.frame(x)) {
+    registered <- vapply(
+      x,
+      function(col) inherits(col, "zar_registered") || is.data.frame(col),
+      NA
+    )
+    if (any(registered)) {
+      # Columns are replaced in the underlying list: a data frame cannot
+      # hold an array handle as a column through `[<-`.
+      attrs <- attributes(x)
+      x <- unclass(x)
+      for (k in which(registered)) {
+        x[[k]] <- zar_batch(x[[k]], start, n)
+      }
+      attributes(x) <- attrs
+    }
+  }
+  x
+}
+
+#' Matrices as fixed-size lists
+#'
+#' `arrow_matrix()` asks for a matrix where a `fixed_size_list` is
+#' involved, in either direction. As the `schema` of [arrow_array()] it
+#' writes a matrix as a `fixed_size_list` with one list per row. As a
+#' prototype in the `to` of [arrow_to_r()] it reads a `fixed_size_list`
+#' column as a matrix with one row per list, `NA` rows for null lists.
+#' Without it, a `fixed_size_list` reads as a list column.
+#'
+#' @returns A marker object of class `zuarrow_matrix`.
+#' @export
+#' @examples
+#' m <- matrix(1:6, nrow = 2)
+#' array <- arrow_array(m, schema = arrow_matrix())
+#' array
+#' arrow_to_r(array, to = arrow_matrix())
+arrow_matrix <- function() {
+  structure(list(), class = "zuarrow_matrix")
 }
 
 zar_schema_for <- function(x, schema, call = sys.call(-1)) {
+  if (inherits(schema, "zuarrow_matrix")) {
+    if (!is.matrix(x)) {
+      zar_abort(
+        "type",
+        "`schema = arrow_matrix()` needs a matrix.",
+        call = call
+      )
+    }
+    item <- zar_infer_spec(as.vector(x[0L, , drop = TRUE]), "item")
+    spec <- zar_spec(paste0("+w:", ncol(x)), "", children = list(item))
+    return(zar_check(.Call(zar_c_schema_from_spec, spec), call = call))
+  }
   if (is.null(schema)) {
     return(zar_check(
       .Call(zar_c_schema_from_spec, zar_infer_spec(x, name = "")),
@@ -129,9 +273,23 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
 #'
 #' Intervals and unions have no R form and always fail.
 #'
-#' `to` names the R type a column must become: `character()`, `double()`
-#' or `integer()`. A target that cannot take the column is a
-#' `zuarrow_type_error`, never a silent fallback.
+#' `to` names the R type a column must become: `character()`, `double()`,
+#' `integer()`, or [arrow_matrix()] for a `fixed_size_list`. A target that
+#' cannot take the column is a `zuarrow_type_error`, never a silent
+#' fallback.
+#'
+#' Nested types follow the table too. A `struct` becomes a data frame
+#' column; `list`, `large_list` and the list views become list columns,
+#' `NULL` for a null list; a `map` becomes a list of data frames with
+#' columns `key` and `value`. A dictionary of strings becomes a factor,
+#' ordered when the dictionary is, with the union of every batch's levels;
+#' a dictionary of other values, and a run-end encoded array, decode to
+#' their values' R form. An extension type converts as its storage and
+#' keeps its name and metadata in the `arrow_extension` and
+#' `arrow_extension_metadata` attributes, so writing the column back
+#' restores it. Field metadata becomes the `arrow_field_metadata`
+#' attribute. A type registered with [arrow_register()] goes through its
+#' handler.
 #'
 #' @param x An array or stream handle.
 #' @param to `NULL`, or a named list of prototypes, one per column. For an
@@ -198,6 +356,9 @@ zar_to_code <- function(proto, call) {
   if (is.null(proto)) {
     return(0L)
   }
+  if (inherits(proto, "zuarrow_matrix")) {
+    return(4L)
+  }
   if (!is.object(proto) && length(proto) == 0L) {
     code <- match(typeof(proto), c("character", "double", "integer"))
     if (!is.na(code)) {
@@ -207,7 +368,7 @@ zar_to_code <- function(proto, call) {
   zar_abort(
     "type",
     sprintf(
-      "`to` holds an unsupported target of class <%s>; use character(), double() or integer().",
+      "`to` holds an unsupported target of class <%s>; use character(), double(), integer() or arrow_matrix().",
       paste(class(proto), collapse = "/")
     ),
     call = call
@@ -219,7 +380,7 @@ zar_to_codes <- function(to, names, frame, call) {
     return(integer())
   }
   if (!frame) {
-    if (is.list(to)) {
+    if (is.list(to) && !inherits(to, "zuarrow_matrix")) {
       if (length(to) != 1L) {
         zar_abort(
           "type",
@@ -252,16 +413,38 @@ zar_to_codes <- function(to, names, frame, call) {
   codes
 }
 
-zar_convert <- function(arrays, schema, to, lossy, call) {
+zar_convert <- function(arrays, schema, to, lossy, call, max_depth = 64L) {
   spec <- .Call(zar_c_schema_to_spec, schema)
   frame <- identical(spec$format, "+s")
-  names <- if (frame) vapply(spec$children, `[[`, "", "name") else ""
-  names[is.na(names)] <- ""
+  fields <- if (frame) spec$children else list(spec)
+  names <- vapply(fields, function(f) if (is.na(f$name)) "" else f$name, "")
+  codes <- zar_to_codes(to, names, frame, call)
+  if (length(codes) == 0L) {
+    codes <- integer(length(fields))
+  }
+
+  # Registered handlers convert their columns in R (section 6.10); an
+  # inexact one only when the policy accepts loss.
+  handlers <- lapply(seq_along(fields), function(k) {
+    if (codes[[k]] != 0L) {
+      return(NULL)
+    }
+    h <- zar_handler_for(fields[[k]]$format, zar_extension_name(fields[[k]]))
+    if (is.null(h) || (!h$exact && lossy %in% c("error", "character"))) {
+      NULL
+    } else {
+      h
+    }
+  })
+  handled <- !vapply(handlers, is.null, NA)
+  codes[handled] <- 9L
+
   opts <- list(
     match(lossy, zar_lossy_policies),
-    zar_to_codes(to, names, frame, call),
+    codes,
     zar_bit64_loaded(),
-    frame
+    frame,
+    as.integer(max_depth)
   )
   out <- .Call(zar_c_to_r, arrays, schema, opts)
   if (inherits(out, "zar_failure")) {
@@ -269,6 +452,23 @@ zar_convert <- function(arrays, schema, to, lossy, call) {
   }
   for (k in out$warned) {
     zar_lossy_warn(out$names[[k]], out$columns[[k]], spec, frame, k, call)
+  }
+  for (k in which(handled)) {
+    out$columns[[k]] <- zar_apply_handler(
+      handlers[[k]],
+      arrays,
+      k,
+      frame,
+      schema,
+      out$rows,
+      call
+    )
+    if (!handlers[[k]]$exact && lossy == "warn") {
+      zar_lossy_warn(names[[k]], NULL, spec, frame, k, call)
+    }
+  }
+  for (k in seq_along(fields)) {
+    out$columns[[k]] <- zar_attach_field_metadata(out$columns[[k]], fields[[k]])
   }
   if (!frame) {
     return(out$columns[[1L]])
@@ -282,6 +482,83 @@ zar_convert <- function(arrays, schema, to, lossy, call) {
     attr(df, "arrow_metadata") <- metadata
   }
   df
+}
+
+zar_apply_handler <- function(handler, arrays, k, frame, schema, rows, call) {
+  columns <- if (length(arrays) == 0L) {
+    field_schema <- if (frame) zar_field_schema(schema, k) else schema
+    list(zar_empty_array(field_schema))
+  } else if (frame) {
+    lapply(arrays, function(a) {
+      zar_check(.Call(zar_c_array_child, a, k - 1L), call = call)
+    })
+  } else {
+    arrays
+  }
+  active <- zar_registry$active
+  zar_registry$active <- c(active, handler$key)
+  on.exit(zar_registry$active <- active, add = TRUE)
+  pieces <- lapply(columns, function(a) handler$to(a, arrow_schema(a)))
+  out <- if (length(pieces) == 1L) pieces[[1L]] else do.call(c, unname(pieces))
+  if (NROW(out) != rows) {
+    zar_abort(
+      "registry",
+      sprintf(
+        "The `to` handler for `%s` returned %d values for %d rows.",
+        handler$key,
+        NROW(out),
+        as.integer(rows)
+      ),
+      call = call
+    )
+  }
+  out
+}
+
+zar_field_schema <- function(schema, k) {
+  spec <- .Call(zar_c_schema_to_spec, schema)$children[[k]]
+  zar_check(.Call(zar_c_schema_from_spec, spec))
+}
+
+# A zero-length array of a schema, for a handler when there are no batches.
+zar_empty_array <- function(schema) {
+  empty_spec <- function(spec) {
+    list(
+      length = 0,
+      null_count = 0,
+      offset = 0,
+      buffers = list(),
+      children = lapply(spec$children, empty_spec),
+      dictionary = if (is.null(spec$dictionary)) {
+        NULL
+      } else {
+        empty_spec(spec$dictionary)
+      }
+    )
+  }
+  spec <- .Call(zar_c_schema_to_spec, schema)
+  zar_check(.Call(zar_c_array_from_buffers, schema, empty_spec(spec)))
+}
+
+# Field metadata other than the extension keys becomes the column's
+# arrow_field_metadata attribute, down through nested data frames.
+zar_attach_field_metadata <- function(x, spec) {
+  if (is.null(x)) {
+    return(x)
+  }
+  keys <- names(spec$metadata)
+  own <- spec$metadata[
+    !keys %in% c("ARROW:extension:name", "ARROW:extension:metadata")
+  ]
+  if (length(own) > 0L) {
+    attr(x, "arrow_field_metadata") <- zar_metadata_values(own)
+  }
+  if (is.data.frame(x) && identical(spec$format, "+s")) {
+    for (k in seq_along(x)) {
+      x[[k]] <- zar_attach_field_metadata(x[[k]], spec$children[[k]])
+    }
+  }
+  x
 }
 
 # The family package that reads a format exactly (design section 3), or
@@ -488,7 +765,42 @@ arrow_types <- function() {
     ),
     c("interval", "tiM, tiD, tin", "", "no", "none", "zutempo"),
     c("dense_union, sparse_union", "+ud:, +us:", "", "no", "none", ""),
-    c("struct", "+s", "data.frame", "yes", "", "")
+    c("struct", "+s", "data.frame", "yes", "", ""),
+    c(
+      "list, large_list, list_view, large_list_view",
+      "+l, +L, +vl, +vL",
+      "list column",
+      "yes",
+      "",
+      ""
+    ),
+    c(
+      "fixed_size_list",
+      "+w:n",
+      "list column; matrix with arrow_matrix()",
+      "yes",
+      "",
+      ""
+    ),
+    c("map", "+m", "list column of key/value data frames", "yes", "", ""),
+    c("dictionary of strings", "index + utf8", "factor", "yes", "", ""),
+    c(
+      "dictionary of other values",
+      "index + values",
+      "the values' R form",
+      "as the values",
+      "",
+      ""
+    ),
+    c("run_end_encoded", "+r", "the values' R form", "as the values", "", ""),
+    c(
+      "arrow.bool8 extension",
+      "c + ARROW:extension:name",
+      "logical",
+      "yes",
+      "",
+      ""
+    )
   )
   out <- as.data.frame(do.call(rbind, rows), stringsAsFactors = FALSE)
   names(out) <- c("arrow", "format", "r", "exact", "lossy_r", "exact_with")

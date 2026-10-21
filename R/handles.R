@@ -85,9 +85,50 @@ zar_spec <- function(
   )
 }
 
-# The schema an R object is written with (design section 6.2). Stage 3
-# completes the table; this covers the classes whose type is fixed.
+# The schema an R object is written with (design section 6.2), with its
+# field metadata and extension name from the attributes section 6.6 names.
 zar_infer_spec <- function(x, name) {
+  spec <- zar_infer_type(x, name)
+  zar_with_field_metadata(spec, x)
+}
+
+zar_with_field_metadata <- function(spec, x) {
+  metadata <- list()
+  field <- attr(x, "arrow_field_metadata", exact = TRUE)
+  if (!is.null(field)) {
+    metadata <- zar_metadata_raw(field, call = NULL)
+  }
+  extension <- attr(x, "arrow_extension", exact = TRUE)
+  if (!is.null(extension)) {
+    if (
+      !is.character(extension) || length(extension) != 1L || is.na(extension)
+    ) {
+      zar_abort("type", "The `arrow_extension` attribute must be one string.")
+    }
+    metadata[["ARROW:extension:name"]] <- charToRaw(enc2utf8(extension))
+    ext_metadata <- attr(x, "arrow_extension_metadata", exact = TRUE)
+    metadata[["ARROW:extension:metadata"]] <- if (is.raw(ext_metadata)) {
+      ext_metadata
+    } else if (is.null(ext_metadata)) {
+      raw()
+    } else {
+      charToRaw(enc2utf8(ext_metadata))
+    }
+  }
+  if (length(metadata) > 0L) {
+    spec$metadata <- metadata
+  }
+  spec
+}
+
+zar_infer_type <- function(x, name) {
+  handler <- zar_handler_for_class(x)
+  if (!is.null(handler)) {
+    array <- zar_from_handler(handler, x[0L])
+    spec <- .Call(zar_c_schema_to_spec, arrow_schema(array))
+    spec$name <- name
+    return(spec)
+  }
   if (is.data.frame(x)) {
     children <- Map(zar_infer_spec, x, names(x))
     return(zar_spec("+s", name, children = unname(children)))
@@ -118,7 +159,19 @@ zar_infer_spec <- function(x, name) {
     }
     return(zar_spec(type, name))
   }
-  if (!is.object(x)) {
+  if (
+    is.logical(x) &&
+      identical(attr(x, "arrow_extension", exact = TRUE), "arrow.bool8")
+  ) {
+    return(zar_spec("c", name))
+  }
+  if (is.matrix(x)) {
+    zar_abort(
+      "type",
+      "A matrix is written as a fixed_size_list only when asked: use `schema = arrow_matrix()`."
+    )
+  }
+  if (!is.object(x) || is.list(x) && identical(class(x), "list")) {
     format <- switch(
       typeof(x),
       logical = "b",
@@ -131,19 +184,7 @@ zar_infer_spec <- function(x, name) {
       return(zar_spec(format, name))
     }
     if (is.list(x)) {
-      if (
-        length(x) > 0L &&
-          all(vapply(x, function(e) is.raw(e) || is.null(e), NA))
-      ) {
-        return(zar_spec("z", name))
-      }
-      first <- Find(Negate(is.null), x)
-      child <- if (is.null(first)) {
-        zar_spec("n", "item")
-      } else {
-        zar_infer_spec(first, "item")
-      }
-      return(zar_spec("+l", name, children = list(child)))
+      return(zar_infer_list(x, name))
     }
   }
   zar_abort(
@@ -154,6 +195,58 @@ zar_infer_spec <- function(x, name) {
     ),
     call = NULL
   )
+}
+
+# A list of raw vectors is binary; any other list is list<T>, T from the
+# elements, which must share one class (section 6.4).
+zar_infer_list <- function(x, name) {
+  present <- Filter(Negate(is.null), x)
+  if (length(present) > 0L && all(vapply(present, is.raw, NA))) {
+    return(zar_spec("z", name))
+  }
+  values <- zar_flatten(x)
+  child <- if (is.null(values)) {
+    zar_spec("n", "item")
+  } else {
+    zar_infer_spec(values, "item")
+  }
+  total <- sum(lengths(present))
+  zar_spec(if (total > 2^31 - 1) "+L" else "+l", name, children = list(child))
+}
+
+# Every element's values, concatenated, or NULL when there are none.
+zar_flatten <- function(x, call = NULL) {
+  present <- Filter(Negate(is.null), x)
+  if (length(present) == 0L) {
+    return(NULL)
+  }
+  first <- class(present[[1L]])
+  same <- vapply(present, function(e) identical(class(e), first), NA)
+  if (!all(same)) {
+    zar_abort(
+      "type",
+      "The elements of a list column must share one class.",
+      call = call
+    )
+  }
+  if (is.data.frame(present[[1L]])) {
+    return(do.call(rbind, unname(present)))
+  }
+  do.call(c, unname(present))
+}
+
+zar_from_handler <- function(handler, x) {
+  array <- handler$from(x)
+  if (!zar_is_array(array)) {
+    zar_abort(
+      "registry",
+      sprintf(
+        "The `from` handler for `%s` did not return an array handle.",
+        handler$key
+      )
+    )
+  }
+  array
 }
 
 #' @export

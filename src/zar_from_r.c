@@ -9,10 +9,18 @@
 
 #include "zar.h"
 
+#define ZAR_MAX_PREBUILT 256
+
 struct zar_build {
   struct ArrowError error;
   const char *kind; /* the failure's kind when a build fails */
   double row;       /* 1-based, or NA */
+  /* Arrays a registered handler built, swapped into their slots once the
+     rest is finished, since nanoarrow's finishing walks every child's
+     private data as its own. */
+  int n_prebuilt;
+  struct ArrowArray *slots[ZAR_MAX_PREBUILT];
+  SEXP sources[ZAR_MAX_PREBUILT];
 };
 
 static int zar_build_fail(struct zar_build *b, const char *kind, double row) {
@@ -30,6 +38,7 @@ static int zar_na_int(SEXP x, R_xlen_t i) { return INTEGER(x)[i] == NA_INTEGER; 
 static int zar_na_dbl(SEXP x, R_xlen_t i) { return R_IsNA(REAL(x)[i]); }
 static int zar_na_chr(SEXP x, R_xlen_t i) { return STRING_ELT(x, i) == NA_STRING; }
 static int zar_na_list(SEXP x, R_xlen_t i) { return VECTOR_ELT(x, i) == R_NilValue; }
+static int zar_na_lgl_true(SEXP x, R_xlen_t i) { return LOGICAL(x)[i] == TRUE; }
 
 /* Writes the validity bitmap of rows [start, start + n) when any is NA. */
 static int zar_set_validity(struct ArrowArray *array, SEXP x, R_xlen_t start,
@@ -473,6 +482,145 @@ static int zar_build_text(struct ArrowArray *array,
   return NANOARROW_OK;
 }
 
+/* ---- nested, dictionaries, prebuilt arrays ----------------------------- */
+
+static int zar_build_array(struct ArrowArray *array,
+                           const struct ArrowSchema *schema, SEXP x,
+                           R_xlen_t start, int64_t n, struct zar_build *b);
+
+static SEXP zar_prep_get(SEXP prep, const char *name) {
+  SEXP names = Rf_getAttrib(prep, R_NamesSymbol);
+  for (R_xlen_t i = 0; i < Rf_xlength(prep); i++) {
+    if (strcmp(CHAR(STRING_ELT(names, i)), name) == 0) return VECTOR_ELT(prep, i);
+  }
+  return R_NilValue;
+}
+
+/* A list column R has flattened: list(offsets, null, values), offsets the
+   cumulative element lengths (n + 1 doubles), null a logical per element,
+   values every element's values concatenated (section 6.4). */
+static int zar_build_list(struct ArrowArray *array,
+                          const struct ArrowSchema *schema,
+                          const struct ArrowSchemaView *sv, SEXP prep,
+                          R_xlen_t start, int64_t n, struct zar_build *b) {
+  SEXP offsets = zar_prep_get(prep, "offsets");
+  SEXP nulls = zar_prep_get(prep, "null");
+  SEXP values = zar_prep_get(prep, "values");
+  if (TYPEOF(offsets) != REALSXP || TYPEOF(nulls) != LGLSXP ||
+      Rf_xlength(offsets) < start + n + 1 || Rf_xlength(nulls) < start + n) {
+    ArrowErrorSet(&b->error, "a malformed list column");
+    return zar_build_fail(b, NULL, NA_REAL);
+  }
+  if (zar_set_validity(array, nulls, start, n, zar_na_lgl_true, b) != NANOARROW_OK) {
+    return EINVAL;
+  }
+  const double *off = REAL(offsets);
+  int64_t first = (int64_t)off[start];
+  int64_t total = (int64_t)off[start + n] - first;
+  enum ArrowType t = sv->type;
+  if (t == NANOARROW_TYPE_FIXED_SIZE_LIST) {
+    for (int64_t i = 0; i < n; i++) {
+      if ((int64_t)(off[start + i + 1] - off[start + i]) != sv->fixed_size) {
+        ArrowErrorSet(&b->error, "row %" PRId64 " has %" PRId64 " values, not %d",
+                      (int64_t)start + i + 1,
+                      (int64_t)(off[start + i + 1] - off[start + i]), sv->fixed_size);
+        return zar_build_fail(b, "type", (double)start + i + 1);
+      }
+    }
+  } else {
+    int large = t == NANOARROW_TYPE_LARGE_LIST;
+    if (!large && total > INT32_MAX) {
+      ArrowErrorSet(&b->error, "the lists hold %" PRId64 " values, more than list offsets address", total);
+      return zar_build_fail(b, "limit", NA_REAL);
+    }
+    void *dst = zar_data(array, 1, (n + 1) * (large ? 8 : 4), b);
+    if (dst == NULL) return zar_build_fail(b, NULL, NA_REAL);
+    for (int64_t i = 0; i <= n; i++) {
+      int64_t v = (int64_t)off[start + i] - first;
+      if (large) {
+        ((int64_t *)dst)[i] = v;
+      } else {
+        ((int32_t *)dst)[i] = (int32_t)v;
+      }
+    }
+  }
+  return zar_build_array(array->children[0], schema->children[0], values,
+                         (R_xlen_t)first, total, b);
+}
+
+/* A factor as dictionary<index, utf8>: the codes as indices, the levels as
+   the dictionary (section 6.5). */
+static int zar_build_dictionary(struct ArrowArray *array,
+                                const struct ArrowSchema *schema, SEXP x,
+                                R_xlen_t start, int64_t n, struct zar_build *b) {
+  struct ArrowSchemaView index_view;
+  struct ArrowSchema index_schema = *schema;
+  index_schema.dictionary = NULL;
+  index_schema.flags &= ~ARROW_FLAG_DICTIONARY_ORDERED;
+  if (ArrowSchemaViewInit(&index_view, &index_schema, &b->error) != NANOARROW_OK) {
+    return zar_build_fail(b, "format", NA_REAL);
+  }
+  SEXP codes = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
+  for (int64_t i = 0; i < n; i++) {
+    int code = INTEGER(x)[start + (R_xlen_t)i];
+    INTEGER(codes)[i] = code == NA_INTEGER ? NA_INTEGER : code - 1;
+  }
+  int status = zar_build_numeric(array, index_view.type, codes, 0, n, 1.0, 0, b);
+  UNPROTECT(1);
+  if (status != NANOARROW_OK) return status;
+  SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
+  if (TYPEOF(levels) != STRSXP) {
+    ArrowErrorSet(&b->error, "a factor without character levels");
+    return zar_build_fail(b, "type", NA_REAL);
+  }
+  return zar_build_array(array->dictionary, schema->dictionary, levels, 0,
+                         (int64_t)Rf_xlength(levels), b);
+}
+
+/* An array a registered `from` handler built: moved into its slot after
+   its schema is checked against the slot's. */
+static int zar_build_prebuilt(struct ArrowArray *array,
+                              const struct ArrowSchema *schema, SEXP x,
+                              int64_t n, struct zar_build *b) {
+  struct ArrowArray *src = zar_array_from_xptr(x, &b->error);
+  if (src == NULL) return zar_build_fail(b, "handle", NA_REAL);
+  SEXP tag = zar_array_schema_xptr(x, &b->error);
+  if (tag == NULL) return zar_build_fail(b, "handle", NA_REAL);
+  struct ArrowSchema *src_schema = zar_schema_from_xptr(tag, &b->error);
+  if (strcmp(src_schema->format, schema->format) != 0 ||
+      src_schema->n_children != schema->n_children) {
+    ArrowErrorSet(&b->error, "a registered handler built %s where the schema says %s",
+                  src_schema->format, schema->format);
+    return zar_build_fail(b, "registry", NA_REAL);
+  }
+  if (src->length != n) {
+    ArrowErrorSet(&b->error, "a registered handler built %" PRId64 " values, not %" PRId64,
+                  src->length, n);
+    return zar_build_fail(b, "registry", NA_REAL);
+  }
+  if (b->n_prebuilt >= ZAR_MAX_PREBUILT) {
+    ArrowErrorSet(&b->error, "more than %d registered columns", ZAR_MAX_PREBUILT);
+    return zar_build_fail(b, "limit", NA_REAL);
+  }
+  /* A placeholder of the right length until the swap. */
+  array->length = n;
+  array->null_count = 0;
+  b->slots[b->n_prebuilt] = array;
+  b->sources[b->n_prebuilt] = x;
+  b->n_prebuilt++;
+  return NANOARROW_OK;
+}
+
+/* Swaps the prebuilt arrays into their slots, consuming their handles. */
+static void zar_swap_prebuilt(struct zar_build *b) {
+  for (int k = 0; k < b->n_prebuilt; k++) {
+    struct ArrowArray *slot = b->slots[k];
+    struct ArrowArray *src = (struct ArrowArray *)R_ExternalPtrAddr(b->sources[k]);
+    if (slot->release != NULL) slot->release(slot);
+    ArrowArrayMove(src, slot);
+  }
+}
+
 /* ---- dispatch ---------------------------------------------------------- */
 
 static double zar_difftime_seconds(SEXP x) {
@@ -543,10 +691,40 @@ static int zar_build_array(struct ArrowArray *array,
   enum ArrowType t = sv.type;
   int type = TYPEOF(x);
 
+  if (TYPEOF(x) == EXTPTRSXP && Rf_inherits(x, "nanoarrow_array")) {
+    return zar_build_prebuilt(array, schema, x, n, b);
+  }
   if (t == NANOARROW_TYPE_STRUCT) {
     return zar_build_struct(array, schema, x, start, n, b);
   }
-  if (Rf_inherits(x, "data.frame") || Rf_isFactor(x)) {
+  if (Rf_inherits(x, "zar_list_prep")) {
+    if (t == NANOARROW_TYPE_LIST || t == NANOARROW_TYPE_LARGE_LIST ||
+        t == NANOARROW_TYPE_FIXED_SIZE_LIST) {
+      return zar_build_list(array, schema, &sv, x, start, n, b);
+    }
+    goto unsupported;
+  }
+  if (Rf_isFactor(x)) {
+    if (Rf_xlength(x) < start + n) goto unsupported;
+    if (t == NANOARROW_TYPE_DICTIONARY) {
+      return zar_build_dictionary(array, schema, x, start, n, b);
+    }
+    if (t == NANOARROW_TYPE_STRING || t == NANOARROW_TYPE_LARGE_STRING) {
+      /* dictionary = FALSE: the factor's labels as strings. */
+      SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
+      SEXP labels = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)n));
+      for (int64_t i = 0; i < n; i++) {
+        int code = INTEGER(x)[start + (R_xlen_t)i];
+        SET_STRING_ELT(labels, (R_xlen_t)i,
+                       code == NA_INTEGER ? NA_STRING : STRING_ELT(levels, code - 1));
+      }
+      int status = zar_build_strings(array, t, labels, 0, n, b);
+      UNPROTECT(1);
+      return status;
+    }
+    goto unsupported;
+  }
+  if (Rf_inherits(x, "data.frame")) {
     goto unsupported;
   }
   if (t == NANOARROW_TYPE_NA) {
@@ -580,6 +758,17 @@ static int zar_build_array(struct ArrowArray *array,
     case NANOARROW_TYPE_DOUBLE:
       if ((type == INTSXP || type == REALSXP) && !Rf_isObject(x)) {
         return zar_build_numeric(array, t, x, start, n, 1.0, 0, b);
+      }
+      if (type == LGLSXP && t == NANOARROW_TYPE_INT8) {
+        /* arrow.bool8: a logical as 0 and 1 in int8 storage. */
+        SEXP ints = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
+        for (int64_t i = 0; i < n; i++) {
+          int v = LOGICAL(x)[start + (R_xlen_t)i];
+          INTEGER(ints)[i] = v == NA_LOGICAL ? NA_INTEGER : (v != 0);
+        }
+        int status = zar_build_numeric(array, t, ints, 0, n, 1.0, 0, b);
+        UNPROTECT(1);
+        return status;
       }
       break;
     case NANOARROW_TYPE_DATE32:
@@ -649,6 +838,7 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n,
   b.error.message[0] = '\0';
   b.kind = NULL;
   b.row = NA_REAL;
+  b.n_prebuilt = 0;
   R_xlen_t start = (R_xlen_t)Rf_asReal(r_start);
   int64_t n = (int64_t)Rf_asReal(r_n);
 
@@ -673,8 +863,18 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n,
   int code = ArrowArrayInitFromSchema(array, schema, &b.error);
   if (code != NANOARROW_OK) b.kind = "format";
   if (code == NANOARROW_OK) code = zar_build_array(array, schema, x, start, n, &b);
-  if (code == NANOARROW_OK) {
+  if (code == NANOARROW_OK && b.n_prebuilt == 0) {
     code = ArrowArrayFinishBuildingDefault(array, &b.error);
+    if (code != NANOARROW_OK) b.kind = "format";
+  } else if (code == NANOARROW_OK) {
+    code = ArrowArrayFinishBuilding(array, NANOARROW_VALIDATION_LEVEL_NONE, &b.error);
+    if (code == NANOARROW_OK) {
+      zar_swap_prebuilt(&b);
+      struct ArrowArrayView view;
+      code = ArrowArrayViewInitFromSchema(&view, schema, &b.error);
+      if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(&view, array, &b.error);
+      ArrowArrayViewReset(&view);
+    }
     if (code != NANOARROW_OK) b.kind = "format";
   }
   UNPROTECT(2);

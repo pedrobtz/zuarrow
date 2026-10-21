@@ -28,10 +28,16 @@ batches of at most \code{batch} rows each.
 \details{
 Without a \code{schema}, each R class maps to one Arrow type: \code{logical} to
 \code{bool}, \code{integer} to \code{int32}, \code{double} to \code{double}, \code{character} to
-\code{utf8} (\code{large_utf8} past 2^31 - 1 bytes), \code{Date} to \code{date32}, \code{POSIXct}
-to \code{timestamp[us]} in its time zone or UTC, \code{difftime} to
-\code{duration[us]}, a list of raw vectors to \code{binary}, and a data frame to a
-\code{struct}. Any other class is a \code{zuarrow_type_error}.
+\code{utf8} (\code{large_utf8} past 2^31 - 1 bytes), \code{factor} to
+\verb{dictionary<int32, utf8>}, \code{Date} to \code{date32}, \code{POSIXct} to
+\code{timestamp[us]} in its time zone or UTC, \code{difftime} to \code{duration[us]},
+a list of raw vectors to \code{binary}, any other list to \verb{list<T>} with \code{T}
+from its elements, and a data frame to a \code{struct}. A class registered
+with \code{\link[=arrow_register]{arrow_register()}} goes through its \code{from} handler, and a matrix is
+written as a \code{fixed_size_list} with \code{schema = arrow_matrix()}. The
+attributes \code{arrow_extension}, \code{arrow_extension_metadata} and
+\code{arrow_field_metadata} become field metadata. Any other class is a
+\code{zuarrow_type_error}.
 
 With a \code{schema}, the values are written as that type and checked: an
 integer that does not fit \code{int8}, or a double that is not a whole

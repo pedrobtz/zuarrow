@@ -116,3 +116,22 @@ zspec <- function(format, name = "", children = list(), flags = 2L) {
 format_of <- function(schema) {
   .Call(zuarrow:::zar_c_schema_to_spec, schema)$format
 }
+
+arrow_info_length <- function(array) {
+  .Call(zuarrow:::zar_c_array_info, array)$length
+}
+
+# A schema with an extension name, for section 6.6's tests.
+ext_schema <- function(format, name, metadata = raw()) {
+  test_schema(list(
+    format = format,
+    name = "",
+    flags = 2L,
+    metadata = list(
+      "ARROW:extension:name" = charToRaw(name),
+      "ARROW:extension:metadata" = metadata
+    ),
+    children = list(),
+    dictionary = NULL
+  ))
+}

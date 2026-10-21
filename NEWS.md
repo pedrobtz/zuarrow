@@ -35,3 +35,18 @@
   The exact text that `lossy = "character"` returns is written back as the
   type its `arrow_type` attribute names.
 * `arrow_types()` lists the built-in type table.
+
+## Nested types, dictionaries, extensions and the registry
+
+* Structs convert to nested data frames, lists of every kind to list
+  columns, fixed-size lists to list columns or, with `arrow_matrix()`, to
+  matrices, and maps to lists of key/value data frames. Each converts back.
+* Factors convert to and from `dictionary<int32, utf8>`, ordered factors
+  included; a stream's batches read as the union of their levels. Other
+  dictionaries and run-end encoded arrays decode to their values.
+* Extension types keep their name and metadata as attributes and are
+  restored on export; `arrow.bool8` reads as logical. Field metadata
+  round-trips through the `arrow_field_metadata` attribute.
+* `arrow_register()`, `arrow_unregister()` and `arrow_registry()` let a
+  package make a lossy type exact with its own R class, by format string,
+  prefix pattern or extension name, in both directions.
