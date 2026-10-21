@@ -40,6 +40,7 @@ LinkingTo:
     zukomp
 Remotes: 
     pedrobtz/zukomp
+Config/Needs/website: DBI, duckdb, knitr, rmarkdown
 Config/testthat/edition: 3
 Encoding: UTF-8
 Language: en-GB

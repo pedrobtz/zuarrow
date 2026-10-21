@@ -2,3 +2,39 @@ url: https://pedrobtz.github.io/zuarrow/
 template:
   bootstrap: 5
 
+reference:
+  - title: Handles
+    desc: >
+      Schemas, arrays and streams in the layout nanoarrow uses, built from
+      R objects or accepted from any Arrow producer.
+    contents:
+      - arrow_schema
+      - arrow_array
+  - title: Back to R
+    desc: Exact conversion to R vectors and data frames, or an error.
+    contents:
+      - arrow_to_r
+      - arrow_matrix
+  - title: The IPC formats
+    desc: The Arrow file and stream formats, plain or compressed.
+    contents:
+      - arrow_read
+      - arrow_write
+      - arrow_limits
+  - title: Validation, comparison and metadata
+    contents:
+      - arrow_validate
+      - arrow_equal
+      - arrow_metadata
+  - title: The registry
+    desc: Which R class is the exact form of which Arrow type.
+    contents:
+      - arrow_register
+      - arrow_types
+      - zuarrow_info
+
+articles:
+  - title: Articles
+    navbar: ~
+    contents:
+      - articles/duckdb
