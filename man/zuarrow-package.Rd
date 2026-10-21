@@ -6,7 +6,7 @@
 \alias{zuarrow-package}
 \title{zuarrow: Exact Conversion Between R Vectors and 'Apache Arrow' Columns}
 \description{
-Moves columns between R and the 'Apache Arrow' columnar format: the C data interface in memory and the inter-process communication ('IPC') stream and file formats on disk. Every 'Arrow' type converts to an R vector and back, and a conversion either keeps every value unchanged or raises an error that names the column and the R type that would hold it exactly. A registry lets other packages declare which R class is the exact form of which 'Arrow' type. Handles share the layout of the 'nanoarrow' package, so objects pass between the two without conversion. The format is specified at \url{https://arrow.apache.org/docs/format/Columnar.html}.
+Moves columns between R and the 'Apache Arrow' columnar format: the C data interface in memory and the inter-process communication ('IPC') stream and file formats on disk. Every 'Arrow' type converts to an R vector and back, and a conversion either keeps every value unchanged or raises an error that names the column and the R type that would hold it exactly. A registry lets other packages declare which R class is the exact form of which 'Arrow' type. Handles share the layout of the 'nanoarrow' package, so objects pass between the two without conversion. The bundled 'nanoarrow' C library (\url{https://github.com/apache/arrow-nanoarrow}) needs no system library. The format is specified at \url{https://arrow.apache.org/docs/format/Columnar.html}.
 }
 \seealso{
 Useful links:
@@ -23,6 +23,13 @@ Useful links:
 Authors:
 \itemize{
   \item Pedro Baltazar \email{pedrobtz@gmail.com} [copyright holder]
+}
+
+Other contributors:
+\itemize{
+  \item The Apache Software Foundation (nanoarrow, bundled in src/vendor/nanoarrow) [copyright holder]
+  \item Mikkel F. Jørgensen (flatcc runtime, bundled in src/vendor/nanoarrow) [copyright holder]
+  \item Paul Hsieh (pstdint.h in the bundled flatcc runtime) [copyright holder]
 }
 
 }

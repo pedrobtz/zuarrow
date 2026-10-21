@@ -30,6 +30,7 @@ BugReports: https://github.com/pedrobtz/zuarrow/issues
 Depends: 
     R (>= 4.1)
 Suggests: 
+    nanoarrow,
     testthat (>= 3.0.0)
 Config/testthat/edition: 3
 Encoding: UTF-8
