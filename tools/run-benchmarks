@@ -108,4 +108,20 @@ if (has("qio")) {
   row("`qio::read_parquet()`", NA)
 }
 
+# zuarrow's rows, against the oracles above (design section 10).
+if (requireNamespace("zuarrow", quietly = TRUE) && file.exists(plain)) {
+  library(zuarrow)
+  row("`arrow_read()`, plain file", time_ms(arrow_read(plain)), "target: 1.5x read_feather()")
+  row("`arrow_read()`, lz4 file", time_ms(arrow_read(lz4)), "target: 1.5x read_feather()")
+  row("`arrow_read()`, stream", time_ms(arrow_read(stream)), "target: 1.5x read_nanoarrow()")
+  out <- file.path(dir, "zuarrow.arrow")
+  row("`arrow_write()`, plain file", time_ms(arrow_write(df, out)), "target: 1.5x write_feather()")
+  doubles <- arrow_array(df$d1)
+  row("`arrow_to_r()`, 10^7 doubles", time_ms(arrow_to_r(doubles)), "target: under 30 ms")
+  row("`arrow_array()`, 10^7 strings", time_ms(arrow_array(df$s1)), "target: 2x nanoarrow")
+  batches <- arrow_stream(df[seq_len(65536 * 3), ], batch = 65536L)
+  row("`arrow_next()`, one 65 536-row batch of ten columns",
+      time_ms(arrow_next(batches)), "target: under 5 ms")
+}
+
 unlink(dir, recursive = TRUE)

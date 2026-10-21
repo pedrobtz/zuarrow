@@ -46,3 +46,31 @@ with Stages 5 and 6.
 
 The `arrow_next()` row times two columns, not the ten of the §10 input;
 Stage 6 times the full input. Stage 6 fills every row.
+
+## Stage 6, 2026-10-21
+
+Same machine and package versions, the full §10 input. The oracles were
+rerun in the same session, so each target is set against its oracle from
+that run.
+
+| Operation | Target | Oracle | Time | Met |
+| --- | --- | --- | --- | --- |
+| `arrow_read()`, plain file | within 1.5× of `read_feather()` | 5716 ms | 7357 ms (1.29×) | yes |
+| `arrow_read()`, lz4 file | within 1.5× of `read_feather()` | 5408 ms | 7258 ms (1.34×) | yes |
+| `arrow_read()`, stream | within 1.5× of `read_nanoarrow()` | 3691 ms | 6957 ms (1.88×) | no |
+| `arrow_write()`, plain file | within 1.5× of `write_feather()` | 8038 ms | 7984 ms (0.99×) | yes |
+| `arrow_to_r()`, 10⁷ doubles | under 30 ms | | 14 ms | yes |
+| `arrow_array()`, 10⁷ strings | within 2× of nanoarrow | 1247 ms | 2003 ms (1.61×) | yes |
+| `arrow_next()` per 65 536-row batch, ten columns | under 5 ms | | 39 ms | no |
+
+**Both misses are R's string creation.** One 65 536-row string column
+takes 9 ms of a batch's 13 ms in isolation, and every other column type
+takes about 1 ms. The same strings cost 12 ms through `paste0(s, "")`, so
+the time is `mkCharLenCE()` and R's string cache, not the kernel.
+nanoarrow converts the same column in under 1 ms because it returns an
+ALTREP vector and creates the strings on first access. Its stream row
+defers the same work past the timing. D8 has zuarrow materialise ordinary
+vectors, so meeting these two rows would mean reversing D8. The
+benchmark's two string columns under the memory pressure of the 10⁷-row
+input take the batch to 39 ms. Tracked in the issue linked from the
+roadmap's Stage 6 deviation.
