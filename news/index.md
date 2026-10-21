@@ -25,4 +25,30 @@
   values as raw vectors.
 - [`zuarrow_info()`](https://pedrobtz.github.io/zuarrow/reference/zuarrow_info.md)
   reports the versions zuarrow is built from.
-- Every condition inherits from `zuarrow_error`.
+- Every error inherits from `zuarrow_error`, and the lossy warning from
+  `zuarrow_warning`.
+
+### Conversion
+
+- [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  converts an array to an R vector and a stream or struct array to a
+  data frame;
+  [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html) and
+  [`as.vector()`](https://rdrr.io/r/base/vector.html) do the same, and
+  [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  reads one batch.
+- A conversion is exact or it fails: `lossy = "error"`, the default
+  everywhere, raises `zuarrow_lossy_error` naming the column, the row
+  and the package that would read it exactly. `lossy = "character"`
+  gives the values’ exact text, `"warn"` and `"allow"` the nearest R
+  type.
+- `to` names the R type a column must become.
+- [`arrow_array()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
+  and
+  [`arrow_stream()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
+  build arrays and streams from R vectors and data frames, checking
+  every value against a given schema. The exact text that
+  `lossy = "character"` returns is written back as the type its
+  `arrow_type` attribute names.
+- [`arrow_types()`](https://pedrobtz.github.io/zuarrow/reference/arrow_types.md)
+  lists the built-in type table.

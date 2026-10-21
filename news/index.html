@@ -48,7 +48,19 @@
 <code><a href="../reference/arrow_metadata.html">arrow_metadata()</a></code> and <code>arrow_metadata&lt;-</code> read and write schema metadata, keeping binary values as raw vectors.</li>
 <li>
 <code><a href="../reference/zuarrow_info.html">zuarrow_info()</a></code> reports the versions zuarrow is built from.</li>
-<li>Every condition inherits from <code>zuarrow_error</code>.</li>
+<li>Every error inherits from <code>zuarrow_error</code>, and the lossy warning from <code>zuarrow_warning</code>.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="conversion-0-0-0-9000">Conversion<a class="anchor" aria-label="anchor" href="#conversion-0-0-0-9000"></a></h3>
+<ul><li>
+<code><a href="../reference/arrow_to_r.html">arrow_to_r()</a></code> converts an array to an R vector and a stream or struct array to a data frame; <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> and <code><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector()</a></code> do the same, and <code><a href="../reference/arrow_to_r.html">arrow_next()</a></code> reads one batch.</li>
+<li>A conversion is exact or it fails: <code>lossy = "error"</code>, the default everywhere, raises <code>zuarrow_lossy_error</code> naming the column, the row and the package that would read it exactly. <code>lossy = "character"</code> gives the values’ exact text, <code>"warn"</code> and <code>"allow"</code> the nearest R type.</li>
+<li>
+<code>to</code> names the R type a column must become.</li>
+<li>
+<code><a href="../reference/arrow_array.html">arrow_array()</a></code> and <code><a href="../reference/arrow_array.html">arrow_stream()</a></code> build arrays and streams from R vectors and data frames, checking every value against a given schema. The exact text that <code>lossy = "character"</code> returns is written back as the type its <code>arrow_type</code> attribute names.</li>
+<li>
+<code><a href="../reference/arrow_types.html">arrow_types()</a></code> lists the built-in type table.</li>
 </ul></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

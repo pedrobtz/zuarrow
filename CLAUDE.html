@@ -88,14 +88,11 @@
 <div class="section level2">
 <h2 id="architecture">Architecture<a class="anchor" aria-label="anchor" href="#architecture"></a></h2>
 <p>Design §4 names five layers. What exists so far:</p>
-<ul><li>
-<strong>Vendored nanoarrow</strong> in <code>src/vendor/nanoarrow/</code> (see Vendored native code).</li>
-<li>
-<strong>Handles</strong> in <code>src/zar_xptr.c</code>: owning external pointers in nanoarrow’s <code>r.h</code> layout, readers that accept any producer’s handles, the schema copy, printing, metadata, and the <em>spec</em> round trip. A spec is the R list <code>list(format, name, flags, metadata, children, dictionary)</code> that <code>R/handles.R</code> builds schemas from (<code>zar_c_schema_from_spec</code>) and reads them back into (<code>zar_c_schema_to_spec</code>).</li>
-<li>
-<strong>Validation and comparison</strong> in <code>src/zar_validate.c</code>, plus a strict UTF-8 pass in <code>src/zar_utf8.c</code>, which nanoarrow’s full level lacks.</li>
-<li>
-<strong>Internal constructors</strong> in <code>src/zar_build.c</code>: arrays from raw buffers, built without validation so tests can make malformed arrays, and a stream over arrays. Tests reach them through <code>helper-arrays.R</code>.</li>
+<ul><li><p><strong>Vendored nanoarrow</strong> in <code>src/vendor/nanoarrow/</code> (see Vendored native code).</p></li>
+<li><p><strong>Handles</strong> in <code>src/zar_xptr.c</code>: owning external pointers in nanoarrow’s <code>r.h</code> layout, readers that accept any producer’s handles, the schema copy, printing, metadata, and the <em>spec</em> round trip. A spec is the R list <code>list(format, name, flags, metadata, children, dictionary)</code> that <code>R/handles.R</code> builds schemas from (<code>zar_c_schema_from_spec</code>) and reads them back into (<code>zar_c_schema_to_spec</code>).</p></li>
+<li><p><strong>Validation and comparison</strong> in <code>src/zar_validate.c</code>, plus a strict UTF-8 pass in <code>src/zar_utf8.c</code>, which nanoarrow’s full level lacks.</p></li>
+<li><p><strong>Internal constructors</strong> in <code>src/zar_build.c</code>: arrays from raw buffers, built without validation so tests can make malformed arrays, and a stream over arrays. Tests reach them through <code>helper-arrays.R</code>.</p></li>
+<li><p><strong>Conversion</strong> in <code>src/zar_to_r.c</code> (Arrow to R) and <code>src/zar_from_r.c</code> (R to Arrow). <code>zar_c_to_r</code> takes every batch at once: a plan per column picks the R form from the type and the lossy policy, a value scan settles the columns whose exactness depends on their values (<code>int64</code> past 2^53, <code>int32</code> <code>INT_MIN</code>, a NUL in a string), and each column is then allocated once and filled from every batch. <code>R/convert.R</code> builds the data frame and raises the lossy conditions, naming the family package from <code>zar_exact_target()</code>.</p></li>
 </ul><p><strong>C never raises a condition.</strong> An entry point that fails frees what it owns and returns a <code>zar_failure</code>, <code>list(kind, message)</code>. The R caller wraps every <code><a href="https://rdrr.io/r/base/CallExternal.html" class="external-link">.Call()</a></code> in <code>zar_check()</code>, which raises <code>zuarrow_&lt;kind&gt;_error</code>. Write the <code><a href="https://rdrr.io/r/base/CallExternal.html" class="external-link">.Call()</a></code> literally at the call site: R CMD check cannot see the registered routine through a variable.</p>
 </div>
 <div class="section level2">

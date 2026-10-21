@@ -116,6 +116,7 @@ Design §4 names five layers. What exists so far:
 
 - **Vendored nanoarrow** in `src/vendor/nanoarrow/` (see Vendored native
   code).
+
 - **Handles** in `src/zar_xptr.c`: owning external pointers in
   nanoarrow’s `r.h` layout, readers that accept any producer’s handles,
   the schema copy, printing, metadata, and the *spec* round trip. A spec
@@ -123,11 +124,22 @@ Design §4 names five layers. What exists so far:
   `list(format, name, flags, metadata, children, dictionary)` that
   `R/handles.R` builds schemas from (`zar_c_schema_from_spec`) and reads
   them back into (`zar_c_schema_to_spec`).
+
 - **Validation and comparison** in `src/zar_validate.c`, plus a strict
   UTF-8 pass in `src/zar_utf8.c`, which nanoarrow’s full level lacks.
+
 - **Internal constructors** in `src/zar_build.c`: arrays from raw
   buffers, built without validation so tests can make malformed arrays,
   and a stream over arrays. Tests reach them through `helper-arrays.R`.
+
+- **Conversion** in `src/zar_to_r.c` (Arrow to R) and `src/zar_from_r.c`
+  (R to Arrow). `zar_c_to_r` takes every batch at once: a plan per
+  column picks the R form from the type and the lossy policy, a value
+  scan settles the columns whose exactness depends on their values
+  (`int64` past 2^53, `int32` `INT_MIN`, a NUL in a string), and each
+  column is then allocated once and filled from every batch.
+  `R/convert.R` builds the data frame and raises the lossy conditions,
+  naming the family package from `zar_exact_target()`.
 
 **C never raises a condition.** An entry point that fails frees what it
 owns and returns a `zar_failure`, `list(kind, message)`. The R caller
