@@ -503,11 +503,15 @@ adds:
 - **Q2 (Stage 5).** Union dictionary levels across delta batches in the
   eager reader, or error. The roadmap follows §6.5: union.
 - **Q3 (Stage 0 records, Stage 3 decides).** Whether `arrow_array()` may
-  mask `arrow::arrow_array()` or should be `arrow_from_r()`.
+  mask `arrow::arrow_array()` or should be `arrow_from_r()`. Stage 3
+  (2026-10-21) kept the design's `arrow_array()`; the mask is documented
+  in D12. The maintainer may still rename it before 0.1.0.
 - **Q4 (Stage 3).** Whether `as.data.frame()` takes `lossy = "error"` like
-  everything else. The roadmap follows the design: yes.
+  everything else. The roadmap follows the design: yes, and Stage 3 tests
+  it.
 - **Q5 (board).** CRAN submission or GitHub release for v0.1.0. The board's
   `CRAN intent` field records it; the roadmap assumes `Planned`.
 - **Q6 (Stage 3).** Whether foreign handles get `default` or `minimal`
   validation before conversion, once the cost on a 10⁷-row stream is
-  measured.
+  measured. Resolved 2026-10-21: `default`, 7 ms more than `minimal` on
+  10⁷ rows (design §15 Q6).

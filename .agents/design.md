@@ -465,6 +465,12 @@ same-typed vectors to `list<T>`, a matrix to `fixed_size_list` when
 registered class goes through its `from` handler. Any other class errors
 as `zuarrow_type_error` naming the class.
 
+Stage 3 (2026-10-21) read "`difftime` to `duration` at its unit" as
+`duration[us]`: R's `mins`, `hours`, `days` and `weeks` are not Arrow
+units, and a `secs` difftime is usually fractional, so every difftime is
+converted to seconds and written in microseconds, rounded, as `POSIXct` is
+under D10. A given schema can name any other unit.
+
 ### 6.3 Exact or error
 
 A conversion is **exact** when every non-null value is represented
@@ -744,6 +750,9 @@ copyright holders (D14).
 ## 8. Errors
 
 Every condition inherits from `zuarrow_error`; tests assert on class.
+Stage 3 (2026-10-21) made the one warning the exception: it inherits from
+`zuarrow_warning`, because a `tryCatch(zuarrow_error = )` handler would
+otherwise turn `lossy = "warn"` into an error.
 
 | Class | Raised when |
 | --- | --- |
@@ -1035,7 +1044,10 @@ them. None was discussed before writing.
   `CRAN intent` field records the answer; this RFC assumes `Planned`.
 - **Q6.** Should `arrow_validate()` at `default` run on every foreign
   handle before conversion, or only `minimal`, once Stage 2 has measured
-  the cost on a 10⁷-row stream from DuckDB?
+  the cost on a 10⁷-row stream from DuckDB? Measured in Stage 3
+  (2026-10-21) on a 10⁷-row stream of a double and a string column from
+  `nanoarrow`: minimal 4 ms, default 11 ms, full 101 ms. Conversion uses
+  `default`, which building the array view applies anyway.
 
 ## 16. What this RFC does not decide
 

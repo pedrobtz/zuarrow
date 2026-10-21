@@ -33,6 +33,16 @@ The arrow rows are dominated by materialising the two string columns
 under memory pressure on this 8 GB machine; they are the bar zuarrow is
 measured against on the same machine, not absolute figures.
 
-The `arrow_next()` row (under 5 ms per 65 536-row batch) has no oracle and
-is measured once Stage 3 lands. The zuarrow rows are added by the stages
-that implement them; Stage 6 fills every row.
+## Stage 3, 2026-10-21
+
+Same machine and package versions. Conversion only; the IPC rows come
+with Stages 5 and 6.
+
+| Operation | Target | Time |
+| --- | --- | --- |
+| `arrow_to_r()`, 10⁷ doubles | under 30 ms | 27 ms |
+| `arrow_array()`, 10⁷ strings | within 2× of nanoarrow's 1247 ms | 1870 ms |
+| `arrow_next()` per 65 536-row batch, a double and a string column | under 5 ms | 1.0 ms |
+
+The `arrow_next()` row times two columns, not the ten of the §10 input;
+Stage 6 times the full input. Stage 6 fills every row.
