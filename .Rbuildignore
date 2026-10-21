@@ -16,3 +16,4 @@
 ^\.superpowers$
 ^\.worktrees$
 ^tools$
+^tests/testthat/fixtures$

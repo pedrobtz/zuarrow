@@ -91,6 +91,15 @@ test_that("character gives the exact text and records the type", {
     text(test_fixed("tsu:", -1, 8L)),
     "1969-12-31T23:59:59.999999"
   )
+  # The int64 extremes, where the fraction must not be found by multiplying.
+  expect_identical(
+    text(test_array("tsn:UTC", 1, list(NULL, le_hex("8000000000000000")))),
+    "1677-09-21T00:12:43.145224192Z"
+  )
+  expect_identical(
+    text(test_array("tsn:UTC", 1, list(NULL, le_hex("7FFFFFFFFFFFFFFF")))),
+    "2262-04-11T23:47:16.854775807Z"
+  )
   expect_identical(
     text(test_fixed("tdm", 86400000, 8L)),
     "1970-01-02T00:00:00.000Z"

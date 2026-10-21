@@ -1,0 +1,30 @@
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -10,7 +10,9 @@
+  * without an index type reads as int32, as the format says
+  * (tools/patches/0007-dictionary-index-type.patch), and a message, footer or
+  * field whose union names a table it does not carry is an error, not a NULL
+- * read (tools/patches/0008-absent-tables.patch).
++ * read (tools/patches/0008-absent-tables.patch), and a dictionary batch's
++ * field nodes and buffers are counted against its schema like a record
++ * batch's (tools/patches/0009-dictionary-batch-counts.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -3059,6 +3061,16 @@
+       (struct ArrowIpcDecoderPrivate*)dictionary->decoder.private_data;
+   dictionary->decoder.message_type = NANOARROW_IPC_MESSAGE_TYPE_RECORD_BATCH;
+   dictionary_decoder_private_data->last_message = record_batch;
++
++  // Check the dictionary's field nodes and buffers against its schema, as a
++  // record batch's are, before the walk indexes them.
++  if (record_batch == NULL) {
++    ArrowErrorSet(error, "DictionaryBatch has no data");
++    return EINVAL;
++  }
++  dictionary->decoder.metadata_version = decoder->metadata_version;
++  NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderDecodeRecordBatchHeader(
++      &dictionary->decoder, (flatbuffers_generic_t)record_batch, error));
+ 
+   // A DictionaryBatch's data is a RecordBatch and may be compressed like one:
+   // give the dictionary's decoder its codec and a borrowed reference to this

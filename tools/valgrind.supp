@@ -1,0 +1,15 @@
+# Valgrind suppressions for the native-checks valgrind leg.
+#
+# arrow is a Suggests oracle. Its shared object starts a thread pool when it
+# loads, and each thread's thread-local storage is still referenced only by
+# an interior pointer when R exits, which valgrind calls "possibly lost".
+# The match is limited to that kind of leak and to stacks that pass through
+# arrow.so, so a leak in zuarrow's own code is still reported.
+{
+   arrow-thread-pool-tls
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   obj:*/arrow/libs/arrow.so
+   ...
+}

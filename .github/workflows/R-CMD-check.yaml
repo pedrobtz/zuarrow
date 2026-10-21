@@ -25,6 +25,10 @@ jobs:
       # The default four legs plus Windows on R-devel, the combination CRAN's
       # own Windows R-devel check runs and nothing else here reaches. The
       # extra row runs in the full profile only.
+      # The arrow-testing corpus of oracles 1 and 2 (design section 9),
+      # fetched by the tests themselves (helper-fixtures.R).
+      env: |
+        ZUARROW_FETCH_FIXTURES=true
       runners: >-
         [{"os": "macos-latest", "r": "release"},
          {"os": "windows-latest", "r": "release"},

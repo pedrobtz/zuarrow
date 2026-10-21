@@ -34,7 +34,7 @@ Two dependencies outside this repository shape the plan:
 | 2 | [Handles and schema tools](#stage-2--handles-and-schema-tools) | full | [#4](https://github.com/pedrobtz/zuarrow/issues/4) | [#16](https://github.com/pedrobtz/zuarrow/pull/16) | 2026-10-21 |
 | 3 | [Type table and conversion](#stage-3--type-table-and-conversion) | quick | [#5](https://github.com/pedrobtz/zuarrow/issues/5) | [#18](https://github.com/pedrobtz/zuarrow/pull/18) | 2026-10-21 |
 | 4 | [Nested types, dictionaries, extensions and the registry](#stage-4--nested-types-dictionaries-extensions-and-the-registry) | quick | [#6](https://github.com/pedrobtz/zuarrow/issues/6) | [#19](https://github.com/pedrobtz/zuarrow/pull/19) | 2026-10-21 |
-| 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | | |
+| 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | [#20](https://github.com/pedrobtz/zuarrow/pull/20) | 2026-10-21 |
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | | |
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | | |
 | 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | | |
@@ -334,6 +334,24 @@ connection, validates everything before allocating, decompresses through
 - A full-profile r-actions run is green on the pull request and on the
   merge commit, including ASan, UBSan, valgrind and rchk.
 
+Recorded 2026-10-21:
+
+- Oracle 1 uses libarrow, not the JSON files (see Open questions).
+- `ZAR_STANDALONE` builds layer 4 only: the reader, its validation and the
+  vendored decoder. The conversion kernels are R by nature.
+- Apple's clang has no libFuzzer, so the local ten-minute run drove the
+  harness with random mutations of the corpus under ASan and UBSan
+  (2 427 180 inputs, clean); the coverage-guided campaign is `fuzz.yaml`
+  in CI. Getting there found nine defects, fixed in vendored patches 0005
+  to 0012 and in the reader, each kept as a
+  `tests/testthat/data/crash-*.arrow` regression input.
+- `Remotes:` points at zukomp's default branch, where the codecs merged
+  in pedrobtz/zukomp#56 on 2026-10-21, until zukomp's release reaches
+  CRAN; rchk installs it through `github-packages`.
+- The upstream nanoarrow pull request is prepared, not opened: opening it
+  is an outward action in an Apache project, left to the maintainer
+  (#17).
+
 **Design.** §6.7, §7 (patch), §9 oracles 1 and 2, D2, D13, D17; design
 stage 4.
 
@@ -492,17 +510,20 @@ adds:
 
 - **Vendor path (Stage 1).** Resolved 2026-10-21: `src/vendor/nanoarrow/`,
   and design §4 and §7 are amended.
-- **Fixtures in CI (Stage 5).** `r-cmd-check.yml` has no pre-test hook. The
-  roadmap assumes the test helper fetches the pinned `arrow-testing` commit
-  when `ZUARROW_FETCH_FIXTURES` is set through the workflow's `env:` input.
-  The alternative is a dedicated conformance workflow, which `CLAUDE.md`
-  discourages.
+- **Fixtures in CI (Stage 5).** Resolved 2026-10-21 as assumed:
+  `helper-fixtures.R` downloads the files `tests/testthat/fixtures-files.txt`
+  lists, at the pinned commit, when `ZUARROW_FETCH_FIXTURES` is set through
+  the `env:` input of the check and sanitizer callers.
 - **The JSON oracle's compiler (Stage 5).** D18 compiles nanoarrow's C++
   testing header "into the test harness under `tests/`" and never into
   `zuarrow.so`. How that harness is built at test time without a C++
   toolchain assumption on every leg is undecided: a standalone program
   built by `tools/fetch-fixtures`, or a pre-rendered comparison file
-  committed with the fixtures. Decide at the start of Stage 5.
+  committed with the fixtures. Decided 2026-10-21, a deviation from D18 for
+  the maintainer to confirm: oracle 1 compares each case's file with its
+  stream, and both with libarrow's decoding of the same file through the
+  same conversion where `arrow` is installed. The testing header is not
+  vendored, so no C++ is built anywhere.
 - **Q1 (Stage 9, and each later release).** Has `nanoarrow` closed #728,
   #622, #617, #833, #824, bundled codecs or grown an exact-targets
   registry? If all, the package shrinks to the registry and the C table.

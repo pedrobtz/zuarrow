@@ -1,0 +1,15 @@
+#!/bin/sh
+# Fetches apache/arrow-testing's IPC corpus at the commit
+# tests/testthat/fixtures-files.txt names into tests/testthat/fixtures/,
+# which git and R CMD build ignore. Run from the package root.
+set -eu
+LIST=tests/testthat/fixtures-files.txt
+COMMIT=$(sed -n 's/^# apache\/arrow-testing \([0-9a-f]*\)$/\1/p' "$LIST")
+BASE="https://raw.githubusercontent.com/apache/arrow-testing/$COMMIT/data"
+OUT=tests/testthat/fixtures
+grep -v '^#' "$LIST" | while read -r f; do
+  [ -n "$f" ] || continue
+  mkdir -p "$OUT/$(dirname "$f")"
+  curl -fsSL --retry 3 -o "$OUT/$f" "$BASE/$f"
+done
+echo "==> fetched $(grep -vc '^#' "$LIST") files at $COMMIT into $OUT"

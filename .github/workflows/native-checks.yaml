@@ -19,11 +19,15 @@ jobs:
     uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@v1
     with:
       asan: true
+      env: |
+        ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
 
   valgrind:
     uses: pedrobtz/r-actions/.github/workflows/valgrind.yml@v1
     with:
+      # arrow's thread pool leaves "possibly lost" TLS; see the file.
+      suppressions: tools/valgrind.supp
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
 
   lto:
@@ -36,6 +40,10 @@ jobs:
 
   rchk:
     uses: pedrobtz/r-actions/.github/workflows/rchk.yml@v1
+    with:
+      # zukomp's codecs are not on CRAN yet; drop this once they are.
+      github-packages: |
+        pedrobtz/zukomp
 
   analyzers:
     uses: pedrobtz/r-actions/.github/workflows/analyzers.yml@v1

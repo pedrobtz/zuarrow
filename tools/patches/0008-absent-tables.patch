@@ -1,0 +1,47 @@
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -8,7 +8,9 @@
+  * INT32_MAX is rejected before it overflows
+  * (tools/patches/0006-header-size-overflow.patch), and a dictionary encoding
+  * without an index type reads as int32, as the format says
+- * (tools/patches/0007-dictionary-index-type.patch).
++ * (tools/patches/0007-dictionary-index-type.patch), and a message, footer or
++ * field whose union names a table it does not carry is an error, not a NULL
++ * read (tools/patches/0008-absent-tables.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -1318,6 +1320,10 @@
+ static int ArrowIpcDecoderSetType(struct ArrowSchema* schema, ns(Field_table_t) field,
+                                   int64_t n_children, struct ArrowError* error) {
+   int type_type = ns(Field_type_type(field));
++  if (ns(Field_type_get(field)) == NULL) {
++    ArrowErrorSet(error, "Field has a type of kind %d but no type table", type_type);
++    return EINVAL;
++  }
+   switch (type_type) {
+     case ns(Type_Null):
+       return ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_NA, error);
+@@ -1921,6 +1927,11 @@
+   }
+ 
+   flatbuffers_generic_t message_header = ns(Message_header_get(message));
++  if (message_header == NULL) {
++    ArrowErrorSet(error, "Message has a header of kind %d but no header table",
++                  (int)decoder->message_type);
++    return EINVAL;
++  }
+   switch (decoder->message_type) {
+     case ns(MessageHeader_Schema):
+       NANOARROW_RETURN_NOT_OK(
+@@ -2025,6 +2036,10 @@
+   const uint8_t* footer_data =
+       data.data.as_uint8 + data.size_bytes - footer_and_size_and_magic_size;
+   ns(Footer_table_t) footer = ns(Footer_as_root(footer_data));
++  if (footer == NULL || ns(Footer_schema(footer)) == NULL) {
++    ArrowErrorSet(error, "Footer has no schema");
++    return EINVAL;
++  }
+ 
+   NANOARROW_RETURN_NOT_OK(
+       ArrowIpcDecoderDecodeSchemaHeader(decoder, ns(Footer_schema(footer)), error));

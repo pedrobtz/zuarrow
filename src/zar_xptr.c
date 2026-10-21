@@ -580,10 +580,15 @@ SEXP zar_c_stream_next(SEXP x) {
   int code = stream->get_next(stream, array);
   if (code != 0) {
     const char *msg = stream->get_last_error(stream);
-    ArrowErrorSet(&error, "the next batch could not be read: %s",
-                  msg == NULL ? strerror(code) : msg);
+    const char *kind = zar_reader_kind(stream);
+    if (kind != NULL) {
+      ArrowErrorSet(&error, "%s", msg == NULL ? strerror(code) : msg);
+    } else {
+      ArrowErrorSet(&error, "the next batch could not be read: %s",
+                    msg == NULL ? strerror(code) : msg);
+    }
     UNPROTECT(2);
-    return zar_failure_from_error("handle", &error);
+    return zar_failure_from_error(kind == NULL ? "handle" : kind, &error);
   }
   if (array->release == NULL) {
     Rf_setAttrib(x, ended_sym, Rf_ScalarLogical(TRUE));

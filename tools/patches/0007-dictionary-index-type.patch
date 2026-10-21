@@ -1,0 +1,30 @@
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -6,7 +6,9 @@
+  * a bad file trailer is reported without reading past the input
+  * (tools/patches/0005-footer-magic-read.patch), and a message length near
+  * INT32_MAX is rejected before it overflows
+- * (tools/patches/0006-header-size-overflow.patch).
++ * (tools/patches/0006-header-size-overflow.patch), and a dictionary encoding
++ * without an index type reads as int32, as the format says
++ * (tools/patches/0007-dictionary-index-type.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -1419,8 +1421,14 @@
+                                      error);
+   NANOARROW_RETURN_NOT_OK_WITH_ERROR(ArrowSchemaSetName(schema->dictionary, ""), error);
+ 
+-  NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderSetTypeInt(
+-      schema, ns(DictionaryEncoding_indexType_get(dictionary_encoding)), error));
++  // indexType is optional: "If omitted, int32 is assumed" (Schema.fbs).
++  if (ns(DictionaryEncoding_indexType_is_present(dictionary_encoding))) {
++    NANOARROW_RETURN_NOT_OK(ArrowIpcDecoderSetTypeInt(
++        schema, ns(DictionaryEncoding_indexType_get(dictionary_encoding)), error));
++  } else {
++    NANOARROW_RETURN_NOT_OK(
++        ArrowIpcDecoderSetTypeSimple(schema, NANOARROW_TYPE_INT32, error));
++  }
+ 
+   if (ns(DictionaryEncoding_isOrdered_get(dictionary_encoding))) {
+     schema->flags |= ARROW_FLAG_DICTIONARY_ORDERED;

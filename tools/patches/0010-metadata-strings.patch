@@ -1,0 +1,32 @@
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -12,7 +12,9 @@
+  * field whose union names a table it does not carry is an error, not a NULL
+  * read (tools/patches/0008-absent-tables.patch), and a dictionary batch's
+  * field nodes and buffers are counted against its schema like a record
+- * batch's (tools/patches/0009-dictionary-batch-counts.patch).
++ * batch's (tools/patches/0009-dictionary-batch-counts.patch), and metadata
++ * keys and values are read by their stored length, absent ones as empty
++ * (tools/patches/0010-metadata-strings.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -891,10 +893,14 @@
+   for (int64_t i = 0; i < n_pairs; i++) {
+     kv = ns(KeyValue_vec_at(kv_vec, i));
+ 
+-    key.data = ns(KeyValue_key(kv));
+-    key.size_bytes = strlen(key.data);
+-    value.data = ns(KeyValue_value(kv));
+-    value.size_bytes = strlen(value.data);
++    // Both strings are optional, and a value may hold NUL bytes: read each by
++    // its stored length, an absent one as empty.
++    flatbuffers_string_t kv_key = kv == NULL ? NULL : ns(KeyValue_key(kv));
++    flatbuffers_string_t kv_value = kv == NULL ? NULL : ns(KeyValue_value(kv));
++    key.data = kv_key == NULL ? "" : kv_key;
++    key.size_bytes = kv_key == NULL ? 0 : (int64_t)flatbuffers_string_len(kv_key);
++    value.data = kv_value == NULL ? "" : kv_value;
++    value.size_bytes = kv_value == NULL ? 0 : (int64_t)flatbuffers_string_len(kv_value);
+ 
+     result = ArrowMetadataBuilderAppend(&buf, key, value);
+     if (result != NANOARROW_OK) {
