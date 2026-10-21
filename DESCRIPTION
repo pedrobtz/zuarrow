@@ -32,6 +32,7 @@ Depends:
 Imports: 
     zukomp
 Suggests: 
+    arrow,
     nanoarrow,
     testthat (>= 3.0.0),
     withr

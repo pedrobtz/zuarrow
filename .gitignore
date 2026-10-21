@@ -52,3 +52,6 @@ CRAN-SUBMISSION
 
 # Claude Code local settings
 .claude/settings.local.json
+
+# arrow-testing fixtures, fetched by tools/fetch-fixtures
+tests/testthat/fixtures/

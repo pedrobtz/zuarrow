@@ -3,11 +3,14 @@
 #ifndef ZAR_H
 #define ZAR_H
 
+#include "nanoarrow.h"
+
+/* Under ZAR_STANDALONE the IPC reader compiles without R, for the fuzz
+   target of design section 9: only the declarations below the R block. */
+#ifndef ZAR_STANDALONE
 #define R_NO_REMAP
 #include <R.h>
 #include <Rinternals.h>
-
-#include "nanoarrow.h"
 
 /* A length-one character vector from UTF-8 bytes. */
 SEXP zar_scalar_utf8(const char *x);
@@ -46,8 +49,15 @@ const char *zar_handle_status(SEXP x);
    a new zuarrow schema handle; a failure when there is none. */
 SEXP zar_schema_copy_of(SEXP x);
 
+#endif /* ZAR_STANDALONE */
+
 /* The offset of the first byte that is not valid UTF-8, or -1. */
 int64_t zar_utf8_invalid_at(const uint8_t *s, int64_t n);
+
+/* Checks every binary-view and string-view struct in a view and its
+   children names a range inside its buffers, which nanoarrow does not. */
+int zar_view_check_layout(const struct ArrowArrayView *view, const char *path,
+                          struct ArrowError *error);
 
 /* Checks every non-null string in a view and its children is valid UTF-8,
    naming the path to the first that is not. */
@@ -67,5 +77,12 @@ int zar_parse_time(const char *s, int digits, int64_t *out);
 /* The condition kind of a reader stream's last failure, or NULL when the
    stream is not one arrow_read() made (src/zar_ipc_read.c). */
 const char *zar_reader_kind(const struct ArrowArrayStream *stream);
+
+/* Opens a reader over a copy of `size` bytes into `out`, with the limits
+   c(max_message, max_depth, max_batch_rows, max_bytes). On failure returns
+   non-zero with `error` and `*kind` set. R-free, for the fuzz target. */
+int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limits,
+                          struct ArrowArrayStream *out, struct ArrowError *error,
+                          const char **kind);
 
 #endif /* ZAR_H */

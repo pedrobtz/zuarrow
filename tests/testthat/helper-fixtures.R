@@ -1,0 +1,60 @@
+# apache/arrow-testing's IPC corpus (design section 9) at a pinned commit.
+# The files are not shipped: a developer fetches them with
+# tools/fetch-fixtures into tests/testthat/fixtures/, and CI sets
+# ZUARROW_FETCH_FIXTURES so the first test that needs them downloads them
+# under tempdir(). Without either, the oracle tests skip.
+fixtures_commit <- function() "9ff285c88565f0f6abc855918c6a342e70e4909c"
+
+fixtures_dir <- function() {
+  local <- test_path("fixtures")
+  if (dir.exists(local)) {
+    return(local)
+  }
+  if (!nzchar(Sys.getenv("ZUARROW_FETCH_FIXTURES"))) {
+    testthat::skip(
+      "the arrow-testing fixtures are absent; run tools/fetch-fixtures"
+    )
+  }
+  dir <- file.path(tempdir(), "zuarrow-fixtures")
+  stamp <- file.path(dir, ".complete")
+  if (!file.exists(stamp)) {
+    files <- readLines(test_path("fixtures-files.txt"))
+    files <- files[!startsWith(files, "#") & nzchar(files)]
+    base <- sprintf(
+      "https://raw.githubusercontent.com/apache/arrow-testing/%s/data/",
+      fixtures_commit()
+    )
+    for (f in files) {
+      dest <- file.path(dir, f)
+      dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
+      ok <- tryCatch(
+        utils::download.file(
+          paste0(base, f),
+          dest,
+          mode = "wb",
+          quiet = TRUE
+        ) ==
+          0,
+        error = function(e) FALSE,
+        warning = function(w) FALSE
+      )
+      if (!ok) testthat::skip(paste("could not fetch", f))
+    }
+    file.create(stamp)
+  }
+  dir
+}
+
+golden_cases <- function(version) {
+  dir <- file.path(fixtures_dir(), "arrow-ipc-stream", "integration", version)
+  testthat::skip_if_not(dir.exists(dir), paste("no fixtures for", version))
+  cases <- sub("\\.stream$", "", list.files(dir, "\\.stream$"))
+  stats::setNames(file.path(dir, cases), cases)
+}
+
+# Unions and intervals have no R form; golden cases are read as exact text.
+no_r_form <- function(case) grepl("union|interval", case)
+
+read_golden <- function(path) {
+  tryCatch(arrow_read(path, lossy = "character"), zuarrow_error = function(e) e)
+}

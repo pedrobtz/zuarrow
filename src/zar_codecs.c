@@ -5,10 +5,31 @@
 #include <inttypes.h>
 #include <string.h>
 
-#include <R_ext/Rdynload.h>
-
 #include "zar.h"
 #include "nanoarrow_ipc.h"
+
+#ifdef ZAR_STANDALONE
+
+/* Without R there is no zukomp: compressed bodies stay compressed and are
+   a codec error, so the fuzz target exercises framing and validation. */
+const void *zar_codecs_api(void) { return NULL; }
+
+int zar_codec_decompress(const void *table, int codec, const uint8_t *src,
+                         int64_t src_size, uint8_t *dst, int64_t dst_size,
+                         struct ArrowError *error, const char **kind) {
+  NANOARROW_UNUSED(table);
+  NANOARROW_UNUSED(src);
+  NANOARROW_UNUSED(src_size);
+  NANOARROW_UNUSED(dst);
+  NANOARROW_UNUSED(dst_size);
+  *kind = "codec";
+  ArrowErrorSet(error, "codec %d is not built into the standalone reader", codec);
+  return ENOTSUP;
+}
+
+#else
+
+#include <R_ext/Rdynload.h>
 #include "zukomp-r.h"
 
 static zu_codec zar_codec_id(int codec) {
@@ -72,3 +93,5 @@ int zar_codec_decompress(const void *table, int codec, const uint8_t *src,
   }
   return NANOARROW_OK;
 }
+
+#endif /* ZAR_STANDALONE */

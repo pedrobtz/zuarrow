@@ -93,12 +93,24 @@ arrow_read <- function(
     .Call(
       zar_c_reader_open,
       source,
-      as.double(unlist(limits[c("max_message", "max_depth", "max_batch_rows", "max_bytes")]))
+      as.double(unlist(limits[c(
+        "max_message",
+        "max_depth",
+        "max_batch_rows",
+        "max_bytes"
+      )]))
     ),
     call = call
   )
   if (!is.null(columns)) {
-    zar_check(.Call(zar_c_reader_select, stream, zar_column_index(stream, columns, call)), call = call)
+    zar_check(
+      .Call(
+        zar_c_reader_select,
+        stream,
+        zar_column_index(stream, columns, call)
+      ),
+      call = call
+    )
   }
   if (lazy) {
     return(stream)
@@ -124,11 +136,20 @@ zar_read_source <- function(x, limits, call) {
   }
   if (is.character(x) && length(x) == 1L && !is.na(x)) {
     if (!file.exists(x) || dir.exists(x)) {
-      zar_abort("io", sprintf("Cannot open `%s`: no such file.", x), call = call, path = x)
+      zar_abort(
+        "io",
+        sprintf("Cannot open `%s`: no such file.", x),
+        call = call,
+        path = x
+      )
     }
     return(x)
   }
-  zar_abort("type", "`x` must be a path, a raw vector or a connection.", call = call)
+  zar_abort(
+    "type",
+    "`x` must be a path, a raw vector or a connection.",
+    call = call
+  )
 }
 
 # A connection is read through R's connection API in blocks, so a gzipped
@@ -136,12 +157,19 @@ zar_read_source <- function(x, limits, call) {
 zar_read_connection <- function(con, limits, call) {
   opened <- !isOpen(con)
   if (opened) {
-    ok <- tryCatch({
-      open(con, "rb")
-      TRUE
-    }, error = function(e) e)
+    ok <- tryCatch(
+      {
+        open(con, "rb")
+        TRUE
+      },
+      error = function(e) e
+    )
     if (!isTRUE(ok)) {
-      zar_abort("io", sprintf("Cannot open the connection: %s", conditionMessage(ok)), call = call)
+      zar_abort(
+        "io",
+        sprintf("Cannot open the connection: %s", conditionMessage(ok)),
+        call = call
+      )
     }
     on.exit(close(con), add = TRUE)
   }
@@ -150,14 +178,22 @@ zar_read_connection <- function(con, limits, call) {
   repeat {
     block <- tryCatch(readBin(con, raw(), 1048576L), error = function(e) e)
     if (inherits(block, "error")) {
-      zar_abort("io", sprintf("Cannot read the connection: %s", conditionMessage(block)), call = call)
+      zar_abort(
+        "io",
+        sprintf("Cannot read the connection: %s", conditionMessage(block)),
+        call = call
+      )
     }
     if (length(block) == 0L) {
       break
     }
     total <- total + length(block)
     if (total > limits$max_bytes) {
-      zar_abort("limit", "The connection holds more than max_bytes.", call = call)
+      zar_abort(
+        "limit",
+        "The connection holds more than max_bytes.",
+        call = call
+      )
     }
     blocks[[length(blocks) + 1L]] <- block
   }
@@ -166,23 +202,36 @@ zar_read_connection <- function(con, limits, call) {
 
 zar_column_index <- function(stream, columns, call) {
   spec <- .Call(zar_c_schema_to_spec, arrow_schema(stream))
-  names <- vapply(spec$children, function(f) if (is.na(f$name)) "" else f$name, "")
+  names <- vapply(
+    spec$children,
+    function(f) if (is.na(f$name)) "" else f$name,
+    ""
+  )
   if (is.character(columns)) {
     idx <- match(columns, names)
     if (anyNA(idx)) {
       zar_abort(
         "type",
-        sprintf("No column called %s.", paste0("`", columns[is.na(idx)], "`", collapse = ", ")),
+        sprintf(
+          "No column called %s.",
+          paste0("`", columns[is.na(idx)], "`", collapse = ", ")
+        ),
         call = call
       )
     }
-  } else if (is.numeric(columns) && !anyNA(columns) && all(columns == floor(columns))) {
+  } else if (
+    is.numeric(columns) && !anyNA(columns) && all(columns == floor(columns))
+  ) {
     idx <- as.integer(columns)
     if (any(idx < 1L | idx > length(names))) {
       zar_abort("type", "A column position is out of range.", call = call)
     }
   } else {
-    zar_abort("type", "`columns` must be column names or positions.", call = call)
+    zar_abort(
+      "type",
+      "`columns` must be column names or positions.",
+      call = call
+    )
   }
   idx - 1L
 }

@@ -1506,6 +1506,8 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     if (code == NANOARROW_OK) {
       code = ArrowArrayViewSetArray(&sc->views[b], array, &e.error);
     }
+    /* Views are read below; nanoarrow checks none of their ranges. */
+    if (code == NANOARROW_OK) code = zar_view_check_layout(&sc->views[b], "", &e.error);
     if (code != NANOARROW_OK) {
       UNPROTECT(1);
       return zar_failure_from_error("format", &e.error);

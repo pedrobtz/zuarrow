@@ -35,7 +35,8 @@ struct zar_reader {
 
   uint8_t *data;
   int64_t size;
-  int64_t pos;     /* the stream cursor */
+  int64_t pos;      /* the stream cursor */
+  int64_t next_pos; /* where the message just read ends */
   int is_file;
   int started;     /* a batch has been read: the selection is fixed */
   int ended;
@@ -55,6 +56,11 @@ struct zar_reader {
   struct ArrowError error;
   const char *kind; /* the condition kind of the last failure */
   const void *codecs; /* zukomp's C table */
+  /* Aligned copies of a message whose bytes are not 8-byte aligned, as in
+     the 4-byte-prefix framing before 0.15: the FlatBuffers verifier and the
+     buffers' readers need alignment. */
+  struct ArrowBuffer header_copy;
+  struct ArrowBuffer body_copy;
 };
 
 static int zar_reader_fail(struct zar_reader *r, const char *kind, int code) {
@@ -108,6 +114,8 @@ static void zar_reader_free(struct zar_reader *r) {
   free(r->seen_ids);
   free(r->select);
   free(r->field_index);
+  ArrowBufferReset(&r->header_copy);
+  ArrowBufferReset(&r->body_copy);
   free(r);
 }
 
@@ -180,6 +188,12 @@ static int zar_read_message(struct zar_reader *r, int64_t pos,
     return zar_reader_fail(r, "format", EINVAL);
   }
   struct ArrowBufferView view = {{r->data + pos}, r->size - pos};
+  /* Before 0.15 a stream could end with four zero bytes. */
+  if (view.size_bytes >= 4 && view.size_bytes < 8) {
+    uint32_t marker;
+    memcpy(&marker, view.data.data, sizeof(marker));
+    if (marker == 0) return ENODATA;
+  }
   int32_t prefix = 0;
   int code = ArrowIpcDecoderPeekHeader(&r->decoder, view, &prefix, &r->error);
   if (code == ENODATA) return ENODATA;
@@ -196,6 +210,18 @@ static int zar_read_message(struct zar_reader *r, int64_t pos,
     return zar_reader_fail(r, "format", EINVAL);
   }
   view.size_bytes = header_size;
+  if (((uintptr_t)(view.data.as_uint8 + prefix)) % 8 != 0) {
+    /* Copy so the FlatBuffer starts 8-byte aligned, keeping the prefix. */
+    r->header_copy.size_bytes = 0;
+    if (ArrowBufferReserve(&r->header_copy, header_size + 8) != NANOARROW_OK) {
+      ArrowErrorSet(&r->error, "cannot allocate a message header");
+      return zar_reader_fail(r, NULL, ENOMEM);
+    }
+    uint8_t *base = r->header_copy.data;
+    size_t pad = (8 - ((uintptr_t)(base + prefix)) % 8) % 8;
+    memcpy(base + pad, view.data.data, (size_t)header_size);
+    view.data.as_uint8 = base + pad;
+  }
   code = ArrowIpcDecoderVerifyHeader(&r->decoder, view, &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   code = ArrowIpcDecoderDecodeHeader(&r->decoder, view, &r->error);
@@ -216,6 +242,15 @@ static int zar_read_message(struct zar_reader *r, int64_t pos,
   header->size_bytes -= prefix;
   body->data.as_uint8 = r->data + pos + header_size;
   body->size_bytes = body_size;
+  r->next_pos = pos + header_size + body_size;
+  if (((uintptr_t)body->data.as_uint8) % 8 != 0 && body_size > 0) {
+    r->body_copy.size_bytes = 0;
+    if (ArrowBufferAppend(&r->body_copy, body->data.data, body_size) != NANOARROW_OK) {
+      ArrowErrorSet(&r->error, "cannot allocate a message body");
+      return zar_reader_fail(r, NULL, ENOMEM);
+    }
+    body->data.as_uint8 = r->body_copy.data;
+  }
   return NANOARROW_OK;
 }
 
@@ -234,6 +269,25 @@ static int zar_check_record_batch(struct zar_reader *r, ns(RecordBatch_table_t) 
     ArrowErrorSet(&r->error, "a batch of %" PRId64 " rows is over max_batch_rows", length);
     return zar_reader_fail(r, length < 0 ? "format" : "limit", EINVAL);
   }
+  /* Every node's length and null count, so no downstream size arithmetic
+     can overflow: a node cannot hold more elements than its body has bits,
+     unless it is within the batch's own row limit. */
+  double node_cap = r->limits.max_batch_rows;
+  if (8.0 * (double)body.size_bytes > node_cap) node_cap = 8.0 * (double)body.size_bytes;
+  ns(FieldNode_vec_t) nodes = ns(RecordBatch_nodes(batch));
+  size_t n_nodes = ns(FieldNode_vec_len(nodes));
+  for (size_t i = 0; i < n_nodes; i++) {
+    ns(FieldNode_struct_t) node = ns(FieldNode_vec_at(nodes, i));
+    int64_t node_length = ns(FieldNode_length(node));
+    int64_t node_nulls = ns(FieldNode_null_count(node));
+    if (node_length < 0 || (double)node_length > node_cap || node_nulls < 0 ||
+        node_nulls > node_length) {
+      ArrowErrorSet(&r->error, "field node %ld has an impossible length or null count",
+                    (long)i);
+      return zar_reader_fail(r, "format", EINVAL);
+    }
+  }
+
   int compressed = ns(RecordBatch_compression_is_present(batch));
   ns(Buffer_vec_t) buffers = ns(RecordBatch_buffers(batch));
   size_t n = ns(Buffer_vec_len(buffers));
@@ -244,6 +298,12 @@ static int zar_check_record_batch(struct zar_reader *r, ns(RecordBatch_table_t) 
     if (offset < 0 || size < 0 || offset > body.size_bytes ||
         size > body.size_bytes - offset) {
       ArrowErrorSet(&r->error, "buffer %ld lies outside its message body", (long)i);
+      return zar_reader_fail(r, "format", EINVAL);
+    }
+    /* The format requires 8-byte alignment; the decoder reads values in
+       place, so a misaligned buffer is refused, not read. */
+    if (offset % 8 != 0 && size > 0) {
+      ArrowErrorSet(&r->error, "buffer %ld is not 8-byte aligned", (long)i);
       return zar_reader_fail(r, "format", EINVAL);
     }
     if (compressed && size >= 8) {
@@ -409,14 +469,35 @@ static int zar_open_stream(struct zar_reader *r) {
                                                      &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   r->encodings_ready = 1;
-  r->pos = (int64_t)(body.data.as_uint8 - r->data) + body.size_bytes;
+  r->pos = r->next_pos;
   return zar_reader_set_schema(r);
 }
 
 static int zar_open_file(struct zar_reader *r) {
-  /* The footer gives the blocks. */
+  /* The footer gives the blocks. It ends 10 bytes before the end of the
+     file; an old writer may leave it misaligned, so it is copied to an
+     8-byte aligned buffer when it is. */
   struct ArrowBufferView all = {{r->data}, r->size};
-  int code = ArrowIpcDecoderVerifyFooter(&r->decoder, all, &r->error);
+  int code = ArrowIpcDecoderPeekFooter(&r->decoder, all, &r->error);
+  if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
+  int64_t tail = (int64_t)r->decoder.header_size_bytes + 10;
+  if (r->decoder.header_size_bytes < 0 || tail > r->size - 8) {
+    ArrowErrorSet(&r->error, "the footer claims more bytes than the file holds");
+    return zar_reader_fail(r, "format", EINVAL);
+  }
+  const uint8_t *footer_start = r->data + r->size - tail;
+  if (((uintptr_t)footer_start) % 8 != 0) {
+    r->header_copy.size_bytes = 0;
+    if (ArrowBufferReserve(&r->header_copy, tail + 8) != NANOARROW_OK) {
+      return zar_reader_fail(r, NULL, ENOMEM);
+    }
+    uint8_t *base = r->header_copy.data;
+    size_t pad = (8 - ((uintptr_t)base) % 8) % 8;
+    memcpy(base + pad, footer_start, (size_t)tail);
+    all.data.as_uint8 = base + pad;
+    all.size_bytes = tail;
+  }
+  code = ArrowIpcDecoderVerifyFooter(&r->decoder, all, &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   if ((double)r->decoder.header_size_bytes > r->limits.max_message) {
     ArrowErrorSet(&r->error, "the footer is over max_message");
@@ -506,7 +587,7 @@ static int zar_reader_next(struct zar_reader *r, struct ArrowArray *out) {
       return NANOARROW_OK;
     }
     if (code != NANOARROW_OK) return code;
-    r->pos = (int64_t)(body.data.as_uint8 - r->data) + body.size_bytes;
+    r->pos = r->next_pos;
     switch (r->decoder.message_type) {
       case NANOARROW_IPC_MESSAGE_TYPE_DICTIONARY_BATCH:
         code = zar_apply_dictionary(r, header, body);
@@ -553,6 +634,81 @@ const char *zar_reader_kind(const struct ArrowArrayStream *stream) {
   const struct zar_reader *r = (const struct zar_reader *)stream->private_data;
   return r->kind == NULL ? "format" : r->kind;
 }
+
+/* ---- opening ---------------------------------------------------------- */
+
+/* Opens a reader over `data`, which it takes ownership of, into `out`. */
+static int zar_reader_open_owned(uint8_t *data, int64_t size, const double *limits,
+                                 const void *codecs, struct ArrowArrayStream *out,
+                                 struct ArrowError *error, const char **kind) {
+  struct zar_reader *r = (struct zar_reader *)calloc(1, sizeof(struct zar_reader));
+  if (r == NULL) {
+    free(data);
+    ArrowErrorSet(error, "cannot allocate the reader");
+    *kind = NULL;
+    return ENOMEM;
+  }
+  ArrowBufferInit(&r->header_copy);
+  ArrowBufferInit(&r->body_copy);
+  r->n_select = -1;
+  r->codecs = codecs;
+  r->data = data;
+  r->size = size;
+  r->limits.max_message = limits[0];
+  r->limits.max_depth = (int)limits[1];
+  r->limits.max_batch_rows = limits[2];
+  r->limits.max_bytes = limits[3];
+
+  int code = NANOARROW_OK;
+  if ((double)size > r->limits.max_bytes) {
+    ArrowErrorSet(&r->error, "the input is larger than max_bytes");
+    r->kind = "limit";
+    code = EINVAL;
+  }
+  if (code == NANOARROW_OK) {
+    code = ArrowIpcDecoderInit(&r->decoder);
+    if (code != NANOARROW_OK) ArrowErrorSet(&r->error, "cannot allocate the decoder");
+  }
+  if (code == NANOARROW_OK) {
+    r->decompressor.decompress_add = &zar_decompress_add;
+    r->decompressor.decompress_wait = &zar_decompress_wait;
+    r->decompressor.release = &zar_decompress_release;
+    r->decompressor.private_data = r;
+    code = ArrowIpcDecoderSetDecompressor(&r->decoder, &r->decompressor);
+  }
+  if (code == NANOARROW_OK) {
+    r->is_file = r->size >= 8 && memcmp(r->data, "ARROW1", 6) == 0;
+    code = r->is_file ? zar_open_file(r) : zar_open_stream(r);
+  }
+  if (code != NANOARROW_OK) {
+    ArrowErrorSet(error, "%s", r->error.message[0] ? r->error.message
+                                                    : "the input could not be read");
+    *kind = r->kind;
+    zar_reader_free(r);
+    return code;
+  }
+  out->get_schema = &zar_stream_get_schema;
+  out->get_next = &zar_stream_get_next;
+  out->get_last_error = &zar_stream_last_error;
+  out->release = &zar_stream_release;
+  out->private_data = r;
+  return NANOARROW_OK;
+}
+
+int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limits,
+                          struct ArrowArrayStream *out, struct ArrowError *error,
+                          const char **kind) {
+  uint8_t *copy = (uint8_t *)malloc(size > 0 ? (size_t)size : 1);
+  if (copy == NULL) {
+    ArrowErrorSet(error, "cannot allocate the input");
+    *kind = NULL;
+    return ENOMEM;
+  }
+  if (size > 0) memcpy(copy, data, (size_t)size);
+  return zar_reader_open_owned(copy, size, limits, zar_codecs_api(), out, error, kind);
+}
+
+#ifndef ZAR_STANDALONE
 
 /* ---- R entry points --------------------------------------------------- */
 
@@ -602,67 +758,27 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
    it as a stream handle. `limits` is c(max_message, max_depth,
    max_batch_rows, max_bytes). */
 SEXP zar_c_reader_open(SEXP source, SEXP limits) {
-  struct zar_reader *r = (struct zar_reader *)calloc(1, sizeof(struct zar_reader));
-  if (r == NULL) return zar_failure(NULL, "cannot allocate the reader");
-  r->n_select = -1;
-  r->codecs = zar_codecs_api();
-  r->limits.max_message = REAL(limits)[0];
-  r->limits.max_depth = (int)REAL(limits)[1];
-  r->limits.max_batch_rows = REAL(limits)[2];
-  r->limits.max_bytes = REAL(limits)[3];
-
-  int code = NANOARROW_OK;
-  if (TYPEOF(source) == RAWSXP) {
-    r->size = (int64_t)Rf_xlength(source);
-    if ((double)r->size > r->limits.max_bytes) {
-      ArrowErrorSet(&r->error, "the input is larger than max_bytes");
-      r->kind = "limit";
-      code = EINVAL;
-    } else {
-      r->data = (uint8_t *)malloc(r->size > 0 ? (size_t)r->size : 1);
-      if (r->data == NULL) {
-        code = ENOMEM;
-        ArrowErrorSet(&r->error, "cannot allocate the input");
-      } else if (r->size > 0) {
-        memcpy(r->data, RAW(source), (size_t)r->size);
-      }
-    }
-  } else {
-    const char *path = R_ExpandFileName(Rf_translateChar(STRING_ELT(source, 0)));
-    code = zar_read_path(path, &r->data, &r->size, r->limits.max_bytes, &r->error, &r->kind);
-  }
-
-  if (code == NANOARROW_OK) {
-    code = ArrowIpcDecoderInit(&r->decoder);
-    if (code != NANOARROW_OK) ArrowErrorSet(&r->error, "cannot allocate the decoder");
-  }
-  if (code == NANOARROW_OK) {
-    r->decompressor.decompress_add = &zar_decompress_add;
-    r->decompressor.decompress_wait = &zar_decompress_wait;
-    r->decompressor.release = &zar_decompress_release;
-    r->decompressor.private_data = r;
-    code = ArrowIpcDecoderSetDecompressor(&r->decoder, &r->decompressor);
-  }
-  if (code == NANOARROW_OK) {
-    r->is_file = r->size >= 8 && memcmp(r->data, "ARROW1", 6) == 0;
-    code = r->is_file ? zar_open_file(r) : zar_open_stream(r);
-  }
-  if (code != NANOARROW_OK) {
-    SEXP fail = PROTECT(zar_failure(r->kind, r->error.message[0] ? r->error.message
-                                                                : "the input could not be read"));
-    zar_reader_free(r);
-    UNPROTECT(1);
-    return fail;
-  }
-
+  struct ArrowError error;
+  error.message[0] = '\0';
+  const char *kind = NULL;
   SEXP out = PROTECT(zar_stream_owning_xptr());
   struct ArrowArrayStream *stream = (struct ArrowArrayStream *)R_ExternalPtrAddr(out);
-  stream->get_schema = &zar_stream_get_schema;
-  stream->get_next = &zar_stream_get_next;
-  stream->get_last_error = &zar_stream_last_error;
-  stream->release = &zar_stream_release;
-  stream->private_data = r;
+  int code;
+  if (TYPEOF(source) == RAWSXP) {
+    code = zar_reader_open_bytes(RAW(source), (int64_t)Rf_xlength(source), REAL(limits),
+                                 stream, &error, &kind);
+  } else {
+    const char *path = R_ExpandFileName(Rf_translateChar(STRING_ELT(source, 0)));
+    uint8_t *data = NULL;
+    int64_t size = 0;
+    code = zar_read_path(path, &data, &size, REAL(limits)[3], &error, &kind);
+    if (code == NANOARROW_OK) {
+      code = zar_reader_open_owned(data, size, REAL(limits), zar_codecs_api(), stream,
+                                   &error, &kind);
+    }
+  }
   UNPROTECT(1);
+  if (code != NANOARROW_OK) return zar_failure_from_error(kind, &error);
   return out;
 }
 
@@ -709,3 +825,5 @@ SEXP zar_c_reader_select(SEXP stream_xptr, SEXP columns) {
   ArrowSchemaMove(&out, &r->out_schema);
   return Rf_ScalarLogical(TRUE);
 }
+
+#endif /* ZAR_STANDALONE */
