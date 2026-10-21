@@ -571,6 +571,7 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
     }
     case ZAR_T_INT: {
       int *dst = INTEGER(out) + at;
+      if (n == 0) return NANOARROW_OK;
       if (v->storage_type == NANOARROW_TYPE_INT32 && !zar_has_nulls(s)) {
         memcpy(dst, v->buffer_views[1].data.as_int32 + v->offset + s->start,
                (size_t)n * sizeof(int32_t));
@@ -594,6 +595,7 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
     case ZAR_T_DBL: {
       double *dst = REAL(out) + at;
       enum ArrowType t = v->storage_type;
+      if (n == 0) return NANOARROW_OK;
       if (t == NANOARROW_TYPE_DOUBLE && !zar_has_nulls(s)) {
         memcpy(dst, v->buffer_views[1].data.as_double + v->offset + s->start,
                (size_t)n * sizeof(double));
@@ -671,7 +673,8 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
           return EINVAL;
         }
         SET_STRING_ELT(out, at + (R_xlen_t)i,
-                       Rf_mkCharLenCE(b.data.as_char, (int)len, CE_UTF8));
+                       len == 0 ? R_BlankString
+                                : Rf_mkCharLenCE(b.data.as_char, (int)len, CE_UTF8));
       }
       return NANOARROW_OK;
     }

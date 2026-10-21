@@ -50,8 +50,13 @@ static int zar_set_validity(struct ArrowArray *array, SEXP x, R_xlen_t start,
   return NANOARROW_OK;
 }
 
+/* Appends `bytes` zeroed bytes to buffer i and returns where they start.
+   Zero bytes leave an unallocated buffer alone and return a pointer that
+   is never written through, since pointer arithmetic on NULL is undefined. */
 static void *zar_data(struct ArrowArray *array, int i, int64_t bytes,
                       struct zar_build *b) {
+  static uint8_t nothing[8];
+  if (bytes == 0) return nothing;
   struct ArrowBuffer *buffer = ArrowArrayBuffer(array, i);
   if (ArrowBufferReserve(buffer, bytes) != NANOARROW_OK) {
     ArrowErrorSet(&b->error, "cannot allocate %" PRId64 " bytes", bytes);
@@ -151,6 +156,7 @@ static int zar_build_numeric(struct ArrowArray *array, enum ArrowType t,
   void *data = zar_data(array, 1, n * zar_type_bytes(t), b);
   if (data == NULL) return zar_build_fail(b, NULL, NA_REAL);
 
+  if (n == 0) return NANOARROW_OK;
   if (is_int && t == NANOARROW_TYPE_INT32 && array->null_count == 0) {
     memcpy(data, INTEGER(x) + start, (size_t)n * sizeof(int32_t));
     return NANOARROW_OK;
@@ -248,7 +254,7 @@ static int zar_build_strings(struct ArrowArray *array, enum ArrowType t,
     if (s != NA_STRING) {
       size_t len;
       const char *u = zar_utf8(s, &len);
-      memcpy(data + at, u, len);
+      if (len > 0) memcpy(data + at, u, len);
       at += (int64_t)len;
     }
     if (large) {
