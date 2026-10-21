@@ -16,6 +16,10 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
+<li class="nav-item dropdown">
+  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/duckdb.html">Receiving a DuckDB result without rounding</a></li>
+  </ul></li>
 <li class="active nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -36,7 +40,7 @@
 <h2 class="pkg-version" data-toc-text="0.0.0.9000" id="zuarrow-0009000">zuarrow 0.0.0.9000<a class="anchor" aria-label="anchor" href="#zuarrow-0009000"></a></h2>
 <ul><li>Initial CRAN submission.</li>
 </ul><div class="section level3">
-<h3 id="handles-and-schema-tools-0-0-0-9000">Handles and schema tools<a class="anchor" aria-label="anchor" href="#handles-and-schema-tools-0-0-0-9000"></a></h3>
+<h3 id="handles-0-0-0-9000">Handles<a class="anchor" aria-label="anchor" href="#handles-0-0-0-9000"></a></h3>
 <ul><li>
 <code><a href="../reference/arrow_schema.html">arrow_schema()</a></code> makes a schema handle from an Arrow format string, from an R object, or from any schema, array or stream handle, and <code><a href="https://rdrr.io/r/base/format.html" class="external-link">format()</a></code> and <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> show Arrow’s type notation.</li>
 <li>Handles share the ‘nanoarrow’ package’s layout and inherit from its classes, so handles cross between the two packages without conversion.</li>
@@ -51,7 +55,7 @@
 <li>Every error inherits from <code>zuarrow_error</code>, and the lossy warning from <code>zuarrow_warning</code>.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="conversion-0-0-0-9000">Conversion<a class="anchor" aria-label="anchor" href="#conversion-0-0-0-9000"></a></h3>
+<h3 id="converting-to-and-from-r-0-0-0-9000">Converting to and from R<a class="anchor" aria-label="anchor" href="#converting-to-and-from-r-0-0-0-9000"></a></h3>
 <ul><li>
 <code><a href="../reference/arrow_to_r.html">arrow_to_r()</a></code> converts an array to an R vector and a stream or struct array to a data frame; <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> and <code><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector()</a></code> do the same, and <code><a href="../reference/arrow_to_r.html">arrow_next()</a></code> reads one batch.</li>
 <li>A conversion is exact or it fails: <code>lossy = "error"</code>, the default everywhere, raises <code>zuarrow_lossy_error</code> naming the column, the row and the package that would read it exactly. <code>lossy = "character"</code> gives the values’ exact text, <code>"warn"</code> and <code>"allow"</code> the nearest R type.</li>
@@ -63,7 +67,7 @@
 <code><a href="../reference/arrow_types.html">arrow_types()</a></code> lists the built-in type table.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="nested-types-dictionaries-extensions-and-the-registry-0-0-0-9000">Nested types, dictionaries, extensions and the registry<a class="anchor" aria-label="anchor" href="#nested-types-dictionaries-extensions-and-the-registry-0-0-0-9000"></a></h3>
+<h3 id="nested-types-dictionaries-and-the-registry-0-0-0-9000">Nested types, dictionaries and the registry<a class="anchor" aria-label="anchor" href="#nested-types-dictionaries-and-the-registry-0-0-0-9000"></a></h3>
 <ul><li>Structs convert to nested data frames, lists of every kind to list columns, fixed-size lists to list columns or, with <code><a href="../reference/arrow_matrix.html">arrow_matrix()</a></code>, to matrices, and maps to lists of key/value data frames. Each converts back.</li>
 <li>Factors convert to and from <code>dictionary&lt;int32, utf8&gt;</code>, ordered factors included; a stream’s batches read as the union of their levels. Other dictionaries and run-end encoded arrays decode to their values.</li>
 <li>Extension types keep their name and metadata as attributes and are restored on export; <code>arrow.bool8</code> reads as logical. Field metadata round-trips through the <code>arrow_field_metadata</code> attribute.</li>
@@ -71,21 +75,18 @@
 <code><a href="../reference/arrow_register.html">arrow_register()</a></code>, <code><a href="../reference/arrow_register.html">arrow_unregister()</a></code> and <code><a href="../reference/arrow_register.html">arrow_registry()</a></code> let a package make a lossy type exact with its own R class, by format string, prefix pattern or extension name, in both directions.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="reading-ipc-0-0-0-9000">Reading IPC<a class="anchor" aria-label="anchor" href="#reading-ipc-0-0-0-9000"></a></h3>
+<h3 id="the-ipc-file-and-stream-formats-0-0-0-9000">The IPC file and stream formats<a class="anchor" aria-label="anchor" href="#the-ipc-file-and-stream-formats-0-0-0-9000"></a></h3>
 <ul><li>
 <code><a href="../reference/arrow_read.html">arrow_read()</a></code> reads the Arrow IPC file format (<code>.arrow</code>, Feather version 2) and stream format (<code>.arrows</code>) from a path, a raw vector or a connection, eagerly into a data frame or lazily as a stream, with column selection.</li>
 <li>LZ4 and zstd bodies are decompressed through ‘zukomp’, so a compressed file opens everywhere; dictionary batches and deltas are applied, and the binary-view, string-view, list-view and run-end-encoded layouts decode.</li>
 <li>Every message is verified and checked against <code><a href="../reference/arrow_limits.html">arrow_limits()</a></code> before it is used, and every batch passes full validation, so hostile input is a <code>zuarrow_format_error</code> or <code>zuarrow_limit_error</code>. Big-endian input is refused.</li>
-<li>Full validation now also checks that every binary or string view points inside its buffers, which the bundled C library does not.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="writing-ipc-0-0-0-9000">Writing IPC<a class="anchor" aria-label="anchor" href="#writing-ipc-0-0-0-9000"></a></h3>
-<ul><li>
+<li>Full validation also checks that every binary or string view points inside its buffers, which the bundled C library does not.</li>
+<li>
 <code><a href="../reference/arrow_write.html">arrow_write()</a></code> writes data frames, struct arrays and streams as the Arrow IPC file or stream format, to a path, a connection or a raw vector, in record batches of <code>batch</code> rows.</li>
 <li>Factors are written as dictionaries, one dictionary batch before the first record batch, or as strings with <code>dictionary = FALSE</code>; schema and field metadata and extension names are kept.</li>
 <li>
 <code>compression = "lz4"</code> or <code>"zstd"</code> compresses each buffer through ‘zukomp’, at the codec’s own <code>level</code>; the default is uncompressed, so every reader opens the output.</li>
-<li>The same input gives the same bytes on every platform.</li>
+<li>The output is deterministic: the same input gives the same bytes, with no timestamps and every padding byte zeroed.</li>
 </ul></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>

@@ -32,6 +32,12 @@
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto">
 <li class="nav-item"><a class="nav-link" href="reference/index.html">Reference</a></li>
+<li class="nav-item dropdown">
+  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
+  <ul class="dropdown-menu" aria-labelledby="dropdown-articles">
+<li><a class="dropdown-item" href="articles/duckdb.html">Receiving a DuckDB result without rounding</a></li>
+  </ul>
+</li>
 <li class="nav-item"><a class="nav-link" href="news/index.html">Changelog</a></li>
       </ul>
 <ul class="navbar-nav">
@@ -51,22 +57,81 @@
 </h1></div>
 <!-- badges: start -->
 
-<p>The goal of zuarrow is to …</p>
+<p>DuckDB, Polars, ADBC drivers, pyarrow and the arrow package all hand data around as <a href="https://arrow.apache.org/" class="external-link">Apache Arrow</a> columns. R has no exact form for several of Arrow’s types: a 64-bit integer past 2^53, a <code>decimal128</code>, a nanosecond timestamp. The usual bridges convert them to a double anyway, and the change goes unnoticed until a join key no longer matches.</p>
+<p>zuarrow moves columns between R and Arrow on one rule: <strong>a value crosses exactly, or the call fails</strong>, naming the column and the R type that would hold it.</p>
+<ul>
+<li>
+<strong>Exact or error.</strong> <code>lossy = "error"</code> is the default everywhere. Ask for the exact text, the nearest R type with a warning, or the nearest R type silently, but only by asking.</li>
+<li>
+<strong>A registry for exact types.</strong> A package registers its class for an Arrow type with <code><a href="reference/arrow_register.html">arrow_register()</a></code>, and from then on that column converts exactly.</li>
+<li>
+<strong>Both IPC formats.</strong> <code><a href="reference/arrow_read.html">arrow_read()</a></code> and <code><a href="reference/arrow_write.html">arrow_write()</a></code> handle the file (<code>.arrow</code>, Feather version 2) and the stream (<code>.arrows</code>), with LZ4 and zstd bodies decompressed by <a href="https://github.com/pedrobtz/zukomp" class="external-link">zukomp</a>, so a compressed file opens on every machine.</li>
+<li>
+<strong>Hostile input is refused, not trusted.</strong> Every message is checked against limits before it is used and every batch is fully validated. The reader is fuzzed and checked against Arrow’s own conformance files.</li>
+<li>
+<strong>nanoarrow’s handles.</strong> zuarrow’s schemas, arrays and streams are <a href="https://arrow.apache.org/nanoarrow/" class="external-link">nanoarrow</a>’s, so they pass between the two packages without conversion.</li>
+</ul>
 <div class="section level2">
 <h2 id="installation">Installation<a class="anchor" aria-label="anchor" href="#installation"></a>
 </h2>
-<p>You can install the development version of zuarrow from <a href="https://github.com/" class="external-link">GitHub</a> with:</p>
+<p>zuarrow is not on CRAN yet. Install the development version from GitHub:</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="co"># install.packages("pak")</span></span>
 <span><span class="fu">pak</span><span class="fu">::</span><span class="fu"><a href="https://pak.r-lib.org/reference/pak.html" class="external-link">pak</a></span><span class="op">(</span><span class="st">"pedrobtz/zuarrow"</span><span class="op">)</span></span></code></pre></div>
 </div>
 <div class="section level2">
-<h2 id="example">Example<a class="anchor" aria-label="anchor" href="#example"></a>
+<h2 id="usage">Usage<a class="anchor" aria-label="anchor" href="#usage"></a>
 </h2>
-<p>This is a basic example which shows you how to solve a common problem:</p>
 <div class="sourceCode" id="cb2"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/pedrobtz/zuarrow" class="external-link">zuarrow</a></span><span class="op">)</span></span>
-<span><span class="co">## basic example code</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/pedrobtz/zuarrow" class="external-link">zuarrow</a></span><span class="op">)</span></span></code></pre></div>
+<p>Ordinary columns cross both ways unchanged, factors and dates included.</p>
+<div class="sourceCode" id="cb3"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">df</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/data.frame.html" class="external-link">data.frame</a></span><span class="op">(</span></span>
+<span>  id <span class="op">=</span> <span class="fl">1</span><span class="op">:</span><span class="fl">3</span>,</span>
+<span>  city <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/factor.html" class="external-link">factor</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"Lisbon"</span>, <span class="st">"Porto"</span>, <span class="st">"Lisbon"</span><span class="op">)</span><span class="op">)</span>,</span>
+<span>  day <span class="op">=</span> <span class="fu"><a href="https://rdrr.io/r/base/as.Date.html" class="external-link">as.Date</a></span><span class="op">(</span><span class="st">"2026-10-21"</span><span class="op">)</span> <span class="op">+</span> <span class="fl">0</span><span class="op">:</span><span class="fl">2</span></span>
+<span><span class="op">)</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/identical.html" class="external-link">identical</a></span><span class="op">(</span><span class="fu"><a href="reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="fu"><a href="reference/arrow_array.html">arrow_array</a></span><span class="op">(</span><span class="va">df</span><span class="op">)</span><span class="op">)</span>, <span class="va">df</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>A 64-bit integer that a double cannot hold is an error, not a rounding.</p>
+<div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">big</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/arrow_array.html">arrow_array</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"9007199254740993"</span>, <span class="st">"1"</span><span class="op">)</span>, schema <span class="op">=</span> <span class="st">"l"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">big</span><span class="op">)</span></span>
+<span><span class="co">#&gt; Error in `arrow_to_r()`:</span></span>
+<span><span class="co">#&gt; ! Column 1 (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span></span></code></pre></div>
+<p><code>lossy = "character"</code> gives the exact text, which writes back to the same type.</p>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">text</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">big</span>, lossy <span class="op">=</span> <span class="st">"character"</span><span class="op">)</span></span>
+<span><span class="va">text</span></span>
+<span><span class="co">#&gt; [1] "9007199254740993" "1"               </span></span>
+<span><span class="co">#&gt; attr(,"arrow_type")</span></span>
+<span><span class="co">#&gt; [1] "l"</span></span>
+<span><span class="fu"><a href="reference/arrow_equal.html">arrow_equal</a></span><span class="op">(</span><span class="fu"><a href="reference/arrow_array.html">arrow_array</a></span><span class="op">(</span><span class="va">text</span><span class="op">)</span>, <span class="va">big</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] TRUE</span></span></code></pre></div>
+<p>The IPC formats are one call each way, with compression on request.</p>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">path</span> <span class="op">&lt;-</span> <span class="fu"><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempfile</a></span><span class="op">(</span>fileext <span class="op">=</span> <span class="st">".arrow"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/arrow_write.html">arrow_write</a></span><span class="op">(</span><span class="va">df</span>, <span class="va">path</span>, compression <span class="op">=</span> <span class="st">"zstd"</span><span class="op">)</span></span>
+<span><span class="fu"><a href="reference/arrow_read.html">arrow_read</a></span><span class="op">(</span><span class="va">path</span><span class="op">)</span></span>
+<span><span class="co">#&gt;   id   city        day</span></span>
+<span><span class="co">#&gt; 1  1 Lisbon 2026-10-21</span></span>
+<span><span class="co">#&gt; 2  2  Porto 2026-10-22</span></span>
+<span><span class="co">#&gt; 3  3 Lisbon 2026-10-23</span></span></code></pre></div>
+<p>Apart from <code><a href="reference/zuarrow_info.html">zuarrow_info()</a></code>, every function is prefixed <code>arrow_</code>. Each takes or returns a handle or a plain R object. zuarrow’s own errors inherit from <code>zuarrow_error</code>, with a class for each kind, such as <code>zuarrow_lossy_error</code>.</p>
+</div>
+<div class="section level2">
+<h2 id="learn-more">Learn more<a class="anchor" aria-label="anchor" href="#learn-more"></a>
+</h2>
+<ul>
+<li>
+<a href="https://pedrobtz.github.io/zuarrow/articles/duckdb.html">Receiving a DuckDB result without rounding</a> shows the headline use.</li>
+<li>The <a href="https://pedrobtz.github.io/zuarrow/reference/">reference</a> lists every function; <code><a href="reference/arrow_types.html">arrow_types()</a></code> prints the type table.</li>
+</ul>
+</div>
+<div class="section level2">
+<h2 id="related-work">Related work<a class="anchor" aria-label="anchor" href="#related-work"></a>
+</h2>
+<p>zuarrow bundles the <a href="https://github.com/apache/arrow-nanoarrow" class="external-link">nanoarrow</a> C library and is checked against <a href="https://github.com/apache/arrow-testing" class="external-link">apache/arrow-testing</a>’s IPC golden files and crash corpus, and against the arrow package.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
@@ -106,6 +171,7 @@
 <ul class="list-unstyled">
 <li><a href="https://github.com/pedrobtz/zuarrow/actions/workflows/R-CMD-check.yaml" class="external-link"><img src="https://github.com/pedrobtz/zuarrow/actions/workflows/R-CMD-check.yaml/badge.svg" alt="R-CMD-check"></a></li>
 <li><a href="https://github.com/pedrobtz/zuarrow/actions/workflows/coverage.yaml" class="external-link"><img src="https://raw.githubusercontent.com/pedrobtz/zuarrow/gh-pages/badges/coverage.svg" alt="coverage"></a></li>
+<li><a href="https://lifecycle.r-lib.org/articles/stages.html#experimental" class="external-link"><img src="https://img.shields.io/badge/lifecycle-experimental-orange.svg" alt="Lifecycle: experimental"></a></li>
 </ul>
 </div>
 
