@@ -7,11 +7,15 @@
   : Build an Arrow array or stream from R
 - [`arrow_equal()`](https://pedrobtz.github.io/zuarrow/reference/arrow_equal.md)
   : Compare two schemas, arrays or streams
+- [`arrow_limits()`](https://pedrobtz.github.io/zuarrow/reference/arrow_limits.md)
+  : Limits on IPC input
 - [`arrow_matrix()`](https://pedrobtz.github.io/zuarrow/reference/arrow_matrix.md)
   : Matrices as fixed-size lists
 - [`arrow_metadata()`](https://pedrobtz.github.io/zuarrow/reference/arrow_metadata.md)
   [`` `arrow_metadata<-`() ``](https://pedrobtz.github.io/zuarrow/reference/arrow_metadata.md)
   : Schema metadata
+- [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  : Read the Arrow IPC formats
 - [`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
   [`arrow_unregister()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
   [`arrow_registry()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
@@ -25,5 +29,7 @@
   : The built-in type table
 - [`arrow_validate()`](https://pedrobtz.github.io/zuarrow/reference/arrow_validate.md)
   : Validate an array or stream
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  : Write the Arrow IPC formats
 - [`zuarrow_info()`](https://pedrobtz.github.io/zuarrow/reference/zuarrow_info.md)
   : Package information

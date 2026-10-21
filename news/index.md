@@ -72,3 +72,36 @@
   [`arrow_registry()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
   let a package make a lossy type exact with its own R class, by format
   string, prefix pattern or extension name, in both directions.
+
+### Reading IPC
+
+- [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  reads the Arrow IPC file format (`.arrow`, Feather version 2) and
+  stream format (`.arrows`) from a path, a raw vector or a connection,
+  eagerly into a data frame or lazily as a stream, with column
+  selection.
+- LZ4 and zstd bodies are decompressed through ‘zukomp’, so a compressed
+  file opens everywhere; dictionary batches and deltas are applied, and
+  the binary-view, string-view, list-view and run-end-encoded layouts
+  decode.
+- Every message is verified and checked against
+  [`arrow_limits()`](https://pedrobtz.github.io/zuarrow/reference/arrow_limits.md)
+  before it is used, and every batch passes full validation, so hostile
+  input is a `zuarrow_format_error` or `zuarrow_limit_error`. Big-endian
+  input is refused.
+- Full validation now also checks that every binary or string view
+  points inside its buffers, which the bundled C library does not.
+
+### Writing IPC
+
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  writes data frames, struct arrays and streams as the Arrow IPC file or
+  stream format, to a path, a connection or a raw vector, in record
+  batches of `batch` rows.
+- Factors are written as dictionaries, one dictionary batch before the
+  first record batch, or as strings with `dictionary = FALSE`; schema
+  and field metadata and extension names are kept.
+- `compression = "lz4"` or `"zstd"` compresses each buffer through
+  ‘zukomp’, at the codec’s own `level`; the default is uncompressed, so
+  every reader opens the output.
+- The same input gives the same bytes on every platform.

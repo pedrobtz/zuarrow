@@ -70,6 +70,23 @@
 <li>
 <code><a href="../reference/arrow_register.html">arrow_register()</a></code>, <code><a href="../reference/arrow_register.html">arrow_unregister()</a></code> and <code><a href="../reference/arrow_register.html">arrow_registry()</a></code> let a package make a lossy type exact with its own R class, by format string, prefix pattern or extension name, in both directions.</li>
 </ul></div>
+<div class="section level3">
+<h3 id="reading-ipc-0-0-0-9000">Reading IPC<a class="anchor" aria-label="anchor" href="#reading-ipc-0-0-0-9000"></a></h3>
+<ul><li>
+<code><a href="../reference/arrow_read.html">arrow_read()</a></code> reads the Arrow IPC file format (<code>.arrow</code>, Feather version 2) and stream format (<code>.arrows</code>) from a path, a raw vector or a connection, eagerly into a data frame or lazily as a stream, with column selection.</li>
+<li>LZ4 and zstd bodies are decompressed through ‘zukomp’, so a compressed file opens everywhere; dictionary batches and deltas are applied, and the binary-view, string-view, list-view and run-end-encoded layouts decode.</li>
+<li>Every message is verified and checked against <code><a href="../reference/arrow_limits.html">arrow_limits()</a></code> before it is used, and every batch passes full validation, so hostile input is a <code>zuarrow_format_error</code> or <code>zuarrow_limit_error</code>. Big-endian input is refused.</li>
+<li>Full validation now also checks that every binary or string view points inside its buffers, which the bundled C library does not.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="writing-ipc-0-0-0-9000">Writing IPC<a class="anchor" aria-label="anchor" href="#writing-ipc-0-0-0-9000"></a></h3>
+<ul><li>
+<code><a href="../reference/arrow_write.html">arrow_write()</a></code> writes data frames, struct arrays and streams as the Arrow IPC file or stream format, to a path, a connection or a raw vector, in record batches of <code>batch</code> rows.</li>
+<li>Factors are written as dictionaries, one dictionary batch before the first record batch, or as strings with <code>dictionary = FALSE</code>; schema and field metadata and extension names are kept.</li>
+<li>
+<code>compression = "lz4"</code> or <code>"zstd"</code> compresses each buffer through ‘zukomp’, at the codec’s own <code>level</code>; the default is uncompressed, so every reader opens the output.</li>
+<li>The same input gives the same bytes on every platform.</li>
+</ul></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside></div>

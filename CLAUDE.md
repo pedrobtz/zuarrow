@@ -105,10 +105,18 @@ tools/verify-vendor                              # vendored tree is upstream plu
 tools/verify-vendor --canary                     # the verifier catches a missing patch
 tools/run-benchmarks [--rows N] [--reps R]       # design §10 timings, as Markdown rows
 NOT_CRAN=true Rscript -e 'devtools::test(filter = "abi")'   # symbol checks (skip on CRAN)
+
+tools/fetch-fixtures                             # arrow-testing corpus into tests/testthat/fixtures
+Rscript tools/make-test-data.R                   # regenerate tests/testthat/data with arrow
 ```
 
-The design also plans `tools/fetch-fixtures` (§9); add it here when
-Stage 5 lands.
+Oracles 1 and 2 need the `arrow-testing` corpus. Fetch it with
+`tools/fetch-fixtures`, or set `ZUARROW_FETCH_FIXTURES=true` and the
+tests download it under
+[`tempdir()`](https://rdrr.io/r/base/tempfile.html), as CI does; without
+either they skip. `tests/testthat/data/` holds small files written by
+`arrow` and every input the fuzz target has crashed on, so those tests
+run everywhere.
 
 ## Architecture
 
@@ -155,6 +163,26 @@ Design §4 names five layers. What exists so far:
   with [`c()`](https://rdrr.io/r/base/c.html). A `from` handler’s array
   is moved into its slot only after the rest is finished, because
   nanoarrow’s finishing walks every child’s `private_data` as its own.
+
+- **The IPC reader** in `src/zar_ipc_read.c` holds the input in memory
+  and walks the stream’s messages or the file’s footer blocks over
+  nanoarrow’s decoder. Before decoding it verifies each header, checks
+  every field node, buffer range, buffer alignment and compression
+  prefix against
+  [`arrow_limits()`](https://pedrobtz.github.io/zuarrow/reference/arrow_limits.md)
+  (`zar_check_record_batch()`), and copies a misaligned pre-0.15 message
+  to aligned memory. Its core compiles without R under `ZAR_STANDALONE`
+  for `tools/fuzz/harness.c`; `src/zar_codecs.c` is the zukomp adapter
+  (a stub when standalone).
+
+- **The IPC writer** in `src/zar_ipc_write.c` encodes through
+  `ArrowIpcEncoderEncodeBatch()`, which vendored patch 0013 adds: a
+  record batch or a dictionary batch whose buffers go through zuarrow’s
+  callback, 8-byte padded with zeros and compressed through zukomp. It
+  writes the schema, each dictionary before the batch that first uses
+  it, the batches, the end-of-stream marker, and for files the footer.
+  `test-write.R` holds the MD5 of a fixed input in each format and
+  codec, so a platform whose bytes differ fails.
 
 **C never raises a condition.** An entry point that fails frees what it
 owns and returns a `zar_failure`, `list(kind, message)`. The R caller
