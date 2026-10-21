@@ -345,9 +345,9 @@ Recorded 2026-10-21:
   in CI. Getting there found nine defects, fixed in vendored patches 0005
   to 0012 and in the reader, each kept as a
   `tests/testthat/data/crash-*.arrow` regression input.
-- `Remotes:` points at zukomp's `codecs-zstd-lz4` branch
-  (pedrobtz/zukomp#56) until it merges; rchk installs it through
-  `github-packages`.
+- `Remotes:` points at zukomp's default branch, where the codecs merged
+  in pedrobtz/zukomp#56 on 2026-10-21, until zukomp's release reaches
+  CRAN; rchk installs it through `github-packages`.
 - The upstream nanoarrow pull request is prepared, not opened: opening it
   is an outward action in an Apache project, left to the maintainer
   (#17).

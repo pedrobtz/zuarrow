@@ -43,7 +43,7 @@ jobs:
     with:
       # zukomp's codecs are not on CRAN yet; drop this once they are.
       github-packages: |
-        pedrobtz/zukomp@codecs-zstd-lz4
+        pedrobtz/zukomp
 
   analyzers:
     uses: pedrobtz/r-actions/.github/workflows/analyzers.yml@v1
