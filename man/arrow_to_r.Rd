@@ -51,9 +51,23 @@ becomes \code{bit64}'s \code{integer64}, exactly, when \code{bit64} is loaded.
 
 Intervals and unions have no R form and always fail.
 
-\code{to} names the R type a column must become: \code{character()}, \code{double()}
-or \code{integer()}. A target that cannot take the column is a
-\code{zuarrow_type_error}, never a silent fallback.
+\code{to} names the R type a column must become: \code{character()}, \code{double()},
+\code{integer()}, or \code{\link[=arrow_matrix]{arrow_matrix()}} for a \code{fixed_size_list}. A target that
+cannot take the column is a \code{zuarrow_type_error}, never a silent
+fallback.
+
+Nested types follow the table too. A \code{struct} becomes a data frame
+column; \code{list}, \code{large_list} and the list views become list columns,
+\code{NULL} for a null list; a \code{map} becomes a list of data frames with
+columns \code{key} and \code{value}. A dictionary of strings becomes a factor,
+ordered when the dictionary is, with the union of every batch's levels;
+a dictionary of other values, and a run-end encoded array, decode to
+their values' R form. An extension type converts as its storage and
+keeps its name and metadata in the \code{arrow_extension} and
+\code{arrow_extension_metadata} attributes, so writing the column back
+restores it. Field metadata becomes the \code{arrow_field_metadata}
+attribute. A type registered with \code{\link[=arrow_register]{arrow_register()}} goes through its
+handler.
 }
 \examples{
 arrow_to_r(arrow_array(1:3))
