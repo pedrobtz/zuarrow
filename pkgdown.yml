@@ -3,7 +3,7 @@ pkgdown: 2.2.1
 pkgdown_sha: ~
 articles:
   articles/duckdb: duckdb.html
-last_built: 2026-10-22T04:21Z
+last_built: 2026-10-22T05:46Z
 urls:
   reference: https://pedrobtz.github.io/zuarrow/reference
   article: https://pedrobtz.github.io/zuarrow/articles

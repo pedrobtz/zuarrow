@@ -55,7 +55,8 @@ found from the first bytes, whatever the source is called.</p>
 <span>  lazy <span class="op">=</span> <span class="cn">FALSE</span>,</span>
 <span>  to <span class="op">=</span> <span class="cn">NULL</span>,</span>
 <span>  lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>,</span>
-<span>  limits <span class="op">=</span> <span class="fu"><a href="arrow_limits.html">arrow_limits</a></span><span class="op">(</span><span class="op">)</span></span>
+<span>  limits <span class="op">=</span> <span class="fu"><a href="arrow_limits.html">arrow_limits</a></span><span class="op">(</span><span class="op">)</span>,</span>
+<span>  copy <span class="op">=</span> <span class="cn">TRUE</span></span>
 <span><span class="op">)</span></span></code></pre></div>
     </div>
 
@@ -88,6 +89,20 @@ array that is not a <code>struct</code>, a single prototype.</p></dd>
 
 <dt id="arg-limits">limits<a class="anchor" aria-label="anchor" href="#arg-limits"></a></dt>
 <dd><p>An <code><a href="arrow_limits.html">arrow_limits()</a></code> object.</p></dd>
+
+
+<dt id="arg-copy">copy<a class="anchor" aria-label="anchor" href="#arg-copy"></a></dt>
+<dd><p><code>TRUE</code> to create every R value during the conversion.
+<code>FALSE</code> to defer string columns: each becomes a character vector that
+keeps the Arrow buffers and creates an element's R string the first
+time it is used. Most of the cost of a string column is creating its
+R strings, so a result that is only partly read, or passed on, is much
+cheaper. The values are checked during the conversion either way, so
+<code>copy = FALSE</code> raises the same errors at the same time. The vector
+holds the batch's memory until every element has been used, and it is
+saved by <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> as an ordinary character vector. Columns of other
+types, and strings read through a dictionary, a run-end encoding or a
+<code>struct</code> with nulls, are copied either way.</p></dd>
 
 </dl></div>
     <div class="section level2">

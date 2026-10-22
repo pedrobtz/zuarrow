@@ -62,6 +62,8 @@
 <li>
 <code>to</code> names the R type a column must become.</li>
 <li>
+<code>copy = FALSE</code> defers string columns in <code><a href="../reference/arrow_to_r.html">arrow_to_r()</a></code>, <code><a href="../reference/arrow_to_r.html">arrow_next()</a></code>, <code><a href="../reference/arrow_read.html">arrow_read()</a></code> and <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code>. Each becomes a character vector that creates its R strings on first use, which is most of the cost of a string column. Values are checked during the conversion either way, so the errors are the same. The default, <code>copy = TRUE</code>, creates every value at once.</li>
+<li>
 <code><a href="../reference/arrow_array.html">arrow_array()</a></code> and <code><a href="../reference/arrow_array.html">arrow_stream()</a></code> build arrays and streams from R vectors and data frames, checking every value against a given schema. The exact text that <code>lossy = "character"</code> returns is written back as the type its <code>arrow_type</code> attribute names.</li>
 <li>
 <code><a href="../reference/arrow_types.html">arrow_types()</a></code> lists the built-in type table.</li>

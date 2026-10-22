@@ -49,9 +49,9 @@ carries no zuarrow class: it is a plain base R object.</p>
 
     <div class="section level2">
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
-    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">arrow_to_r</span><span class="op">(</span><span class="va">x</span>, to <span class="op">=</span> <span class="cn">NULL</span>, lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span><span class="op">)</span></span>
+    <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">arrow_to_r</span><span class="op">(</span><span class="va">x</span>, to <span class="op">=</span> <span class="cn">NULL</span>, lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>, copy <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu">arrow_next</span><span class="op">(</span><span class="va">stream</span>, to <span class="op">=</span> <span class="cn">NULL</span>, lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">arrow_next</span><span class="op">(</span><span class="va">stream</span>, to <span class="op">=</span> <span class="cn">NULL</span>, lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>, copy <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -69,6 +69,20 @@ array that is not a <code>struct</code>, a single prototype.</p></dd>
 
 <dt id="arg-lossy">lossy<a class="anchor" aria-label="anchor" href="#arg-lossy"></a></dt>
 <dd><p>What to do with a column R cannot hold exactly.</p></dd>
+
+
+<dt id="arg-copy">copy<a class="anchor" aria-label="anchor" href="#arg-copy"></a></dt>
+<dd><p><code>TRUE</code> to create every R value during the conversion.
+<code>FALSE</code> to defer string columns: each becomes a character vector that
+keeps the Arrow buffers and creates an element's R string the first
+time it is used. Most of the cost of a string column is creating its
+R strings, so a result that is only partly read, or passed on, is much
+cheaper. The values are checked during the conversion either way, so
+<code>copy = FALSE</code> raises the same errors at the same time. The vector
+holds the batch's memory until every element has been used, and it is
+saved by <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> as an ordinary character vector. Columns of other
+types, and strings read through a dictionary, a run-end encoding or a
+<code>struct</code> with nulls, are copied either way.</p></dd>
 
 
 <dt id="arg-stream">stream<a class="anchor" aria-label="anchor" href="#arg-stream"></a></dt>

@@ -43,6 +43,15 @@
   gives the values’ exact text, `"warn"` and `"allow"` the nearest R
   type.
 - `to` names the R type a column must become.
+- `copy = FALSE` defers string columns in
+  [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md),
+  [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md),
+  [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  and [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html).
+  Each becomes a character vector that creates its R strings on first
+  use, which is most of the cost of a string column. Values are checked
+  during the conversion either way, so the errors are the same. The
+  default, `copy = TRUE`, creates every value at once.
 - [`arrow_array()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
   and
   [`arrow_stream()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)

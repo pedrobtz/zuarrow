@@ -13,7 +13,8 @@ arrow_read(
   lazy = FALSE,
   to = NULL,
   lossy = zar_lossy_policies,
-  limits = arrow_limits()
+  limits = arrow_limits(),
+  copy = TRUE
 )
 ```
 
@@ -48,6 +49,21 @@ arrow_read(
   An
   [`arrow_limits()`](https://pedrobtz.github.io/zuarrow/reference/arrow_limits.md)
   object.
+
+- copy:
+
+  `TRUE` to create every R value during the conversion. `FALSE` to defer
+  string columns: each becomes a character vector that keeps the Arrow
+  buffers and creates an element's R string the first time it is used.
+  Most of the cost of a string column is creating its R strings, so a
+  result that is only partly read, or passed on, is much cheaper. The
+  values are checked during the conversion either way, so `copy = FALSE`
+  raises the same errors at the same time. The vector holds the batch's
+  memory until every element has been used, and it is saved by
+  [`saveRDS()`](https://rdrr.io/r/base/readRDS.html) as an ordinary
+  character vector. Columns of other types, and strings read through a
+  dictionary, a run-end encoding or a `struct` with nulls, are copied
+  either way.
 
 ## Value
 
