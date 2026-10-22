@@ -30,6 +30,10 @@
   the package that would read it exactly. `lossy = "character"` gives the
   values' exact text, `"warn"` and `"allow"` the nearest R type.
 * `to` names the R type a column must become.
+* Conversion in both directions reads and writes typed buffers in one loop
+  wherever a column has no dictionary or run-end encoding, so most types
+  convert as fast as with nanoarrow or faster, with every exactness check
+  kept.
 * `copy = FALSE` defers string columns in `arrow_to_r()`, `arrow_next()`,
   `arrow_read()` and `as.data.frame()`. Each becomes a character vector
   that creates its R strings on first use, which is most of the cost of
