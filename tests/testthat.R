@@ -5,8 +5,13 @@
 # Learn more about the roles of various files in:
 # * https://r-pkgs.org/testing-design.html#sec-tests-files-overview
 # * https://testthat.r-lib.org/articles/special-files.html
+#
+# Modified for zuarrow: testthat is in Suggests, and CRAN's NOSUGGESTS check
+# runs this file without it, so the suite runs only when it is installed.
 
-library(testthat)
-library(zuarrow)
+if (requireNamespace("testthat", quietly = TRUE)) {
+  library(testthat)
+  library(zuarrow)
 
-test_check("zuarrow")
+  test_check("zuarrow")
+}

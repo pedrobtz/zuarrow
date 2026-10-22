@@ -37,7 +37,7 @@ Two dependencies outside this repository shape the plan:
 | 5 | [IPC reader](#stage-5--ipc-reader) | full | [#7](https://github.com/pedrobtz/zuarrow/issues/7) | [#20](https://github.com/pedrobtz/zuarrow/pull/20) | 2026-10-21 |
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | [#22](https://github.com/pedrobtz/zuarrow/pull/22) | 2026-10-21 |
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | [#23](https://github.com/pedrobtz/zuarrow/pull/23) | 2026-10-21 |
-| 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | | |
+| 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | [#24](https://github.com/pedrobtz/zuarrow/pull/24), [#26](https://github.com/pedrobtz/zuarrow/pull/26) | |
 | 9 | [v0.1.0 readiness](#stage-9--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | | |
 
 ## Stage 0 — Package identity
@@ -458,6 +458,16 @@ with no new features.
 - A full-profile r-actions run is green on the pull request and on the
   merge commit.
 - The determinism snapshot passes on every leg.
+
+**Recorded 2026-10-22.** #24 merged with only a diagnostic, and the full
+run on `main` failed the determinism snapshot on arm64 macOS and on the
+valgrind leg, with the same wrong hashes each time. The bytes it printed
+differ from the other legs in one place: the double `1e300` of the test
+input, four units in the last place apart. R's parser rounds that literal
+differently where `long double` is no wider than `double`, so the input,
+not zuarrow's output, differed. #26 makes the value `2^1000`, which is
+exact everywhere, records the new hashes, removes the diagnostic, and
+closes the stage again.
 
 **Design.** §12's `R CMD check --as-cran` and byte-identity criteria.
 
