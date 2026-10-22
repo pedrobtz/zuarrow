@@ -90,11 +90,13 @@ static int zar_set_validity(struct ArrowArray *array, SEXP x, R_xlen_t start,
   return NANOARROW_OK;
 }
 
-/* Appends `bytes` zeroed bytes to buffer i and returns where they start.
-   Zero bytes leave an unallocated buffer alone and return a pointer that
-   is never written through, since pointer arithmetic on NULL is undefined. */
-static void *zar_data(struct ArrowArray *array, int i, int64_t bytes,
-                      struct zar_build *b) {
+/* Appends `bytes` bytes to buffer i and returns where they start: left as
+   they are by zar_data_uninit(), for a caller that writes every one, and
+   zeroed by zar_data(). Zero bytes leave an unallocated buffer alone and
+   return a pointer that is never written through, since pointer arithmetic
+   on NULL is undefined. */
+static void *zar_data_uninit(struct ArrowArray *array, int i, int64_t bytes,
+                             struct zar_build *b) {
   static uint8_t nothing[8];
   if (bytes == 0) return nothing;
   struct ArrowBuffer *buffer = ArrowArrayBuffer(array, i);
@@ -103,8 +105,14 @@ static void *zar_data(struct ArrowArray *array, int i, int64_t bytes,
     return NULL;
   }
   void *out = buffer->data + buffer->size_bytes;
-  memset(out, 0, (size_t)bytes);
   buffer->size_bytes += bytes;
+  return out;
+}
+
+static void *zar_data(struct ArrowArray *array, int i, int64_t bytes,
+                      struct zar_build *b) {
+  void *out = zar_data_uninit(array, i, bytes, b);
+  if (out != NULL && bytes > 0) memset(out, 0, (size_t)bytes);
   return out;
 }
 
@@ -193,7 +201,12 @@ static int zar_build_numeric(struct ArrowArray *array, enum ArrowType t,
   if (zar_set_validity(array, x, start, n, is_na, b) != NANOARROW_OK) {
     return EINVAL;
   }
-  void *data = zar_data(array, 1, n * zar_type_bytes(t), b);
+  /* The two paths below write every byte, so only the general loop, which
+     leaves null slots alone, needs a zeroed buffer. */
+  int writes_all = (is_int && t == NANOARROW_TYPE_INT32) ||
+                   (!is_int && t == NANOARROW_TYPE_DOUBLE && scale == 1.0);
+  int64_t bytes = n * zar_type_bytes(t);
+  void *data = writes_all ? zar_data_uninit(array, 1, bytes, b) : zar_data(array, 1, bytes, b);
   if (data == NULL) return zar_build_fail(b, NULL, NA_REAL);
 
   if (n == 0) return NANOARROW_OK;
@@ -237,6 +250,15 @@ static int zar_build_numeric(struct ArrowArray *array, enum ArrowType t,
       continue;
     }
     if (round_to_unit) v = nearbyint(v);
+    /* int32 and date32, the common case: a range test and one cast prove a
+       whole number in range (NaN fails the comparison). Anything else goes
+       through the general check below, which raises the error. */
+    if (t == NANOARROW_TYPE_INT32 || t == NANOARROW_TYPE_DATE32) {
+      if (v >= -2147483648.0 && v <= 2147483647.0 && (double)(int32_t)v == v) {
+        ((int32_t *)data)[i] = (int32_t)v;
+        continue;
+      }
+    }
     if (!R_FINITE(v) || v != floor(v) || !zar_int_fits(t, v)) {
       ArrowErrorSet(&b->error, "row %" PRId64 " holds %.17g, which %s cannot hold exactly",
                     (int64_t)k + 1, is_int ? (double)ip[k] : dp[k], ArrowTypeString(t));
@@ -600,10 +622,9 @@ static int zar_build_dictionary(struct ArrowArray *array,
     return zar_build_fail(b, "format", NA_REAL);
   }
   SEXP codes = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
-  for (int64_t i = 0; i < n; i++) {
-    int code = INTEGER(x)[start + (R_xlen_t)i];
-    INTEGER(codes)[i] = code == NA_INTEGER ? NA_INTEGER : code - 1;
-  }
+  const int *src = INTEGER(x) + start;
+  int *dst = INTEGER(codes);
+  for (int64_t i = 0; i < n; i++) dst[i] = src[i] == NA_INTEGER ? NA_INTEGER : src[i] - 1;
   int status = zar_build_numeric(array, index_view.type, codes, 0, n, 1.0, 0, b);
   UNPROTECT(1);
   if (status != NANOARROW_OK) return status;
@@ -752,8 +773,9 @@ static int zar_build_array(struct ArrowArray *array,
       /* dictionary = FALSE: the factor's labels as strings. */
       SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
       SEXP labels = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)n));
+      const int *codes = INTEGER(x) + start;
       for (int64_t i = 0; i < n; i++) {
-        int code = INTEGER(x)[start + (R_xlen_t)i];
+        int code = codes[i];
         SET_STRING_ELT(labels, (R_xlen_t)i,
                        code == NA_INTEGER ? NA_STRING : STRING_ELT(levels, code - 1));
       }
@@ -801,10 +823,9 @@ static int zar_build_array(struct ArrowArray *array,
       if (type == LGLSXP && t == NANOARROW_TYPE_INT8) {
         /* arrow.bool8: a logical as 0 and 1 in int8 storage. */
         SEXP ints = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
-        for (int64_t i = 0; i < n; i++) {
-          int v = LOGICAL(x)[start + (R_xlen_t)i];
-          INTEGER(ints)[i] = v == NA_LOGICAL ? NA_INTEGER : (v != 0);
-        }
+        const int *src = LOGICAL(x) + start;
+        int *dst = INTEGER(ints);
+        for (int64_t i = 0; i < n; i++) dst[i] = src[i] == NA_LOGICAL ? NA_INTEGER : (src[i] != 0);
         int status = zar_build_numeric(array, t, ints, 0, n, 1.0, 0, b);
         UNPROTECT(1);
         return status;
