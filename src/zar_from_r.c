@@ -276,8 +276,18 @@ static int zar_build_bool(struct ArrowArray *array, SEXP x, R_xlen_t start,
   }
   uint8_t *data = (uint8_t *)zar_data(array, 1, (n + 7) / 8, b);
   if (data == NULL) return zar_build_fail(b, NULL, NA_REAL);
+  /* Eight values to a byte without a branch: random TRUE and FALSE make a
+     branch per value mispredict half the time. */
   const int *src = LOGICAL(x) + start;
-  for (int64_t i = 0; i < n; i++) {
+  int64_t i = 0;
+  for (; i + 8 <= n; i += 8) {
+    uint8_t byte = 0;
+    for (int k = 0; k < 8; k++) {
+      byte |= (uint8_t)(((src[i + k] != 0) & (src[i + k] != NA_LOGICAL)) << k);
+    }
+    data[i >> 3] = byte;
+  }
+  for (; i < n; i++) {
     if (src[i] != NA_LOGICAL && src[i]) ArrowBitSet(data, i);
   }
   return NANOARROW_OK;
