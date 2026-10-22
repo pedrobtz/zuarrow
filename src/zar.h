@@ -11,6 +11,7 @@
 #define R_NO_REMAP
 #include <R.h>
 #include <Rinternals.h>
+#include <R_ext/Rdynload.h>
 
 /* A length-one character vector from UTF-8 bytes. */
 SEXP zar_scalar_utf8(const char *x);
@@ -84,5 +85,39 @@ const char *zar_reader_kind(const struct ArrowArrayStream *stream);
 int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limits,
                           struct ArrowArrayStream *out, struct ArrowError *error,
                           const char **kind);
+
+#ifndef ZAR_STANDALONE
+/* ---- deferred strings (src/zar_altrep.c) -------------------------------- */
+
+/* One batch's part of a deferred string column: `length` elements whose
+   offsets start at `offsets` (int32_t, or int64_t when `large`), whose
+   bytes are in `data`, and whose validity is bit `validity_offset + i` of
+   `validity`, or none when `validity` is NULL. `batch` indexes the array
+   handles that own the buffers. */
+struct zar_deferred_chunk {
+  int64_t begin;
+  int64_t length;
+  const void *offsets;
+  const char *data;
+  const uint8_t *validity;
+  int64_t validity_offset;
+  int64_t batch;
+  int large;
+};
+
+/* Registers the ALTREP class from R_init_zuarrow(). */
+void zar_altrep_init(DllInfo *dll);
+
+/* A character vector over `chunks`, which are copied; its length is where
+   the last chunk ends. `arrays` is the list of array handles the chunks
+   point into, kept until every element has been created. The bytes must
+   already be checked: valid UTF-8 and within R's string length. */
+SEXP zar_deferred_strings(SEXP arrays, const struct zar_deferred_chunk *chunks,
+                          int64_t n_chunks);
+
+/* Whether `x` is a deferred string vector, and how many of its elements
+   have been created: for tests. */
+SEXP zar_c_deferred_info(SEXP x);
+#endif
 
 #endif /* ZAR_H */

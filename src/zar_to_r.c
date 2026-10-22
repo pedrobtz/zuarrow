@@ -125,12 +125,15 @@ static SEXP zar_column_failure(const char *kind, const char *message,
   return out;
 }
 
-/* A failure found below the top level: kind, message, and where. */
+/* A failure found below the top level: kind, message, and where. It also
+   carries the two build options zar_build() reads at every level. */
 struct zar_err {
   struct ArrowError error;
   const char *kind;
   int64_t row; /* 0-based top-level row, or -1 */
   const char *format;
+  int copy;    /* FALSE: string columns may be deferred (zar_altrep.c) */
+  SEXP arrays; /* the batches' array handles, which deferred strings keep */
 };
 
 static int zar_fail(struct zar_err *e, const char *kind, int64_t row,
@@ -868,6 +871,28 @@ static double zar_half_to_double(uint16_t h) {
 
 /* ---- scalar fill ------------------------------------------------------- */
 
+/* The bytes of string element i of a slice, cut at the first NUL, after
+   the checks every R string needs: valid UTF-8 and within R's length. */
+static int zar_string_bytes(const struct zar_plan *p, const struct zar_slice *s,
+                            int64_t i, struct ArrowBufferView *out,
+                            struct zar_err *e) {
+  *out = ArrowArrayViewGetBytesUnsafe(s->view, zar_j(s, i));
+  int64_t len = out->size_bytes;
+  const char *nul = len > 0 ? memchr(out->data.data, 0, (size_t)len) : NULL;
+  if (nul != NULL) len = nul - out->data.as_char;
+  if (zar_utf8_invalid_at(out->data.as_uint8, len) >= 0) {
+    ArrowErrorSet(&e->error, "element %ld is not valid UTF-8", (long)i + 1);
+    return zar_fail(e, "format", -1, p->schema->format);
+  }
+  if (len > INT_MAX) {
+    ArrowErrorSet(&e->error, "element %ld is longer than R's string limit",
+                  (long)i + 1);
+    return zar_fail(e, "limit", -1, p->schema->format);
+  }
+  out->size_bytes = len;
+  return NANOARROW_OK;
+}
+
 static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
                     SEXP out, R_xlen_t at, struct ArrowBuffer *scratch,
                     struct zar_err *e) {
@@ -979,22 +1004,12 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
           SET_STRING_ELT(out, at + (R_xlen_t)i, NA_STRING);
           continue;
         }
-        struct ArrowBufferView b = ArrowArrayViewGetBytesUnsafe(v, zar_j(s, i));
-        int64_t len = b.size_bytes;
-        const char *nul = len > 0 ? memchr(b.data.data, 0, (size_t)len) : NULL;
-        if (nul != NULL) len = nul - b.data.as_char;
-        if (zar_utf8_invalid_at(b.data.as_uint8, len) >= 0) {
-          ArrowErrorSet(&e->error, "element %ld is not valid UTF-8", (long)i + 1);
-          return zar_fail(e, "format", -1, p->schema->format);
-        }
-        if (len > INT_MAX) {
-          ArrowErrorSet(&e->error, "element %ld is longer than R's string limit",
-                        (long)i + 1);
-          return zar_fail(e, "limit", -1, p->schema->format);
-        }
+        struct ArrowBufferView b;
+        if (zar_string_bytes(p, s, i, &b, e) != NANOARROW_OK) return EINVAL;
         SET_STRING_ELT(out, at + (R_xlen_t)i,
-                       len == 0 ? R_BlankString
-                                : Rf_mkCharLenCE(b.data.as_char, (int)len, CE_UTF8));
+                       b.size_bytes == 0
+                           ? R_BlankString
+                           : Rf_mkCharLenCE(b.data.as_char, (int)b.size_bytes, CE_UTF8));
       }
       return NANOARROW_OK;
     }
@@ -1368,6 +1383,62 @@ static SEXP zar_build_factor(struct zar_plan *p, struct zar_slice *slices,
 
 /* Builds the R form of a plan over its slices. On failure returns
    R_NilValue with e->kind set. */
+/* ---- deferred strings -------------------------------------------------- */
+
+/* Whether a string column can be deferred: copy = FALSE, plain string or
+   large_string storage read directly (not through a dictionary or a
+   run-end encoding), and no enclosing struct with nulls. Anything else is
+   copied as before. */
+static int zar_deferrable(const struct zar_plan *p, const struct zar_slice *slices,
+                          int64_t n_slices, const struct zar_err *e) {
+  if (e->copy || p->target != ZAR_T_CHR || e->arrays == NULL || e->arrays == R_NilValue) {
+    return 0;
+  }
+  for (int64_t b = 0; b < n_slices; b++) {
+    const struct zar_slice *s = &slices[b];
+    if (s->view->storage_type != NANOARROW_TYPE_STRING &&
+        s->view->storage_type != NANOARROW_TYPE_LARGE_STRING) {
+      return 0;
+    }
+    if (s->map != NULL) return 0;
+    for (const struct zar_slice *up = s->up; up != NULL; up = up->up) {
+      if (up->map != NULL || up->view->null_count != 0) return 0;
+    }
+  }
+  return 1;
+}
+
+/* Checks every value as the copying fill does, so a deferred column fails
+   in the same way and at the same time, then wraps the buffers. */
+static SEXP zar_build_deferred(const struct zar_plan *p, const struct zar_slice *slices,
+                               int64_t n_slices, struct zar_err *e) {
+  struct zar_deferred_chunk *chunks = (struct zar_deferred_chunk *)R_alloc(
+      (size_t)(n_slices > 0 ? n_slices : 1), sizeof(struct zar_deferred_chunk));
+  int64_t begin = 0;
+  for (int64_t b = 0; b < n_slices; b++) {
+    const struct zar_slice *s = &slices[b];
+    const struct ArrowArrayView *v = s->view;
+    for (int64_t i = 0; i < s->length; i++) {
+      if (zar_is_null(s, i)) continue;
+      struct ArrowBufferView bytes;
+      if (zar_string_bytes(p, s, i, &bytes, e) != NANOARROW_OK) return R_NilValue;
+    }
+    int large = v->storage_type == NANOARROW_TYPE_LARGE_STRING;
+    int64_t first = v->offset + s->start;
+    chunks[b].begin = begin;
+    chunks[b].length = s->length;
+    chunks[b].offsets = v->buffer_views[1].data.as_uint8 +
+                        first * (int64_t)(large ? sizeof(int64_t) : sizeof(int32_t));
+    chunks[b].data = v->buffer_views[2].data.as_char;
+    chunks[b].validity = v->null_count != 0 ? v->buffer_views[0].data.as_uint8 : NULL;
+    chunks[b].validity_offset = first;
+    chunks[b].batch = b;
+    chunks[b].large = large;
+    begin += s->length;
+  }
+  return zar_deferred_strings(e->arrays, chunks, n_slices);
+}
+
 static SEXP zar_build(struct zar_plan *p, struct zar_slice *slices,
                       int64_t n_slices, int64_t rows, struct ArrowBuffer *text,
                       struct zar_err *e) {
@@ -1425,6 +1496,11 @@ static SEXP zar_build(struct zar_plan *p, struct zar_slice *slices,
       break;
     }
     default: {
+      if (zar_deferrable(p, slices, n_slices, e)) {
+        out = zar_build_deferred(p, slices, n_slices, e);
+        if (e->kind != NULL) return R_NilValue;
+        break;
+      }
       out = PROTECT(Rf_allocVector(zar_sexptype(p->target), (R_xlen_t)rows));
       R_xlen_t at = 0;
       for (int64_t b = 0; b < n_slices; b++) {
@@ -1449,8 +1525,9 @@ static SEXP zar_build(struct zar_plan *p, struct zar_slice *slices,
 /* Converts the batches in `arrays` (array handles of one schema) to R.
    With `frame` TRUE the schema is a struct and each field is a column;
    otherwise the array itself is the one column. `opts` is
-   list(lossy, to, int64, frame, max_depth): `to` an integer code per
-   column, `int64` whether bit64's integer64 may be used.
+   list(lossy, to, int64, frame, max_depth, copy): `to` an integer code
+   per column, `int64` whether bit64's integer64 may be used, `copy` FALSE
+   to defer string columns.
 
    Returns list(columns, names, warned, rows), or a failure with the
    column, row, format and name. */
@@ -1465,6 +1542,8 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   int int64_ok = Rf_asLogical(VECTOR_ELT(opts, 2));
   int frame = Rf_asLogical(VECTOR_ELT(opts, 3));
   int max_depth = Rf_asInteger(VECTOR_ELT(opts, 4));
+  e.copy = Rf_xlength(opts) > 5 ? Rf_asLogical(VECTOR_ELT(opts, 5)) != FALSE : 1;
+  e.arrays = arrays;
 
   R_xlen_t n_batches = Rf_xlength(arrays);
   for (R_xlen_t b = 0; b < n_batches; b++) {

@@ -78,7 +78,8 @@ arrow_read <- function(
   lazy = FALSE,
   to = NULL,
   lossy = zar_lossy_policies,
-  limits = arrow_limits()
+  limits = arrow_limits(),
+  copy = TRUE
 ) {
   lossy <- match.arg(lossy)
   call <- sys.call()
@@ -88,6 +89,7 @@ arrow_read <- function(
   if (!is.logical(lazy) || length(lazy) != 1L || is.na(lazy)) {
     zar_abort("type", "`lazy` must be `TRUE` or `FALSE`.", call = call)
   }
+  zar_check_flag(copy, "copy", call)
   source <- zar_read_source(x, limits, call)
   stream <- zar_check(
     .Call(
@@ -124,7 +126,15 @@ arrow_read <- function(
     }
     batches[[length(batches) + 1L]] <- batch
   }
-  zar_convert(batches, schema, to, lossy, call, max_depth = limits$max_depth)
+  zar_convert(
+    batches,
+    schema,
+    to,
+    lossy,
+    call,
+    max_depth = limits$max_depth,
+    copy = copy
+  )
 }
 
 zar_read_source <- function(x, limits, call) {

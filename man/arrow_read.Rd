@@ -10,7 +10,8 @@ arrow_read(
   lazy = FALSE,
   to = NULL,
   lossy = zar_lossy_policies,
-  limits = arrow_limits()
+  limits = arrow_limits(),
+  copy = TRUE
 )
 }
 \arguments{
@@ -28,6 +29,18 @@ array that is not a \code{struct}, a single prototype.}
 \item{lossy}{What to do with a column R cannot hold exactly.}
 
 \item{limits}{An \code{\link[=arrow_limits]{arrow_limits()}} object.}
+
+\item{copy}{\code{TRUE} to create every R value during the conversion.
+\code{FALSE} to defer string columns: each becomes a character vector that
+keeps the Arrow buffers and creates an element's R string the first
+time it is used. Most of the cost of a string column is creating its
+R strings, so a result that is only partly read, or passed on, is much
+cheaper. The values are checked during the conversion either way, so
+\code{copy = FALSE} raises the same errors at the same time. The vector
+holds the batch's memory until every element has been used, and it is
+saved by \code{\link[=saveRDS]{saveRDS()}} as an ordinary character vector. Columns of other
+types, and strings read through a dictionary, a run-end encoding or a
+\code{struct} with nulls, are copied either way.}
 }
 \value{
 A data frame, or with \code{lazy = TRUE} a stream handle.
