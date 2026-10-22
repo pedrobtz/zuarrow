@@ -74,3 +74,40 @@ vectors, so meeting these two rows would mean reversing D8. The
 benchmark's two string columns under the memory pressure of the 10⁷-row
 input take the batch to 39 ms. Tracked in the issue linked from the
 roadmap's Stage 6 deviation.
+
+## D8 amended, 2026-10-22: deferred strings
+
+Same machine, package versions and input, with `copy = FALSE` added (D8,
+amended at the maintainer's request in #21). The oracles were rerun in
+the same session. The change also checks a string slice's bytes as one
+range, which speeds up the copying rows too.
+
+| Operation | Target | Oracle | Time | Met |
+| --- | --- | --- | --- | --- |
+| `arrow_read()`, plain file | within 1.5× of `read_feather()` | 4997 ms | 7874 ms (1.58×) | no |
+| `arrow_read()`, lz4 file | within 1.5× of `read_feather()` | 5147 ms | 6967 ms (1.35×) | yes |
+| `arrow_read()`, stream | within 1.5× of `read_nanoarrow()` | 2891 ms | 6447 ms (2.23×) | no |
+| `arrow_read(copy = FALSE)`, stream | within 1.5× of `read_nanoarrow()` | 2891 ms | 1649 ms (0.57×) | yes |
+| `arrow_read(copy = FALSE)`, plain file | none; for comparison | | 1819 ms | |
+| `arrow_write()`, plain file | within 1.5× of `write_feather()` | 8240 ms | 7454 ms (0.90×) | yes |
+| `arrow_to_r()`, 10⁷ doubles | under 30 ms | | 19 ms | yes |
+| `arrow_array()`, 10⁷ strings | within 2× of nanoarrow | 1253 ms | 1899 ms (1.52×) | yes |
+| `arrow_next()` per 65 536-row batch, ten columns | under 5 ms | | 33 ms | no |
+| `arrow_next(copy = FALSE)`, the same | under 5 ms | | 5 ms | at the limit |
+
+**The deferred rows compare like with like.** nanoarrow also returns
+ALTREP character vectors, so `copy = FALSE` is the fair counterpart of
+its row, and it reads the stream in 0.57× its time. One deferred batch
+of ten columns takes 5 ms at `system.time()`'s 1 ms resolution: at the
+target, not under it. The string columns are now under 1 ms each, and
+the rest is the eight other columns at about 0.5 ms each.
+
+**The copying plain-file row moved with its oracle.** `read_feather()`
+took 4997 ms this run against 5716 ms in Stage 6, and `arrow_read()`
+7874 ms against 7357 ms. On this 8 GB machine both swing with memory
+pressure from the two 10⁷-row string columns. The copying stream row is
+still a miss, for the reason Stage 6 gave: creating 2 × 10⁷ R strings.
+
+Deferring 10⁷ ten-byte strings in `arrow_to_r()` took 719 ms before the
+range check and 61 ms after it: the per-element `memchr()` and UTF-8
+calls were the cost, not the ALTREP wrapper.

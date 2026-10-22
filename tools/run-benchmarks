@@ -21,8 +21,8 @@ reps <- arg("--reps", 3)
 has <- function(pkg) requireNamespace(pkg, quietly = TRUE)
 
 # arrow returns lazy ALTREP vectors by default, which defers its copy past
-# the timing. zuarrow copies once into ordinary vectors (D8), so arrow is
-# timed materialising too.
+# the timing. zuarrow copies once into ordinary vectors by default (D8), so
+# arrow is timed materialising too; the copy = FALSE rows defer strings.
 options(arrow.use_altrep = FALSE)
 
 make_input <- function(n) {
@@ -122,6 +122,16 @@ if (requireNamespace("zuarrow", quietly = TRUE) && file.exists(plain)) {
   batches <- arrow_stream(df[seq_len(65536 * 3), ], batch = 65536L)
   row("`arrow_next()`, one 65 536-row batch of ten columns",
       time_ms(arrow_next(batches)), "target: under 5 ms")
+
+  # copy = FALSE defers the string columns, as nanoarrow's ALTREP vectors
+  # do, so these rows compare like with like against read_nanoarrow().
+  row("`arrow_read(copy = FALSE)`, plain file",
+      time_ms(arrow_read(plain, copy = FALSE)), "deferred strings")
+  row("`arrow_read(copy = FALSE)`, stream",
+      time_ms(arrow_read(stream, copy = FALSE)), "target: 1.5x read_nanoarrow()")
+  batches <- arrow_stream(df[seq_len(65536 * 3), ], batch = 65536L)
+  row("`arrow_next(copy = FALSE)`, one 65 536-row batch of ten columns",
+      time_ms(arrow_next(batches, copy = FALSE)), "target: under 5 ms")
 }
 
 unlink(dir, recursive = TRUE)

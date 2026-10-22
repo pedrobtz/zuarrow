@@ -401,7 +401,10 @@ criterion asks, and two miss their target: `arrow_read()` on the stream
 Both are the cost of creating R strings, which nanoarrow defers behind
 ALTREP and D8 has zuarrow pay at once. The maintainer decides between
 revising the targets and revisiting D8, in
-[#21](https://github.com/pedrobtz/zuarrow/issues/21).
+[#21](https://github.com/pedrobtz/zuarrow/issues/21). On 2026-10-22 the
+maintainer asked for both methods: D8 is amended so `copy = FALSE` defers
+string columns, copying stays the default, and `.agents/benchmarks.md`
+records the deferred rows beside the copying ones.
 
 ## Stage 7 — README and article
 
