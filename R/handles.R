@@ -200,7 +200,7 @@ zar_infer_type <- function(x, name) {
 # A list of raw vectors is binary; any other list is list<T>, T from the
 # elements, which must share one class (section 6.4).
 zar_infer_list <- function(x, name) {
-  present <- Filter(Negate(is.null), x)
+  present <- x[!zar_null_elements(x)]
   if (length(present) > 0L && all(vapply(present, is.raw, NA))) {
     return(zar_spec("z", name))
   }
@@ -214,25 +214,39 @@ zar_infer_list <- function(x, name) {
   zar_spec(if (total > 2^31 - 1) "+L" else "+l", name, children = list(child))
 }
 
+# Which elements of a list are NULL, without an R call per element: only
+# the elements of length zero can be.
+zar_null_elements <- function(x) {
+  null <- lengths(x) == 0L
+  if (any(null)) {
+    null[null] <- vapply(x[null], is.null, NA, USE.NAMES = FALSE)
+  }
+  null
+}
+
 # Every element's values, concatenated, or NULL when there are none.
 zar_flatten <- function(x, call = NULL) {
-  present <- Filter(Negate(is.null), x)
+  present <- unname(x[!zar_null_elements(x)])
   if (length(present) == 0L) {
     return(NULL)
   }
-  first <- class(present[[1L]])
-  same <- vapply(present, function(e) identical(class(e), first), NA)
-  if (!all(same)) {
+  if (length(unique(lapply(present, class))) != 1L) {
     zar_abort(
       "type",
       "The elements of a list column must share one class.",
       call = call
     )
   }
-  if (is.data.frame(present[[1L]])) {
-    return(do.call(rbind, unname(present)))
+  first <- present[[1L]]
+  if (is.data.frame(first)) {
+    return(do.call(rbind, present))
   }
-  do.call(c, unname(present))
+  # Plain atomic vectors concatenate in one call; classed ones, such as
+  # dates or factors, need their c() method.
+  if (is.atomic(first) && is.null(oldClass(first))) {
+    return(unlist(present, use.names = FALSE))
+  }
+  do.call(c, present)
 }
 
 zar_from_handler <- function(handler, x) {

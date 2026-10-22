@@ -155,7 +155,7 @@ zar_prepare_spec <- function(x, spec) {
     return(structure(
       list(
         offsets = c(0, cumsum(as.double(lengths(x)))),
-        null = vapply(x, is.null, NA),
+        null = zar_null_elements(x),
         values = zar_prepare_spec(values, child)
       ),
       class = "zar_list_prep"
