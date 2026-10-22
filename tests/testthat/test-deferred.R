@@ -177,3 +177,11 @@ test_that("strings checked as one byte range still fail element by element", {
   expect_identical(arrow_to_r(garbage), c("a", NA))
   expect_identical(arrow_to_r(garbage, copy = FALSE), c("a", NA))
 })
+
+test_that("an empty string array with no offsets converts both ways", {
+  for (format in c("u", "U")) {
+    empty <- test_array(format, 0, list(NULL, NULL, NULL))
+    expect_identical(arrow_to_r(empty), character())
+    expect_identical(arrow_to_r(empty, copy = FALSE), character())
+  }
+})

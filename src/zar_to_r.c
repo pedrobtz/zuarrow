@@ -546,15 +546,23 @@ static int zar_string_range(const struct zar_slice *s, int64_t *lo, int64_t *hi)
     return 0;
   }
   int large = v->storage_type == NANOARROW_TYPE_LARGE_STRING;
+  int64_t width = large ? (int64_t)sizeof(int64_t) : (int64_t)sizeof(int32_t);
   int64_t first = v->offset + s->start;
+  /* Only an offsets buffer that holds every offset read, and a range inside
+     the data buffer; a zero-length array may have no offsets at all. */
+  if (s->length == 0 || v->buffer_views[1].size_bytes < (first + s->length + 1) * width) {
+    return 0;
+  }
   const uint8_t *data = v->buffer_views[2].data.as_uint8;
+  int64_t data_size = v->buffer_views[2].size_bytes;
   int64_t prev = large ? v->buffer_views[1].data.as_int64[first]
                        : v->buffer_views[1].data.as_int32[first];
+  if (prev < 0) return 0;
   *lo = prev;
   for (int64_t k = 0; k < s->length; k++) {
     int64_t next = large ? v->buffer_views[1].data.as_int64[first + k + 1]
                          : v->buffer_views[1].data.as_int32[first + k + 1];
-    if (next < prev) return 0;
+    if (next < prev || next > data_size) return 0;
     if (next > prev && (data[prev] & 0xc0) == 0x80) return 0;
     prev = next;
   }
@@ -1482,8 +1490,11 @@ static SEXP zar_build_deferred(const struct zar_plan *p, const struct zar_slice 
     int64_t first = v->offset + s->start;
     chunks[b].begin = begin;
     chunks[b].length = s->length;
-    chunks[b].offsets = v->buffer_views[1].data.as_uint8 +
-                        first * (int64_t)(large ? sizeof(int64_t) : sizeof(int32_t));
+    /* An empty slice may have no buffers: never offset a NULL pointer. */
+    chunks[b].offsets = s->length == 0 ? NULL
+                                       : v->buffer_views[1].data.as_uint8 +
+                                             first * (int64_t)(large ? sizeof(int64_t)
+                                                                     : sizeof(int32_t));
     chunks[b].data = v->buffer_views[2].data.as_char;
     chunks[b].validity = v->null_count != 0 ? v->buffer_views[0].data.as_uint8 : NULL;
     chunks[b].validity_offset = first;
