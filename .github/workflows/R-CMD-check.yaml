@@ -29,6 +29,11 @@ jobs:
       # fetched by the tests themselves (helper-fixtures.R).
       env: |
         ZUARROW_FETCH_FIXTURES=true
+      # CRAN's NOSUGGESTS and NOLD flavours, in the full profile only. NOLD
+      # is R without long double: the condition that made R parse 1e300
+      # differently on arm64 macOS (Stage 8).
+      nosuggests: true
+      nold: true
       runners: >-
         [{"os": "macos-latest", "r": "release"},
          {"os": "windows-latest", "r": "release"},
