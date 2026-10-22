@@ -1,0 +1,161 @@
+#!/usr/bin/env Rscript
+# Times conversion of one column of each type, zuarrow against nanoarrow, to
+# find element-by-element paths. Each case runs in a fresh R session and
+# prints nanoseconds per element, the median of `--reps` runs. arrow builds
+# every input, so both packages convert the same array handle.
+#
+#   tools/bench-types [--rows N] [--reps R]
+#
+# "to R" converts an Arrow array: arrow_to_r() against
+# nanoarrow::convert_array(). Both create every R string: zuarrow copies by
+# default, and nanoarrow's ALTREP strings are forced by assigning one
+# element. date64, timestamp and duration have no exact R form without
+# zutempo, so zuarrow converts them with lossy = "allow", as nanoarrow does.
+# "from R" builds an Arrow array from an R vector: arrow_array() against
+# nanoarrow::as_nanoarrow_array(). Rows where zuarrow takes more than
+# twice as long are flagged.
+
+args <- commandArgs(trailingOnly = TRUE)
+arg <- function(name, default) {
+  i <- match(name, args)
+  if (is.na(i)) default else args[[i + 1L]]
+}
+rows <- as.numeric(arg("--rows", 1e7))
+reps <- as.integer(arg("--reps", 5))
+case <- arg("--case", NA)
+
+# ---- the inputs ------------------------------------------------------------
+
+with_nulls <- function(x, nulls) {
+  if (nulls) {
+    at <- seq(1, length(x), by = 10)
+    if (is.list(x) && !is.data.frame(x)) x[at] <- list(NULL) else x[at] <- NA
+  }
+  x
+}
+
+# Types with no exact R form without zutempo: zuarrow refuses them by
+# default, and nanoarrow converts them lossily, so zuarrow is timed with
+# lossy = "allow" to do the same work.
+lossy_allow <- c("date64", "timestamp_us", "duration_us")
+
+pool <- function() {
+  set.seed(1)
+  vapply(seq_len(1e5), function(i) paste(sample(letters, 10, TRUE), collapse = ""), "")
+}
+
+# Arrow arrays for the "to R" cases. Each returns an arrow Array.
+to_r_inputs <- list(
+  bool = function(n, nulls) arrow::Array$create(with_nulls(sample(c(TRUE, FALSE), n, TRUE), nulls)),
+  int8 = function(n, nulls) arrow::Array$create(with_nulls(sample.int(100L, n, TRUE), nulls), type = arrow::int8()),
+  int16 = function(n, nulls) arrow::Array$create(with_nulls(sample.int(1000L, n, TRUE), nulls), type = arrow::int16()),
+  int32 = function(n, nulls) arrow::Array$create(with_nulls(sample.int(1e6L, n, TRUE), nulls), type = arrow::int32()),
+  int64 = function(n, nulls) arrow::Array$create(with_nulls(sample.int(1e6L, n, TRUE), nulls), type = arrow::int64()),
+  uint8 = function(n, nulls) arrow::Array$create(with_nulls(sample.int(100L, n, TRUE), nulls), type = arrow::uint8()),
+  uint32 = function(n, nulls) arrow::Array$create(with_nulls(sample.int(1e6L, n, TRUE), nulls), type = arrow::uint32()),
+  uint64 = function(n, nulls) arrow::Array$create(with_nulls(sample.int(1e6L, n, TRUE), nulls), type = arrow::uint64()),
+  float32 = function(n, nulls) arrow::Array$create(with_nulls(runif(n), nulls), type = arrow::float32()),
+  float64 = function(n, nulls) arrow::Array$create(with_nulls(runif(n), nulls)),
+  string = function(n, nulls) arrow::Array$create(with_nulls(sample(pool(), n, TRUE), nulls)),
+  large_string = function(n, nulls) arrow::Array$create(with_nulls(sample(pool(), n, TRUE), nulls), type = arrow::large_utf8()),
+  binary = function(n, nulls) arrow::Array$create(with_nulls(sample(pool(), n, TRUE), nulls))$cast(arrow::binary()),
+  dictionary = function(n, nulls) arrow::Array$create(with_nulls(factor(sample(sprintf("l%03d", 1:100), n, TRUE)), nulls)),
+  date32 = function(n, nulls) arrow::Array$create(with_nulls(as.Date("2000-01-01") + sample.int(1e4L, n, TRUE), nulls)),
+  date64 = function(n, nulls) arrow::Array$create(with_nulls(as.Date("2000-01-01") + sample.int(1e4L, n, TRUE), nulls))$cast(arrow::date64()),
+  timestamp_us = function(n, nulls) arrow::Array$create(with_nulls(as.POSIXct("2020-01-01", tz = "UTC") + runif(n) * 1e8, nulls)),
+  duration_us = function(n, nulls) arrow::Array$create(with_nulls(sample.int(1e6L, n, TRUE), nulls), type = arrow::int64())$cast(arrow::duration("us")),
+  list_int32 = function(n, nulls) arrow::Array$create(with_nulls(lapply(seq_len(n / 5), function(i) sample.int(100L, 5L)), nulls)),
+  struct = function(n, nulls) arrow::Array$create(data.frame(a = with_nulls(sample.int(1e6L, n, TRUE), nulls), b = with_nulls(runif(n), nulls)))
+)
+
+# R vectors for the "from R" cases.
+from_r_inputs <- list(
+  logical = function(n, nulls) with_nulls(sample(c(TRUE, FALSE), n, TRUE), nulls),
+  integer = function(n, nulls) with_nulls(sample.int(1e6L, n, TRUE), nulls),
+  double = function(n, nulls) with_nulls(runif(n), nulls),
+  character = function(n, nulls) with_nulls(sample(pool(), n, TRUE), nulls),
+  factor = function(n, nulls) with_nulls(factor(sample(sprintf("l%03d", 1:100), n, TRUE)), nulls),
+  Date = function(n, nulls) with_nulls(as.Date("2000-01-01") + sample.int(1e4L, n, TRUE), nulls),
+  POSIXct = function(n, nulls) with_nulls(as.POSIXct("2020-01-01", tz = "UTC") + runif(n) * 1e8, nulls),
+  list_integer = function(n, nulls) with_nulls(lapply(seq_len(n / 5), function(i) sample.int(100L, 5L)), nulls),
+  data.frame = function(n, nulls) data.frame(a = with_nulls(sample.int(1e6L, n, TRUE), nulls), b = with_nulls(runif(n), nulls))
+)
+
+force_strings <- function(x) {
+  if (is.character(x) && length(x) > 0L) x[1L] <- x[1L]
+  x
+}
+
+# ---- one case, in this session ---------------------------------------------
+
+run_case <- function(case) {
+  suppressMessages({
+    library(zuarrow)
+    library(nanoarrow)
+  })
+  parts <- strsplit(case, ":", fixed = TRUE)[[1]]
+  direction <- parts[[1]]
+  type <- parts[[2]]
+  nulls <- parts[[3]] == "nulls"
+  set.seed(20261022)
+  if (direction == "to_r") {
+    x <- nanoarrow::as_nanoarrow_array(to_r_inputs[[type]](rows, nulls))
+    n <- x$length
+    lossy <- if (type %in% lossy_allow) "allow" else "error"
+    z <- function() arrow_to_r(x, lossy = lossy)
+    a <- function() force_strings(nanoarrow::convert_array(x))
+  } else {
+    x <- from_r_inputs[[type]](rows, nulls)
+    n <- NROW(x)
+    # nanoarrow cannot infer a list's type, so both are given it
+    schema <- if (type == "list_integer") nanoarrow::na_list(nanoarrow::na_int32()) else NULL
+    z <- function() arrow_array(x, schema = schema)
+    a <- function() nanoarrow::as_nanoarrow_array(x, schema = schema)
+  }
+  time_ns <- function(f) {
+    f()
+    t <- vapply(seq_len(reps), function(i) {
+      gc()
+      system.time(f())[["elapsed"]]
+    }, 0)
+    median(t) * 1e9 / n
+  }
+  cat(sprintf("%s\t%s\t%s\t%.2f\t%.2f\n", direction, type, parts[[3]], time_ns(z), time_ns(a)))
+}
+
+if (!is.na(case)) {
+  invisible(run_case(case))
+  quit(save = "no")
+}
+
+# ---- the driver: every case in a fresh session -----------------------------
+
+self <- sub("^--file=", "", grep("^--file=", commandArgs(FALSE), value = TRUE))
+cases <- c(
+  outer(paste0("to_r:", names(to_r_inputs)), c("none", "nulls"), paste, sep = ":"),
+  outer(paste0("from_r:", names(from_r_inputs)), c("none", "nulls"), paste, sep = ":")
+)
+lines <- character()
+for (c in sort(cases)) {
+  out <- system2(
+    "Rscript",
+    c(self, "--rows", rows, "--reps", reps, "--case", c),
+    stdout = TRUE,
+    stderr = FALSE
+  )
+  hit <- grep("^(to_r|from_r)\t", out, value = TRUE)
+  lines <- c(lines, if (length(hit)) hit else paste(c(strsplit(c, ":")[[1]], "NA", "NA"), collapse = "\t"))
+}
+res <- utils::read.delim(text = lines, header = FALSE, col.names = c("direction", "type", "nulls", "zuarrow", "nanoarrow"))
+res$ratio <- res$zuarrow / res$nanoarrow
+cat(sprintf("Input: %g elements per column; median of %d runs; ns per element.\n\n", rows, reps))
+cat("| Direction | Type | Nulls | zuarrow | nanoarrow | Ratio | |\n| --- | --- | --- | --- | --- | --- | --- |\n")
+for (i in order(res$direction, -res$ratio)) {
+  r <- res[i, ]
+  cat(sprintf(
+    "| %s | %s | %s | %.2f | %.2f | %.2f× | %s |\n",
+    if (r$direction == "to_r") "to R" else "from R", r$type,
+    if (r$nulls == "nulls") "10%" else "none", r$zuarrow, r$nanoarrow, r$ratio,
+    if (!is.na(r$ratio) && r$ratio > 2) "**slow**" else ""
+  ))
+}
