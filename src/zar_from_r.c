@@ -41,9 +41,40 @@ static int zar_na_list(SEXP x, R_xlen_t i) { return VECTOR_ELT(x, i) == R_NilVal
 static int zar_na_lgl_true(SEXP x, R_xlen_t i) { return LOGICAL(x)[i] == TRUE; }
 
 /* Writes the validity bitmap of rows [start, start + n) when any is NA. */
+/* Counts the NAs of an integer, logical or double vector through a typed
+   pointer, and writes the bitmap a byte at a time: no call per element. */
+#define ZAR_VALIDITY(CTYPE, PTR, IS_NA)                                   \
+  {                                                                       \
+    const CTYPE *src = PTR(x) + start;                                    \
+    int64_t nulls = 0;                                                    \
+    for (int64_t i = 0; i < n; i++) nulls += IS_NA(src[i]);               \
+    array->null_count = nulls;                                            \
+    if (nulls == 0) return NANOARROW_OK;                                  \
+    struct ArrowBitmap *bitmap = ArrowArrayValidityBitmap(array);         \
+    if (ArrowBitmapReserve(bitmap, n) != NANOARROW_OK) {                  \
+      ArrowErrorSet(&b->error, "cannot allocate a validity bitmap");     \
+      return zar_build_fail(b, NULL, NA_REAL);                            \
+    }                                                                     \
+    uint8_t *bits = bitmap->buffer.data;                                  \
+    memset(bits, 0, (size_t)((n + 7) / 8));                               \
+    for (int64_t i = 0; i < n; i++) {                                     \
+      bits[i >> 3] |= (uint8_t)(!IS_NA(src[i]) << (i & 7));               \
+    }                                                                     \
+    bitmap->size_bits = n;                                                \
+    bitmap->buffer.size_bytes = (n + 7) / 8;                              \
+    return NANOARROW_OK;                                                  \
+  }
+#define ZAR_NA_INT(v) ((v) == NA_INTEGER)
+#define ZAR_NA_DBL(v) (ISNAN(v) && R_IsNA(v))
+
 static int zar_set_validity(struct ArrowArray *array, SEXP x, R_xlen_t start,
                             int64_t n, zar_is_na_fn is_na,
                             struct zar_build *b) {
+  if (n > 0 && (is_na == zar_na_int || is_na == zar_na_lgl)) {
+    if (TYPEOF(x) == LGLSXP) ZAR_VALIDITY(int, LOGICAL, ZAR_NA_INT)
+    ZAR_VALIDITY(int, INTEGER, ZAR_NA_INT)
+  }
+  if (n > 0 && is_na == zar_na_dbl) ZAR_VALIDITY(double, REAL, ZAR_NA_DBL)
   int64_t nulls = 0;
   for (int64_t i = 0; i < n; i++) nulls += is_na(x, start + (R_xlen_t)i);
   array->null_count = nulls;
@@ -166,21 +197,30 @@ static int zar_build_numeric(struct ArrowArray *array, enum ArrowType t,
   if (data == NULL) return zar_build_fail(b, NULL, NA_REAL);
 
   if (n == 0) return NANOARROW_OK;
-  if (is_int && t == NANOARROW_TYPE_INT32 && array->null_count == 0) {
-    memcpy(data, INTEGER(x) + start, (size_t)n * sizeof(int32_t));
+  /* The R data pointers, taken once: INTEGER() and REAL() are calls. */
+  const int *ip = is_int ? INTEGER(x) : NULL;
+  const double *dp = is_int ? NULL : REAL(x);
+  if (is_int && t == NANOARROW_TYPE_INT32) {
+    if (array->null_count == 0) {
+      memcpy(data, ip + start, (size_t)n * sizeof(int32_t));
+    } else {
+      /* A null slot holds zero, as the general loop leaves it. */
+      int32_t *dst = (int32_t *)data;
+      for (int64_t i = 0; i < n; i++) dst[i] = ip[start + i] == NA_INTEGER ? 0 : ip[start + i];
+    }
     return NANOARROW_OK;
   }
   if (!is_int && t == NANOARROW_TYPE_DOUBLE && scale == 1.0) {
-    const double *src = REAL(x) + start;
+    const double *src = dp + start;
     double *dst = (double *)data;
-    for (int64_t i = 0; i < n; i++) dst[i] = R_IsNA(src[i]) ? 0.0 : src[i];
+    for (int64_t i = 0; i < n; i++) dst[i] = ZAR_NA_DBL(src[i]) ? 0.0 : src[i];
     return NANOARROW_OK;
   }
 
   for (int64_t i = 0; i < n; i++) {
     R_xlen_t k = start + (R_xlen_t)i;
-    if (is_na(x, k)) continue;
-    double v = is_int ? (double)INTEGER(x)[k] : REAL(x)[k];
+    if (is_int ? ip[k] == NA_INTEGER : ZAR_NA_DBL(dp[k])) continue;
+    double v = is_int ? (double)ip[k] : dp[k];
     v *= scale;
     if (t == NANOARROW_TYPE_DOUBLE) {
       ((double *)data)[i] = v;
@@ -199,8 +239,7 @@ static int zar_build_numeric(struct ArrowArray *array, enum ArrowType t,
     if (round_to_unit) v = nearbyint(v);
     if (!R_FINITE(v) || v != floor(v) || !zar_int_fits(t, v)) {
       ArrowErrorSet(&b->error, "row %" PRId64 " holds %.17g, which %s cannot hold exactly",
-                    (int64_t)k + 1, is_int ? (double)INTEGER(x)[k] : REAL(x)[k],
-                    ArrowTypeString(t));
+                    (int64_t)k + 1, is_int ? (double)ip[k] : dp[k], ArrowTypeString(t));
       return zar_build_fail(b, "lossy", (double)k + 1);
     }
     zar_store_int(data, t, i, v);
