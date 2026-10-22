@@ -97,6 +97,7 @@ tools/update-vendor                              # re-vendor nanoarrow, rewrite 
 tools/verify-vendor                              # vendored tree is upstream plus patches
 tools/verify-vendor --canary                     # the verifier catches a missing patch
 tools/run-benchmarks [--rows N] [--reps R]       # design §10 timings, as Markdown rows
+tools/bench-types [--rows N] [--reps R]          # per-type conversion against nanoarrow
 NOT_CRAN=true Rscript -e 'devtools::test(filter = "abi")'   # symbol checks (skip on CRAN)
 
 tools/fetch-fixtures                             # arrow-testing corpus into tests/testthat/fixtures

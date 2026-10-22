@@ -176,6 +176,124 @@ static int zar_is_plain(const struct zar_slice *s) {
   return 1;
 }
 
+/* ---- direct slices -------------------------------------------------------
+
+   A slice is direct when no level of it, its own or an enclosing struct's,
+   reads through a map. Element i is then element `first + i` of the view's
+   buffers, and it is null when a bit is clear in any level's validity
+   bitmap. The scans and fills below use this to run one loop over the typed
+   buffer instead of calling zar_is_null() and zar_j() for every element. */
+#define ZAR_DIRECT_MAX 16
+
+struct zar_direct {
+  int64_t first;
+  int n_bits;
+  const uint8_t *bits[ZAR_DIRECT_MAX];
+  int64_t bit_offset[ZAR_DIRECT_MAX];
+};
+
+static int zar_direct_init(const struct zar_slice *s, struct zar_direct *d) {
+  d->first = s->view->offset + s->start;
+  d->n_bits = 0;
+  for (const struct zar_slice *l = s; l != NULL; l = l->up) {
+    if (l->map != NULL) return 0;
+    const struct ArrowArrayView *v = l->view;
+    /* As zar_is_plain(): a level with no nulls has no bitmap to read. */
+    if (v->null_count != 0 && v->buffer_views[0].data.as_uint8 != NULL) {
+      if (d->n_bits == ZAR_DIRECT_MAX) return 0;
+      d->bits[d->n_bits] = v->buffer_views[0].data.as_uint8;
+      d->bit_offset[d->n_bits] = v->offset + l->start;
+      d->n_bits++;
+    }
+  }
+  return 1;
+}
+
+static inline int zar_direct_null(const struct zar_direct *d, int64_t i) {
+  for (int k = 0; k < d->n_bits; k++) {
+    if (!ArrowBitGet(d->bits[k], d->bit_offset[k] + i)) return 1;
+  }
+  return 0;
+}
+
+/* Sets dst[i] = NA_VALUE for every null element of a direct slice. With
+   one bitmap it reads a byte at a time and skips the bytes with no null;
+   with several (a struct's fields) it tests each element. */
+#define ZAR_APPLY_NULLS(d, dst, n, NA_VALUE)                                  \
+  do {                                                                        \
+    if ((d).n_bits == 1) {                                                    \
+      const uint8_t *bits_ = (d).bits[0];                                     \
+      int64_t off_ = (d).bit_offset[0];                                       \
+      int64_t i_ = 0;                                                         \
+      for (; i_ < (n) && ((off_ + i_) & 7) != 0; i_++) {                      \
+        if (!ArrowBitGet(bits_, off_ + i_)) (dst)[i_] = (NA_VALUE);           \
+      }                                                                       \
+      for (; i_ + 8 <= (n); i_ += 8) {                                        \
+        uint8_t byte_ = bits_[(off_ + i_) >> 3];                              \
+        if (byte_ == 0xff) continue;                                          \
+        for (int k_ = 0; k_ < 8; k_++) {                                      \
+          if (!((byte_ >> k_) & 1)) (dst)[i_ + k_] = (NA_VALUE);              \
+        }                                                                     \
+      }                                                                       \
+      for (; i_ < (n); i_++) {                                                \
+        if (!ArrowBitGet(bits_, off_ + i_)) (dst)[i_] = (NA_VALUE);           \
+      }                                                                       \
+    } else if ((d).n_bits > 1) {                                              \
+      for (int64_t i_ = 0; i_ < (n); i_++) {                                  \
+        if (zar_direct_null(&(d), i_)) (dst)[i_] = (NA_VALUE);                \
+      }                                                                       \
+    }                                                                         \
+  } while (0)
+
+/* Runs BODY with `src` pointing at element `first` of v's data buffer, as
+   the C type of v's integer storage; sets `handled` to 0 for other types. */
+#define ZAR_INT_STORAGE(v, first, handled, BODY)                       \
+  switch ((v)->storage_type) {                                       \
+    case NANOARROW_TYPE_INT8: {                                      \
+      const int8_t *src = (v)->buffer_views[1].data.as_int8 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    case NANOARROW_TYPE_UINT8: {                                     \
+      const uint8_t *src = (v)->buffer_views[1].data.as_uint8 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    case NANOARROW_TYPE_INT16: {                                     \
+      const int16_t *src = (v)->buffer_views[1].data.as_int16 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    case NANOARROW_TYPE_UINT16: {                                    \
+      const uint16_t *src = (v)->buffer_views[1].data.as_uint16 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    case NANOARROW_TYPE_INT32: {                                     \
+      const int32_t *src = (v)->buffer_views[1].data.as_int32 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    case NANOARROW_TYPE_UINT32: {                                    \
+      const uint32_t *src = (v)->buffer_views[1].data.as_uint32 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    case NANOARROW_TYPE_INT64: {                                     \
+      const int64_t *src = (v)->buffer_views[1].data.as_int64 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    case NANOARROW_TYPE_UINT64: {                                    \
+      const uint64_t *src = (v)->buffer_views[1].data.as_uint64 + (first); \
+      BODY;                                                          \
+      break;                                                         \
+    }                                                                \
+    default:                                                         \
+      (handled) = 0;                                                 \
+      break;                                                         \
+  }
+
 /* The child slice of field k of a struct slice. */
 static struct zar_slice zar_field_slice(const struct zar_slice *s, int64_t k) {
   struct zar_slice out = {s->view->children[k], 0, s->length, NULL, s};
@@ -555,18 +673,26 @@ static int zar_string_range(const struct zar_slice *s, int64_t *lo, int64_t *hi)
   }
   const uint8_t *data = v->buffer_views[2].data.as_uint8;
   int64_t data_size = v->buffer_views[2].size_bytes;
-  int64_t prev = large ? v->buffer_views[1].data.as_int64[first]
-                       : v->buffer_views[1].data.as_int32[first];
-  if (prev < 0) return 0;
-  *lo = prev;
-  for (int64_t k = 0; k < s->length; k++) {
-    int64_t next = large ? v->buffer_views[1].data.as_int64[first + k + 1]
-                         : v->buffer_views[1].data.as_int32[first + k + 1];
-    if (next < prev || next > data_size) return 0;
-    if (next > prev && (data[prev] & 0xc0) == 0x80) return 0;
-    prev = next;
+  int64_t n = s->length;
+  /* One loop per offset width. Each offset is checked before the byte it
+     points at is read, so a malformed buffer stops the loop first. */
+#define ZAR_RANGE_LOOP(CTYPE, MEMBER)                                    \
+  {                                                                      \
+    const CTYPE *o = v->buffer_views[1].data.MEMBER + first;             \
+    if (o[0] < 0 || o[0] > data_size) return 0;                          \
+    for (int64_t k = 0; k < n; k++) {                                    \
+      if (o[k + 1] < o[k] || o[k + 1] > data_size) return 0;             \
+      if (o[k + 1] > o[k] && (data[o[k]] & 0xc0) == 0x80) return 0;      \
+    }                                                                    \
+    *lo = o[0];                                                          \
+    *hi = o[n];                                                          \
   }
-  *hi = prev;
+  if (large) {
+    ZAR_RANGE_LOOP(int64_t, as_int64)
+  } else {
+    ZAR_RANGE_LOOP(int32_t, as_int32)
+  }
+#undef ZAR_RANGE_LOOP
   return 1;
 }
 
@@ -583,8 +709,75 @@ static int zar_strings_clean(const struct zar_slice *s) {
          zar_utf8_invalid_at(data, hi - lo) < 0;
 }
 
+/* The integer scans of a direct slice, one loop over the typed buffer: the
+   first element that is not null and that the scan looks for, or -1.
+   Returns -2 when the slice or its storage has no fast path. */
+static int64_t zar_scan_direct(const struct zar_plan *p, const struct zar_slice *s) {
+  struct zar_direct d;
+  if (!zar_direct_init(s, &d)) return -2;
+  const struct ArrowArrayView *v = s->view;
+  int64_t n = s->length;
+  /* An empty slice may have no buffers: never offset a NULL pointer. */
+  if (n == 0) return -1;
+  switch (p->scan) {
+    case ZAR_SCAN_INT32MIN: {
+      if (v->storage_type != NANOARROW_TYPE_INT32) return -2;
+      const int32_t *src = v->buffer_views[1].data.as_int32 + d.first;
+      /* Blocks of 64 without a branch, which the compiler vectorizes; a
+         block with a hit is searched element by element. */
+      for (int64_t base = 0; base < n; base += 64) {
+        int64_t end = base + 64 < n ? base + 64 : n;
+        int hit = 0;
+        for (int64_t i = base; i < end; i++) hit |= src[i] == INT32_MIN;
+        if (!hit) continue;
+        for (int64_t i = base; i < end; i++) {
+          if (src[i] == INT32_MIN && !zar_direct_null(&d, i)) return i;
+        }
+      }
+      return -1;
+    }
+    case ZAR_SCAN_INT53: {
+      if (v->storage_type != NANOARROW_TYPE_INT64) return -2;
+      const int64_t *src = v->buffer_views[1].data.as_int64 + d.first;
+      for (int64_t base = 0; base < n; base += 64) {
+        int64_t end = base + 64 < n ? base + 64 : n;
+        int hit = 0;
+        for (int64_t i = base; i < end; i++) {
+          hit |= (src[i] > 9007199254740992LL) | (src[i] < -9007199254740992LL);
+        }
+        if (!hit) continue;
+        for (int64_t i = base; i < end; i++) {
+          if ((src[i] > 9007199254740992LL || src[i] < -9007199254740992LL) &&
+              !zar_direct_null(&d, i)) {
+            return i;
+          }
+        }
+      }
+      return -1;
+    }
+    case ZAR_SCAN_UINT53: {
+      if (v->storage_type != NANOARROW_TYPE_UINT64) return -2;
+      const uint64_t *src = v->buffer_views[1].data.as_uint64 + d.first;
+      for (int64_t base = 0; base < n; base += 64) {
+        int64_t end = base + 64 < n ? base + 64 : n;
+        int hit = 0;
+        for (int64_t i = base; i < end; i++) hit |= src[i] > 9007199254740992ULL;
+        if (!hit) continue;
+        for (int64_t i = base; i < end; i++) {
+          if (src[i] > 9007199254740992ULL && !zar_direct_null(&d, i)) return i;
+        }
+      }
+      return -1;
+    }
+    default:
+      return -2;
+  }
+}
+
 static int64_t zar_scan_slice(const struct zar_plan *p,
                               const struct zar_slice *s) {
+  int64_t direct = zar_scan_direct(p, s);
+  if (direct != -2) return direct;
   if (p->scan == ZAR_SCAN_NUL) {
     int64_t lo, hi;
     if (zar_string_range(s, &lo, &hi) &&
@@ -960,6 +1153,21 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
     case ZAR_T_NULL:
     case ZAR_T_LGL: {
       int *dst = LOGICAL(out) + at;
+      struct zar_direct d;
+      if (p->target == ZAR_T_LGL && n > 0 && zar_direct_init(s, &d)) {
+        int handled = 1;
+        if (v->storage_type == NANOARROW_TYPE_BOOL) {
+          ArrowBitsUnpackInt32(v->buffer_views[1].data.as_uint8, d.first, n, dst);
+        } else {
+          /* arrow.bool8: integer storage, non-zero is TRUE */
+          ZAR_INT_STORAGE(v, d.first, handled,
+                          for (int64_t i = 0; i < n; i++) dst[i] = src[i] != 0);
+        }
+        if (handled) {
+          ZAR_APPLY_NULLS(d, dst, n, NA_LOGICAL);
+          return NANOARROW_OK;
+        }
+      }
       for (int64_t i = 0; i < n; i++) {
         if (p->target == ZAR_T_NULL || zar_is_null(s, i)) {
           dst[i] = NA_LOGICAL;
@@ -976,6 +1184,19 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
         memcpy(dst, v->buffer_views[1].data.as_int32 + v->offset + s->start,
                (size_t)n * sizeof(int32_t));
         return NANOARROW_OK;
+      }
+      struct zar_direct d;
+      if (zar_direct_init(s, &d)) {
+        int handled = 1;
+        /* Outside int32 is NA: only `to = integer()` asks, after its scan. */
+        ZAR_INT_STORAGE(v, d.first, handled, for (int64_t i = 0; i < n; i++) {
+          int64_t x = (int64_t)src[i];
+          dst[i] = (x > INT32_MAX || x < INT32_MIN) ? NA_INTEGER : (int)x;
+        });
+        if (handled) {
+          ZAR_APPLY_NULLS(d, dst, n, NA_INTEGER);
+          return NANOARROW_OK;
+        }
       }
       for (int64_t i = 0; i < n; i++) {
         if (zar_is_null(s, i)) {
@@ -1006,6 +1227,23 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
                     p->sv.type == NANOARROW_TYPE_DECIMAL64 ||
                     p->sv.type == NANOARROW_TYPE_DECIMAL128 ||
                     p->sv.type == NANOARROW_TYPE_DECIMAL256;
+      struct zar_direct d;
+      if (!decimal && zar_direct_init(s, &d)) {
+        int handled = 1;
+        if (t == NANOARROW_TYPE_DOUBLE) {
+          memcpy(dst, v->buffer_views[1].data.as_double + d.first, (size_t)n * sizeof(double));
+        } else if (t == NANOARROW_TYPE_FLOAT) {
+          const float *src = v->buffer_views[1].data.as_float + d.first;
+          for (int64_t i = 0; i < n; i++) dst[i] = (double)src[i];
+        } else {
+          ZAR_INT_STORAGE(v, d.first, handled,
+                          for (int64_t i = 0; i < n; i++) dst[i] = (double)src[i]);
+        }
+        if (handled) {
+          ZAR_APPLY_NULLS(d, dst, n, NA_REAL);
+          return NANOARROW_OK;
+        }
+      }
       char buf[16];
       for (int64_t i = 0; i < n; i++) {
         if (zar_is_null(s, i)) {
@@ -1039,6 +1277,22 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
     case ZAR_T_DIFFTIME: {
       double *dst = REAL(out) + at;
       double scale = p->target == ZAR_T_DATE ? 1.0 : p->per_second;
+      if (n == 0) return NANOARROW_OK;
+      struct zar_direct d;
+      if (zar_direct_init(s, &d)) {
+        int handled = 1;
+        if (scale == 1.0) {
+          ZAR_INT_STORAGE(v, d.first, handled,
+                          for (int64_t i = 0; i < n; i++) dst[i] = (double)src[i]);
+        } else {
+          ZAR_INT_STORAGE(v, d.first, handled,
+                          for (int64_t i = 0; i < n; i++) dst[i] = (double)src[i] / scale);
+        }
+        if (handled) {
+          ZAR_APPLY_NULLS(d, dst, n, NA_REAL);
+          return NANOARROW_OK;
+        }
+      }
       for (int64_t i = 0; i < n; i++) {
         dst[i] = zar_is_null(s, i)
                      ? NA_REAL
@@ -1048,6 +1302,14 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
     }
     case ZAR_T_INT64: {
       int64_t *dst = (int64_t *)REAL(out) + at;
+      struct zar_direct d;
+      if (v->storage_type == NANOARROW_TYPE_INT64 && zar_direct_init(s, &d)) {
+        if (n > 0) {
+          memcpy(dst, v->buffer_views[1].data.as_int64 + d.first, (size_t)n * sizeof(int64_t));
+        }
+        ZAR_APPLY_NULLS(d, dst, n, INT64_MIN);
+        return NANOARROW_OK;
+      }
       for (int64_t i = 0; i < n; i++) {
         /* bit64's NA is INT64_MIN. */
         dst[i] = zar_is_null(s, i) ? INT64_MIN
@@ -1057,6 +1319,31 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
     }
     case ZAR_T_CHR: {
       int clean = zar_strings_clean(s);
+      struct zar_direct d;
+      /* Clean and direct: every value is checked, so read the offsets. */
+      if (clean && zar_direct_init(s, &d)) {
+        const char *data = v->buffer_views[2].data.as_char;
+        if (v->storage_type == NANOARROW_TYPE_LARGE_STRING) {
+          const int64_t *o = v->buffer_views[1].data.as_int64 + d.first;
+          for (int64_t i = 0; i < n; i++) {
+            int64_t len = o[i + 1] - o[i];
+            SET_STRING_ELT(out, at + (R_xlen_t)i,
+                           (d.n_bits > 0 && zar_direct_null(&d, i)) ? NA_STRING
+                           : len == 0 ? R_BlankString
+                                      : Rf_mkCharLenCE(data + o[i], (int)len, CE_UTF8));
+          }
+        } else {
+          const int32_t *o = v->buffer_views[1].data.as_int32 + d.first;
+          for (int64_t i = 0; i < n; i++) {
+            int32_t len = o[i + 1] - o[i];
+            SET_STRING_ELT(out, at + (R_xlen_t)i,
+                           (d.n_bits > 0 && zar_direct_null(&d, i)) ? NA_STRING
+                           : len == 0 ? R_BlankString
+                                      : Rf_mkCharLenCE(data + o[i], len, CE_UTF8));
+          }
+        }
+        return NANOARROW_OK;
+      }
       for (int64_t i = 0; i < n; i++) {
         if (zar_is_null(s, i)) {
           SET_STRING_ELT(out, at + (R_xlen_t)i, NA_STRING);
