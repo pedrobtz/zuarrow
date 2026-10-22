@@ -948,7 +948,16 @@ them. None was discussed before writing.
   packages overwrites no method and `inherits()` works in both.
 - **D8 (C).** The first release copies once, in C; zero-copy views wait
   for §14 and reuse RFC 0009's ALTREP classes rather than inventing
-  parallel ones.
+  parallel ones. Amended 2026-10-22 at the maintainer's request (#21):
+  copying stays the default, and `copy = FALSE` on `arrow_to_r()`,
+  `arrow_next()`, `arrow_read()` and the `as.data.frame()` methods defers
+  string and large_string columns. Each becomes an ALTREP character
+  vector that keeps the batch's array handles and creates an element's
+  R string on first use, caching it. Every value is still checked during
+  the conversion, so exact-or-error holds unchanged. Strings read through
+  a dictionary, a run-end encoding or a struct with nulls are copied.
+  Creating R strings was the whole of the two §10 misses Stage 6
+  recorded. The numeric zero-copy views of §14 are still to come.
 - **D9 (C).** `compression = "none"` on write, so a file zuarrow writes
   by default opens in every reader, including a `nanoarrow` built
   without system codecs. `arrow`'s default of lz4 is one argument away.
@@ -1001,7 +1010,8 @@ them. None was discussed before writing.
 - **Zero-copy views**: `arrow_to_r(copy = FALSE)` wrapping `double`,
   `int32` and, through `zuint`'s classes, `int64` and `uint64` buffers as
   ALTREP vectors whose `data2` holds the release callback, as RFC 0009
-  §9.1 specifies; strings through an ALTREP `STRSXP` as nanoarrow does.
+  §9.1 specifies. Strings came first: `copy = FALSE` defers them in
+  v0.1.0 (D8, amended 2026-10-22).
 - **Memory-mapped files**: `arrow_read(mmap = TRUE)` over the file
   format, through `zufs` when it exists, so a file larger than memory is
   a data frame of views.
