@@ -155,3 +155,25 @@ test_that("deferred strings survive garbage collection", {
   gc()
   expect_identical(x, values)
 })
+
+test_that("strings checked as one byte range still fail element by element", {
+  # "é" split across two elements: the bytes are valid UTF-8 as a whole,
+  # but neither element is
+  split <- test_array(
+    "u",
+    2,
+    list(NULL, le_int(c(0, 1, 2), 4L), as.raw(c(0xc3, 0xa9)))
+  )
+  expect_error(arrow_to_r(split), class = "zuarrow_format_error")
+  expect_error(arrow_to_r(split, copy = FALSE), class = "zuarrow_format_error")
+
+  # A null slot's bytes are undefined, so invalid ones there are not an error
+  garbage <- test_array(
+    "u",
+    2,
+    list(as.raw(0x01), le_int(c(0, 1, 2), 4L), as.raw(c(0x61, 0xff))),
+    null_count = 1
+  )
+  expect_identical(arrow_to_r(garbage), c("a", NA))
+  expect_identical(arrow_to_r(garbage, copy = FALSE), c("a", NA))
+})

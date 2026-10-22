@@ -4,11 +4,22 @@
    pass for utf8, large_utf8 and utf8_view (design sections 1.3, 6.11). */
 #include <stdio.h>
 
+#include <string.h>
+
 #include "zar.h"
 
 int64_t zar_utf8_invalid_at(const uint8_t *s, int64_t n) {
   int64_t i = 0;
   while (i < n) {
+    /* Eight ASCII bytes at a time, the common case. */
+    if (n - i >= 8) {
+      uint64_t word;
+      memcpy(&word, s + i, sizeof(word));
+      if ((word & 0x8080808080808080ULL) == 0) {
+        i += 8;
+        continue;
+      }
+    }
     uint8_t c = s[i];
     if (c < 0x80) {
       i++;

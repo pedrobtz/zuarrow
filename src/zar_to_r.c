@@ -534,8 +534,57 @@ static int zar_plan_to(struct zar_plan *p, int to, struct zar_err *e) {
 /* ---- the value scan ---------------------------------------------------- */
 
 /* Returns the first offending element of the slice, or -1. */
+/* The byte range [*lo, *hi) of the data buffer that holds a string slice's
+   values, when the slice reads string or large_string elements directly
+   and its offsets never decrease. Returns 0 otherwise, or when an element
+   starts on a UTF-8 continuation byte, so that every per-element check can
+   then be decided on the range as a whole. */
+static int zar_string_range(const struct zar_slice *s, int64_t *lo, int64_t *hi) {
+  const struct ArrowArrayView *v = s->view;
+  if (s->map != NULL || (v->storage_type != NANOARROW_TYPE_STRING &&
+                         v->storage_type != NANOARROW_TYPE_LARGE_STRING)) {
+    return 0;
+  }
+  int large = v->storage_type == NANOARROW_TYPE_LARGE_STRING;
+  int64_t first = v->offset + s->start;
+  const uint8_t *data = v->buffer_views[2].data.as_uint8;
+  int64_t prev = large ? v->buffer_views[1].data.as_int64[first]
+                       : v->buffer_views[1].data.as_int32[first];
+  *lo = prev;
+  for (int64_t k = 0; k < s->length; k++) {
+    int64_t next = large ? v->buffer_views[1].data.as_int64[first + k + 1]
+                         : v->buffer_views[1].data.as_int32[first + k + 1];
+    if (next < prev) return 0;
+    if (next > prev && (data[prev] & 0xc0) == 0x80) return 0;
+    prev = next;
+  }
+  *hi = prev;
+  return 1;
+}
+
+/* Whether a string slice's values are all free of NUL, valid UTF-8 and
+   within R's string length, decided on their byte range at once. 0 means
+   only that each element must be checked by itself: a null slot's bytes,
+   which the format leaves undefined, can make the range fail. */
+static int zar_strings_clean(const struct zar_slice *s) {
+  int64_t lo, hi;
+  if (!zar_string_range(s, &lo, &hi)) return 0;
+  if (hi - lo > INT_MAX || hi == lo) return hi - lo <= INT_MAX;
+  const uint8_t *data = s->view->buffer_views[2].data.as_uint8 + lo;
+  return memchr(data, 0, (size_t)(hi - lo)) == NULL &&
+         zar_utf8_invalid_at(data, hi - lo) < 0;
+}
+
 static int64_t zar_scan_slice(const struct zar_plan *p,
                               const struct zar_slice *s) {
+  if (p->scan == ZAR_SCAN_NUL) {
+    int64_t lo, hi;
+    if (zar_string_range(s, &lo, &hi) &&
+        (hi == lo ||
+         memchr(s->view->buffer_views[2].data.as_uint8 + lo, 0, (size_t)(hi - lo)) == NULL)) {
+      return -1;
+    }
+  }
   for (int64_t i = 0; i < s->length; i++) {
     if (zar_is_null(s, i)) continue;
     int64_t j = zar_j(s, i);
@@ -999,13 +1048,18 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
       return NANOARROW_OK;
     }
     case ZAR_T_CHR: {
+      int clean = zar_strings_clean(s);
       for (int64_t i = 0; i < n; i++) {
         if (zar_is_null(s, i)) {
           SET_STRING_ELT(out, at + (R_xlen_t)i, NA_STRING);
           continue;
         }
         struct ArrowBufferView b;
-        if (zar_string_bytes(p, s, i, &b, e) != NANOARROW_OK) return EINVAL;
+        if (clean) {
+          b = ArrowArrayViewGetBytesUnsafe(v, zar_j(s, i));
+        } else if (zar_string_bytes(p, s, i, &b, e) != NANOARROW_OK) {
+          return EINVAL;
+        }
         SET_STRING_ELT(out, at + (R_xlen_t)i,
                        b.size_bytes == 0
                            ? R_BlankString
@@ -1418,7 +1472,8 @@ static SEXP zar_build_deferred(const struct zar_plan *p, const struct zar_slice 
   for (int64_t b = 0; b < n_slices; b++) {
     const struct zar_slice *s = &slices[b];
     const struct ArrowArrayView *v = s->view;
-    for (int64_t i = 0; i < s->length; i++) {
+    int64_t check = zar_strings_clean(s) ? 0 : s->length;
+    for (int64_t i = 0; i < check; i++) {
       if (zar_is_null(s, i)) continue;
       struct ArrowBufferView bytes;
       if (zar_string_bytes(p, s, i, &bytes, e) != NANOARROW_OK) return R_NilValue;
