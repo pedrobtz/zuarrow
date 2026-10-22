@@ -52,6 +52,7 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_reader_select, 2),
     ZAR_CALL(zar_c_write, 3),
     ZAR_CALL(zar_c_to_r, 3),
+    ZAR_CALL(zar_c_deferred_info, 1),
     ZAR_CALL(zar_c_from_r, 5),
     {NULL, NULL, 0}};
 
@@ -59,4 +60,5 @@ void attribute_visible R_init_zuarrow(DllInfo *dll) {
   R_registerRoutines(dll, NULL, zar_call_methods, NULL, NULL);
   R_useDynamicSymbols(dll, FALSE);
   R_forceSymbols(dll, TRUE);
+  zar_altrep_init(dll);
 }

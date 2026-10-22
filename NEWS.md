@@ -30,6 +30,12 @@
   the package that would read it exactly. `lossy = "character"` gives the
   values' exact text, `"warn"` and `"allow"` the nearest R type.
 * `to` names the R type a column must become.
+* `copy = FALSE` defers string columns in `arrow_to_r()`, `arrow_next()`,
+  `arrow_read()` and `as.data.frame()`. Each becomes a character vector
+  that creates its R strings on first use, which is most of the cost of
+  a string column. Values are checked during the conversion either way,
+  so the errors are the same. The default, `copy = TRUE`, creates every
+  value at once.
 * `arrow_array()` and `arrow_stream()` build arrays and streams from R
   vectors and data frames, checking every value against a given schema.
   The exact text that `lossy = "character"` returns is written back as the

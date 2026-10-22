@@ -295,6 +295,17 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
 #' @param to `NULL`, or a named list of prototypes, one per column. For an
 #'   array that is not a `struct`, a single prototype.
 #' @param lossy What to do with a column R cannot hold exactly.
+#' @param copy `TRUE` to create every R value during the conversion.
+#'   `FALSE` to defer string columns: each becomes a character vector that
+#'   keeps the Arrow buffers and creates an element's R string the first
+#'   time it is used. Most of the cost of a string column is creating its
+#'   R strings, so a result that is only partly read, or passed on, is much
+#'   cheaper. The values are checked during the conversion either way, so
+#'   `copy = FALSE` raises the same errors at the same time. The vector
+#'   holds the batch's memory until every element has been used, and it is
+#'   saved by [saveRDS()] as an ordinary character vector. Columns of other
+#'   types, and strings read through a dictionary, a run-end encoding or a
+#'   `struct` with nulls, are copied either way.
 #' @returns An R vector, or a data frame.
 #' @seealso [arrow_array()] for the way there, [arrow_types()] for the
 #'   table.
@@ -305,12 +316,18 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
 #' big <- arrow_array(2^53 + 2, schema = "l")
 #' try(arrow_to_r(big))
 #' arrow_to_r(big, lossy = "character")
-arrow_to_r <- function(x, to = NULL, lossy = zar_lossy_policies) {
+arrow_to_r <- function(
+  x,
+  to = NULL,
+  lossy = zar_lossy_policies,
+  copy = TRUE
+) {
   lossy <- match.arg(lossy)
   call <- sys.call()
+  zar_check_flag(copy, "copy", call)
   if (zar_is_array(x)) {
     zar_check_live(x, call = call)
-    return(zar_convert(list(x), arrow_schema(x), to, lossy, call))
+    return(zar_convert(list(x), arrow_schema(x), to, lossy, call, copy = copy))
   }
   if (zar_is_stream(x)) {
     schema <- arrow_schema(x)
@@ -322,7 +339,7 @@ arrow_to_r <- function(x, to = NULL, lossy = zar_lossy_policies) {
       }
       batches[[length(batches) + 1L]] <- batch
     }
-    return(zar_convert(batches, schema, to, lossy, call))
+    return(zar_convert(batches, schema, to, lossy, call, copy = copy))
   }
   zar_abort("handle", "`x` must be an array or stream handle.", call = call)
 }
@@ -333,9 +350,15 @@ arrow_to_r <- function(x, to = NULL, lossy = zar_lossy_policies) {
 #'   vector, for a stream that is not of `struct`), or `NULL` once the
 #'   stream has ended.
 #' @export
-arrow_next <- function(stream, to = NULL, lossy = zar_lossy_policies) {
+arrow_next <- function(
+  stream,
+  to = NULL,
+  lossy = zar_lossy_policies,
+  copy = TRUE
+) {
   lossy <- match.arg(lossy)
   call <- sys.call()
+  zar_check_flag(copy, "copy", call)
   if (!zar_is_stream(stream)) {
     zar_abort("handle", "`stream` must be a stream handle.", call = call)
   }
@@ -343,10 +366,30 @@ arrow_next <- function(stream, to = NULL, lossy = zar_lossy_policies) {
   if (is.null(batch)) {
     return(NULL)
   }
-  zar_convert(list(batch), arrow_schema(stream), to, lossy, call)
+  zar_convert(list(batch), arrow_schema(stream), to, lossy, call, copy = copy)
 }
 
 zar_bit64_loaded <- function() isNamespaceLoaded("bit64")
+
+# Called from C when a deferred character vector's Arrow array was
+# released before all its elements were used (src/zar_altrep.c).
+zar_deferred_released <- function() {
+  zar_abort(
+    "handle",
+    "The Arrow array behind this character vector was released before its strings were created.",
+    call = NULL
+  )
+}
+
+zar_check_flag <- function(x, name, call) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    zar_abort(
+      "type",
+      sprintf("`%s` must be `TRUE` or `FALSE`.", name),
+      call = call
+    )
+  }
+}
 
 zar_is_struct <- function(schema) {
   identical(.Call(zar_c_schema_to_spec, schema)$format, "+s")
@@ -413,7 +456,15 @@ zar_to_codes <- function(to, names, frame, call) {
   codes
 }
 
-zar_convert <- function(arrays, schema, to, lossy, call, max_depth = 64L) {
+zar_convert <- function(
+  arrays,
+  schema,
+  to,
+  lossy,
+  call,
+  max_depth = 64L,
+  copy = TRUE
+) {
   spec <- .Call(zar_c_schema_to_spec, schema)
   frame <- identical(spec$format, "+s")
   fields <- if (frame) spec$children else list(spec)
@@ -444,7 +495,8 @@ zar_convert <- function(arrays, schema, to, lossy, call, max_depth = 64L) {
     codes,
     zar_bit64_loaded(),
     frame,
-    as.integer(max_depth)
+    as.integer(max_depth),
+    copy
   )
   out <- .Call(zar_c_to_r, arrays, schema, opts)
   if (inherits(out, "zar_failure")) {
@@ -659,9 +711,10 @@ as.data.frame.zuarrow_array_stream <- function(
   optional = FALSE,
   ...,
   to = NULL,
-  lossy = zar_lossy_policies
+  lossy = zar_lossy_policies,
+  copy = TRUE
 ) {
-  out <- arrow_to_r(x, to = to, lossy = match.arg(lossy))
+  out <- arrow_to_r(x, to = to, lossy = match.arg(lossy), copy = copy)
   if (!is.data.frame(out)) {
     zar_abort("type", "Only a stream of struct converts to a data frame.")
   }
@@ -675,9 +728,10 @@ as.data.frame.zuarrow_array <- function(
   optional = FALSE,
   ...,
   to = NULL,
-  lossy = zar_lossy_policies
+  lossy = zar_lossy_policies,
+  copy = TRUE
 ) {
-  out <- arrow_to_r(x, to = to, lossy = match.arg(lossy))
+  out <- arrow_to_r(x, to = to, lossy = match.arg(lossy), copy = copy)
   if (!is.data.frame(out)) {
     zar_abort("type", "Only a struct array converts to a data frame.")
   }

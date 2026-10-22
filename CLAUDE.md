@@ -168,6 +168,13 @@ Design §4 names five layers. What exists so far:
   `test-write.R` holds the MD5 of a fixed input in each format and codec,
   so a platform whose bytes differ fails.
 
+- **Deferred strings** in `src/zar_altrep.c`: with `copy = FALSE`,
+  `zar_build()` turns a plain string or large_string column into an
+  ALTREP `STRSXP` after the same per-value checks the copying fill makes.
+  It keeps the batch handles in `data1`, caches each `CHARSXP` in `data2`
+  on first access, and drops the handles once every element exists. It
+  has no serialization method, so `saveRDS()` writes a plain vector.
+
 **C never raises a condition.** An entry point that fails frees what it
 owns and returns a `zar_failure`, `list(kind, message)`. The R caller
 wraps every `.Call()` in `zar_check()`, which raises
