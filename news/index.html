@@ -61,6 +61,7 @@
 <li>A conversion is exact or it fails: <code>lossy = "error"</code>, the default everywhere, raises <code>zuarrow_lossy_error</code> naming the column, the row and the package that would read it exactly. <code>lossy = "character"</code> gives the values’ exact text, <code>"warn"</code> and <code>"allow"</code> the nearest R type.</li>
 <li>
 <code>to</code> names the R type a column must become.</li>
+<li>Conversion in both directions reads and writes typed buffers in one loop wherever a column has no dictionary or run-end encoding, so most types convert as fast as with nanoarrow or faster, with every exactness check kept.</li>
 <li>
 <code>copy = FALSE</code> defers string columns in <code><a href="../reference/arrow_to_r.html">arrow_to_r()</a></code>, <code><a href="../reference/arrow_to_r.html">arrow_next()</a></code>, <code><a href="../reference/arrow_read.html">arrow_read()</a></code> and <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code>. Each becomes a character vector that creates its R strings on first use, which is most of the cost of a string column. Values are checked during the conversion either way, so the errors are the same. The default, <code>copy = TRUE</code>, creates every value at once.</li>
 <li>

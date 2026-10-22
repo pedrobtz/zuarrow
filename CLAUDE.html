@@ -86,10 +86,11 @@
 <span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="ex">tools/verify-vendor</span>                              <span class="co"># vendored tree is upstream plus patches</span></span>
 <span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="ex">tools/verify-vendor</span> <span class="at">--canary</span>                     <span class="co"># the verifier catches a missing patch</span></span>
 <span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="ex">tools/run-benchmarks</span> [--rows N] [--reps R]       <span class="co"># design §10 timings, as Markdown rows</span></span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="va">NOT_CRAN</span><span class="op">=</span>true <span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test(filter = "abi")'</span>   <span class="co"># symbol checks (skip on CRAN)</span></span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a></span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a><span class="ex">tools/fetch-fixtures</span>                             <span class="co"># arrow-testing corpus into tests/testthat/fixtures</span></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="ex">Rscript</span> tools/make-test-data.R                   <span class="co"># regenerate tests/testthat/data with arrow</span></span></code></pre></div>
+<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="ex">tools/bench-types</span> [--rows N] [--reps R]          <span class="co"># per-type conversion against nanoarrow</span></span>
+<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="va">NOT_CRAN</span><span class="op">=</span>true <span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test(filter = "abi")'</span>   <span class="co"># symbol checks (skip on CRAN)</span></span>
+<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a></span>
+<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="ex">tools/fetch-fixtures</span>                             <span class="co"># arrow-testing corpus into tests/testthat/fixtures</span></span>
+<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="ex">Rscript</span> tools/make-test-data.R                   <span class="co"># regenerate tests/testthat/data with arrow</span></span></code></pre></div>
 <p>Oracles 1 and 2 need the <code>arrow-testing</code> corpus. Fetch it with <code>tools/fetch-fixtures</code>, or set <code>ZUARROW_FETCH_FIXTURES=true</code> and the tests download it under <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code>, as CI does; without either they skip. <code>tests/testthat/data/</code> holds small files written by <code>arrow</code> and every input the fuzz target has crashed on, so those tests run everywhere.</p>
 </div>
 <div class="section level2">
