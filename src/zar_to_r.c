@@ -717,6 +717,8 @@ static int64_t zar_scan_direct(const struct zar_plan *p, const struct zar_slice 
   if (!zar_direct_init(s, &d)) return -2;
   const struct ArrowArrayView *v = s->view;
   int64_t n = s->length;
+  /* An empty slice may have no buffers: never offset a NULL pointer. */
+  if (n == 0) return -1;
   switch (p->scan) {
     case ZAR_SCAN_INT32MIN: {
       if (v->storage_type != NANOARROW_TYPE_INT32) return -2;
@@ -1275,6 +1277,7 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
     case ZAR_T_DIFFTIME: {
       double *dst = REAL(out) + at;
       double scale = p->target == ZAR_T_DATE ? 1.0 : p->per_second;
+      if (n == 0) return NANOARROW_OK;
       struct zar_direct d;
       if (zar_direct_init(s, &d)) {
         int handled = 1;

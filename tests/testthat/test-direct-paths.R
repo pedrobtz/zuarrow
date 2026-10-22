@@ -137,3 +137,14 @@ test_that("numeric columns from R round-trip with NAs", {
   expect_identical(out, x)
   expect_true(is.nan(out$d[[3]]))
 })
+
+test_that("empty arrays with no buffers convert", {
+  for (format in c("i", "l", "L", "c", "f", "g", "b", "tdD", "tsu:UTC", "u")) {
+    empty <- test_array(
+      format,
+      0,
+      list(NULL, NULL, NULL)[seq_len(if (format == "u") 3 else 2)]
+    )
+    expect_length(arrow_to_r(empty, lossy = "allow"), 0L)
+  }
+})
