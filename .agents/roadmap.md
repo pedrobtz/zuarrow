@@ -6,7 +6,18 @@ Tracking: [v0.1.0 (#1)](https://github.com/pedrobtz/zuarrow/issues/1), with one
 sub-issue per stage;
 [CRAN-submission (#12)](https://github.com/pedrobtz/zuarrow/issues/12).
 
-The design's §11 plans seven stages. This roadmap has ten: the portfolio
+Re-planned 2026-10-23 after the joint design review of `zubin`, `zuint` and
+`zuarrow` (`zubin-zuint-zuarrow-2026-10-22.md` in `pedrobtz/packages`,
+decisions X1 to X8). Stages 0 to 8 were done by then. The review adds Stage
+9 (the DuckDB helper and the contract `zuint` registers against), renumbers
+readiness to Stage 10 and appends a Review stage. Its edits that would
+re-base the conversion kernels on `zubin`'s `column.h`, take half floats
+from `zufast` and wrap buffers in `zubin`'s foreign buffer are deferred to
+[After 0.1.0](#after-010): the kernels exist and are benchmarked, `zubin` is
+not on CRAN, and none of it changes what a user sees. So the release waits
+for `zukomp` 0.2.0 only.
+
+The design's §11 plans seven stages. This roadmap has twelve: the portfolio
 brackets feature work with `Package identity`, `Full CI` and `v0.1.0
 readiness`, and the vendored build is split from package identity so the
 first pull request stays small and quick. The design's stage numbers are
@@ -38,7 +49,9 @@ Two dependencies outside this repository shape the plan:
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | [#22](https://github.com/pedrobtz/zuarrow/pull/22) | 2026-10-21 |
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | [#23](https://github.com/pedrobtz/zuarrow/pull/23) | 2026-10-21 |
 | 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | [#24](https://github.com/pedrobtz/zuarrow/pull/24), [#26](https://github.com/pedrobtz/zuarrow/pull/26) | |
-| 9 | [v0.1.0 readiness](#stage-9--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | | |
+| 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | | |
+| 10 | [v0.1.0 readiness](#stage-10--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | | |
+| 11 | [Review](#stage-11--review) | full | [#29](https://github.com/pedrobtz/zuarrow/issues/29) | | |
 
 ## Stage 0 — Package identity
 
@@ -474,14 +487,78 @@ closes the stage again.
 
 **Design.** §12's `R CMD check --as-cran` and byte-identity criteria.
 
-## Stage 9 — v0.1.0 readiness
+## Stage 9 — DuckDB helper and the typed-package contract
+
+**Issue.** [#28](https://github.com/pedrobtz/zuarrow/issues/28), sub-issue of
+[v0.1.0](https://github.com/pedrobtz/zuarrow/issues/1).
+
+**CI.** `full — a new Suggests guard (duckdb, DBI) and a registration
+contract that zuint's Stage 9 builds on: the nosuggests leg, and the engine
+round trip on every platform leg`.
+
+**Goal.** A DuckDB result reaches R without rounding in one call, and the
+contract a typed package registers against is written down, tested and
+fixed before `zuint` builds on it.
+
+**Work.**
+
+- `arrow_duckdb(con, sql, to = NULL, lossy = "error")`: sets
+  `arrow_lossless_conversion` on the connection, fetches through DuckDB's
+  Arrow stream export (the route `zuint::zu_duckdb_query()` proved on duckdb
+  1.5.4.1) and returns a data frame through `arrow_to_r()` with the
+  registry applied. `duckdb` and `DBI` join `Suggests`; the article uses
+  the helper instead of its hand-rolled fetch.
+- The handler contract (design §6.10): a `to` handler may take a third
+  argument, the `lossy` policy, so a registering package applies the
+  family rule to its own edges (review X4: a value equal to a sentinel
+  errors under `"error"`, reads as `NA` with a warning under `"warn"`).
+  Two-argument handlers keep working; arity is checked at registration.
+- Precedence, documented in §6.10 and tested: an extension name, then an
+  exact format string, then a pattern, which is what `zar_handler_for()`
+  already does. The consequence for `d:p,0` is stated (review X5): it
+  stays a decimal, no built-in route to `int128`, and `to =
+  zuint::int128()` is the opt-in through the class entry.
+- §6.2's second table: the `int64` and `uint64` row says exact by value
+  within ±2⁵³, which is what the value scan does, instead of calling the
+  types lossy outright.
+- design.md records the review's decisions with the date: §3 (`zuint`
+  registers at load and stays `Suggests`, never `Imports`; `zubin` and
+  `zufast` are not dependencies of 0.1.0), §6.2, §6.10, D3 and D5 kept as
+  they are, D8 (zero copy goes through `zubin`'s foreign buffer, null-free
+  arrays only, column handles keeping the array alive through `prot`),
+  §14 (the DuckDB helper leaves it; the `zubin` items join it).
+- The quick profile: R-devel legs have no binaries for `duckdb` (`zuint`'s
+  Stage 5 saw half-hour builds). Keep the quick profile near five minutes
+  by restricting the engine tests to the legs with binaries or by caching;
+  record what was done here.
+
+**Exit criteria.**
+
+- Through `arrow_duckdb()`, a `BIGINT` column within ±2⁵³ is a double, one
+  beyond it raises `zuarrow_lossy_error` naming `zuint`, and `HUGEINT` and
+  `UHUGEINT` arrive as `arrow.opaque` over `fixed_size_binary(16)` and
+  pass through as storage with the attribute. With `zuint`'s registration
+  installed the same columns are `int64`, `int128` and `uint128`; that
+  test skips when `zuint` is absent and `zuint`'s Stage 9 runs it for
+  real.
+- A three-argument handler receives the policy; a two-argument one still
+  converts; the precedence test passes for all three key kinds.
+- `R CMD check` passes on the full profile with 0 errors, 0 warnings,
+  0 notes, the nosuggests leg included.
+- design.md carries the dated edits above.
+
+**Design.** §3, §6.2, §6.10, §13 (D3, D5, D8), §14 of design.md; review
+decisions X1 to X6.
+
+## Stage 10 — v0.1.0 readiness
 
 **Issue.** [#11](https://github.com/pedrobtz/zuarrow/issues/11), sub-issue of
-[v0.1.0](https://github.com/pedrobtz/zuarrow/issues/1).
+[v0.1.0](https://github.com/pedrobtz/zuarrow/issues/1). Renumbered from
+Stage 9 on 2026-10-23.
 
 **CI.** `full`. Always.
 
-**Goal.** Only the submission itself is left.
+**Goal.** Only the review and the submission are left.
 
 **Work.**
 
@@ -493,21 +570,62 @@ closes the stage again.
   sanitizers; the result is recorded on this issue.
 - `Version: 0.1.0` and the matching `NEWS.md` heading.
 - `cran-comments.md` listing the r-actions CI legs as test environments.
-- `pkg-critical-review` run; blocking and required findings fixed.
-- `pkg-cran-review` run; every finding resolved.
 - `urlchecker::url_check()` and `spelling::spell_check_package()` clean.
+- `CLAUDE.md`'s current-state, architecture and invariants sections brought
+  up to date with what the stages established.
 
 **Exit criteria.**
 
 - `DESCRIPTION` has no `Remotes:`; `zukomp` is the only `Imports`.
 - Every item of design §12 holds and is checked off on this issue.
-- A full-profile r-actions run is green on the release commit.
+- A full-profile r-actions run is green on the merge commit.
 
 **Design.** §12; the release half of design stage 6.
 
+## Stage 11 — Review
+
+**Issue.** [#29](https://github.com/pedrobtz/zuarrow/issues/29), sub-issue of
+[v0.1.0](https://github.com/pedrobtz/zuarrow/issues/1).
+
+**CI.** `full`. Always.
+
+**Goal.** The release candidate is reviewed twice and only the submission
+itself is left.
+
+**Work.**
+
+- Critical review: the `pkg-critical-review` skill over code, tests and
+  style. Its blocking and required findings become sub-issues of `v0.1.0`,
+  each fixed in a pull request that closes it.
+- CRAN review: the `pkg-cran-review` skill, run after those fixes so it
+  sees the code that is submitted, every FAIL and WARN resolved.
+- `NEWS.md` reflects any user-visible fix.
+
+**Exit criteria.**
+
+- Every blocking and required review issue is closed.
+- The `pkg-cran-review` table is clean.
+- A full-profile r-actions run is green on the merge commit, which becomes
+  the release commit.
+
+**Design.** §12 of design.md.
+
 ## After 0.1.0
 
-From design §14, in the order it expects them:
+From design §14, in the order it expects them, plus the three items the
+2026-10-23 review hands to `zubin` (its headers are not on CRAN, and none
+changes what a user sees, so they wait for the zero-copy work):
+
+- **Conversion over `zubin`'s headers**: the validity, bitmap and byte-swap
+  kernels of `zubin/column.h`, and half floats from `zufast` instead of
+  `zar_half_to_double()`, through `LinkingTo: zubin, zufast`, once `zubin`
+  0.1.0 is on CRAN.
+- **Zero copy through `zubin`'s foreign buffer** (`zb_r_extbuf_*`):
+  null-free arrays only, the column handle holding the array handle in
+  `prot` with a release that does nothing, `zuint`'s ALTREP classes for
+  integers and this package's for the rest (review X3, D8).
+- **A C table**, triggered by upstream adoption (a `bigint = "zuint"` option
+  in the duckdb client needs a C-callable) rather than by a profile.
 
 - **A C table** (`zuarrow_api_v1`) so `zuint`, `zutempo` and `qio` convert
   from C. Waits for the registry's R-level shape to settle in use.
@@ -516,8 +634,6 @@ From design §14, in the order it expects them:
 - **Memory-mapped files**, once zero-copy exists and `zufs` is there to map.
 - **`qio` as a producer** and **`zutable` from a stream**: decided in those
   repositories.
-- **A DuckDB helper**, once `duckdb`'s route to an `ArrowArrayStream` is
-  verified.
 - **Writing run-end-encoded, union and view types**: no R source type
   produces them.
 - **Arrow's cross-implementation integration hooks**, a **chunked vector
@@ -563,3 +679,11 @@ adds:
   validation before conversion, once the cost on a 10⁷-row stream is
   measured. Resolved 2026-10-21: `default`, 7 ms more than `minimal` on
   10⁷ rows (design §15 Q6).
+- **The 2026-10-23 review (Stage 9).** Decisions X1 to X8 of
+  `zubin-zuint-zuarrow-2026-10-22.md` in `pedrobtz/packages`, taken as
+  recommended: `zuint` stays `Suggests` and registers at load (X2),
+  builds its vectors from R through `zu_from_storage()` (X3), the sentinel
+  edge follows this package's policy (X4), `d:p,0` stays a decimal (X5),
+  the DuckDB helper ships in 0.1.0 (X6), schema fidelity is this
+  package's, carried by the schema handle at export (X7), and the release
+  waits for `zukomp` 0.2.0 only (X8).
