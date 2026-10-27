@@ -92,3 +92,7 @@
 
 * A list column of data frames keeps every row of every element; before,
   its offsets counted columns, not rows, and rows were dropped (#31).
+* Writing a string that is not valid UTF-8, or that is marked as `"bytes"`,
+  is a `zuarrow_type_error` naming the row. Before, it built an invalid
+  array or raised an unclassed error. Column names are checked the same
+  way (#35).

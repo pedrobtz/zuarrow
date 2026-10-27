@@ -295,10 +295,8 @@ static int zar_build_bool(struct ArrowArray *array, SEXP x, R_xlen_t start,
 
 /* ---- strings and bytes ------------------------------------------------- */
 
-/* The UTF-8 bytes of a string. translateCharUTF8() returns the CHARSXP's
-   own bytes when no translation is needed, and then its length is known
-   without a strlen(). */
-static const char *zar_utf8(SEXP s, size_t *len) {
+/* The UTF-8 bytes of a string zar_char_utf8() has already accepted. */
+static const char *zar_utf8_checked(SEXP s, size_t *len) {
   const char *u = Rf_translateCharUTF8(s);
   *len = u == CHAR(s) ? (size_t)LENGTH(s) : strlen(u);
   return u;
@@ -316,7 +314,11 @@ static int zar_build_strings(struct ArrowArray *array, enum ArrowType t,
     SEXP s = STRING_ELT(x, start + (R_xlen_t)i);
     size_t len;
     if (s != NA_STRING) {
-      zar_utf8(s, &len);
+      if (zar_char_utf8(s, &len) == NULL) {
+        ArrowErrorSet(&b->error, "row %" PRId64 " is not valid UTF-8",
+                      (int64_t)start + i + 1);
+        return zar_build_fail(b, "type", (double)start + i + 1);
+      }
       total += (int64_t)len;
     }
   }
@@ -333,7 +335,7 @@ static int zar_build_strings(struct ArrowArray *array, enum ArrowType t,
     SEXP s = STRING_ELT(x, start + (R_xlen_t)i);
     if (s != NA_STRING) {
       size_t len;
-      const char *u = zar_utf8(s, &len);
+      const char *u = zar_utf8_checked(s, &len);
       if (len > 0) memcpy(data + at, u, len);
       at += (int64_t)len;
     }
@@ -463,7 +465,12 @@ static int zar_build_text(struct ArrowArray *array,
     R_xlen_t k = start + (R_xlen_t)i;
     SEXP chr = STRING_ELT(x, k);
     if (chr == NA_STRING) continue;
-    const char *text = Rf_translateCharUTF8(chr);
+    size_t text_len;
+    const char *text = zar_char_utf8(chr, &text_len);
+    if (text == NULL) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " is not valid UTF-8", (int64_t)k + 1);
+      return zar_build_fail(b, "type", (double)k + 1);
+    }
     int code;
     int64_t v = 0;
     if (decimal) {
@@ -914,8 +921,7 @@ static int64_t zar_utf8_bytes(SEXP x) {
   for (R_xlen_t i = 0; i < Rf_xlength(x); i++) {
     SEXP s = STRING_ELT(x, i);
     size_t len;
-    if (s != NA_STRING) {
-      zar_utf8(s, &len);
+    if (s != NA_STRING && zar_char_utf8(s, &len) != NULL) {
       total += (int64_t)len;
     }
   }

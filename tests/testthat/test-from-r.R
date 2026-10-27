@@ -97,6 +97,40 @@ test_that("strings are written as UTF-8 whatever their encoding", {
   )
 })
 
+test_that("invalid UTF-8 and bytes-encoded strings are type errors", {
+  bad <- "a\xffb"
+  Encoding(bad) <- "UTF-8"
+  bytes <- "caf\xe9"
+  Encoding(bytes) <- "bytes"
+  for (x in list(c("ok", bad), c("ok", bytes))) {
+    err <- expect_error(arrow_array(x), class = "zuarrow_type_error")
+    expect_match(conditionMessage(err), "row 2")
+    expect_error(arrow_array(x, schema = "U"), class = "zuarrow_type_error")
+    expect_error(
+      arrow_write(data.frame(z = x), NULL),
+      class = "zuarrow_type_error"
+    )
+    f <- structure(1:2, levels = x, class = "factor")
+    expect_error(arrow_array(f, schema = "u"), class = "zuarrow_type_error")
+    expect_error(arrow_array(f), class = "zuarrow_type_error")
+  }
+  expect_error(
+    arrow_array(structure(bytes, arrow_type = "i")),
+    class = "zuarrow_type_error"
+  )
+})
+
+test_that("a column name that is not UTF-8 is a type error", {
+  for (enc in c("bytes", "UTF-8")) {
+    name <- "caf\xe9"
+    Encoding(name) <- enc
+    df <- data.frame(x = 1L)
+    names(df) <- name
+    expect_error(arrow_array(df), class = "zuarrow_type_error")
+    expect_error(arrow_schema(df), class = "zuarrow_type_error")
+  }
+})
+
 test_that("strings past utf8's offsets are written as large_utf8", {
   withr::local_options(zuarrow.utf8_limit = 5)
   expect_identical(format(arrow_schema(arrow_array(c("abc", "de")))), "string")

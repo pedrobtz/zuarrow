@@ -24,6 +24,11 @@ SEXP zar_scalar_utf8(const char *x);
 SEXP zar_failure(const char *kind, const char *message);
 SEXP zar_failure_from_error(const char *kind, const struct ArrowError *error);
 
+/* The UTF-8 bytes of a CHARSXP and their length, or NULL when it cannot be
+   written as Arrow text: its encoding is "bytes", or its bytes are not
+   valid UTF-8. Never raises. */
+const char *zar_char_utf8(SEXP s, size_t *len);
+
 /* Owning external pointers in the layout nanoarrow's r.h documents (D6): a
    malloc()ed struct whose NULL release means unset, a finalizer that calls
    release, an array's tag holding its schema handle. The class vector is
