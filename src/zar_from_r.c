@@ -646,8 +646,15 @@ static int zar_build_list(struct ArrowArray *array,
       }
     }
   }
-  return zar_build_array(array->children[0], schema->children[0], values,
-                         (R_xlen_t)first, total, b);
+  int code = zar_build_array(array->children[0], schema->children[0], values,
+                             (R_xlen_t)first, total, b);
+  if (code == NANOARROW_OK && t == NANOARROW_TYPE_MAP &&
+      array->children[0]->n_children == 2 &&
+      array->children[0]->children[0]->null_count != 0) {
+    ArrowErrorSet(&b->error, "a map key is null");
+    return zar_build_fail(b, "type", NA_REAL);
+  }
+  return code;
 }
 
 /* Checks a factor's levels are strings and rows [start, start + n) of its
@@ -818,7 +825,7 @@ static int zar_build_array(struct ArrowArray *array,
   }
   if (Rf_inherits(x, "zar_list_prep")) {
     if (t == NANOARROW_TYPE_LIST || t == NANOARROW_TYPE_LARGE_LIST ||
-        t == NANOARROW_TYPE_FIXED_SIZE_LIST) {
+        t == NANOARROW_TYPE_FIXED_SIZE_LIST || t == NANOARROW_TYPE_MAP) {
       return zar_build_list(array, schema, &sv, x, start, n, b);
     }
     goto unsupported;

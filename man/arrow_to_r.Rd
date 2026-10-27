@@ -71,7 +71,8 @@ fallback.
 Nested types follow the table too. A \code{struct} becomes a data frame
 column; \code{list}, \code{large_list} and the list views become list columns,
 \code{NULL} for a null list; a \code{map} becomes a list of data frames with
-columns \code{key} and \code{value}. A dictionary of strings becomes a factor,
+columns \code{key} and \code{value}, and an \code{arrow_keys_sorted} attribute that
+writes it back as a map. A dictionary of strings becomes a factor,
 ordered when the dictionary is, with the union of every batch's levels;
 a dictionary of other values, and a run-end encoded array, decode to
 their values' R form. An extension type converts as its storage and

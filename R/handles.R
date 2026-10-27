@@ -205,6 +205,10 @@ zar_infer_type <- function(x, name) {
 # A list of raw vectors is binary; any other list is list<T>, T from the
 # elements, which must share one class (section 6.4).
 zar_infer_list <- function(x, name) {
+  sorted <- attr(x, "arrow_keys_sorted", exact = TRUE)
+  if (!is.null(sorted)) {
+    return(zar_infer_map(x, name, sorted))
+  }
   present <- x[!zar_null_elements(x)]
   if (length(present) > 0L && all(vapply(present, is.raw, NA))) {
     return(zar_spec("z", name))
@@ -217,6 +221,47 @@ zar_infer_list <- function(x, name) {
   }
   total <- sum(zar_element_lengths(present))
   zar_spec(if (total > 2^31 - 1) "+L" else "+l", name, children = list(child))
+}
+
+# A list with the arrow_keys_sorted attribute arrow_to_r() gives a map is a
+# map again: its elements data frames of columns key and value (section
+# 6.4).
+zar_infer_map <- function(x, name, sorted) {
+  if (!is.logical(sorted) || length(sorted) != 1L || is.na(sorted)) {
+    zar_abort("type", "The `arrow_keys_sorted` attribute must be one logical.")
+  }
+  present <- x[!zar_null_elements(x)]
+  entries <- vapply(
+    present,
+    function(e) is.data.frame(e) && identical(names(e), c("key", "value")),
+    NA
+  )
+  if (!all(entries)) {
+    zar_abort(
+      "type",
+      "Each element of a map column must be a data frame with columns `key` and `value`."
+    )
+  }
+  values <- zar_flatten(x)
+  if (is.null(values)) {
+    key <- zar_spec("n", "key")
+    value <- zar_spec("n", "value")
+  } else {
+    key <- zar_infer_spec(values$key, "key")
+    value <- zar_infer_spec(values$value, "value")
+  }
+  key$flags <- 0L
+  zar_spec(
+    "+m",
+    name,
+    flags = if (sorted) 6L else 2L,
+    children = list(zar_spec(
+      "+s",
+      "entries",
+      flags = 0L,
+      children = list(key, value)
+    ))
+  )
 }
 
 # Which elements of a list are NULL, without an R call per element: only

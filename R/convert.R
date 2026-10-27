@@ -15,8 +15,9 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' `utf8` (`large_utf8` past 2^31 - 1 bytes), `factor` to
 #' `dictionary<int32, utf8>`, `Date` to `date32`, `POSIXct` to
 #' `timestamp[us]` in its time zone or UTC, `difftime` to `duration[us]`,
-#' a list of raw vectors to `binary`, any other list to `list<T>` with `T`
-#' from its elements, and a data frame to a `struct`. A class registered
+#' a list of raw vectors to `binary`, a list with the `arrow_keys_sorted`
+#' attribute that [arrow_to_r()] gives a map to `map`, any other list to
+#' `list<T>` with `T` from its elements, and a data frame to a `struct`. A class registered
 #' with [arrow_register()] goes through its `from` handler, and a matrix is
 #' written as a `fixed_size_list` with `schema = arrow_matrix()`. The
 #' attributes `arrow_extension`, `arrow_extension_metadata` and
@@ -131,7 +132,7 @@ zar_prepare_spec <- function(x, spec) {
     return(out)
   }
   is_list_type <- spec$format %in%
-    c("+l", "+L") ||
+    c("+l", "+L", "+m") ||
     startsWith(spec$format, "+w:")
   if (is_list_type && is.matrix(x)) {
     width <- ncol(x)
@@ -165,6 +166,16 @@ zar_prepare_spec <- function(x, spec) {
 # An empty R vector of the type a spec describes, for a list column with
 # no values at all.
 zar_empty_like <- function(spec) {
+  if (identical(spec$format, "+s")) {
+    columns <- lapply(spec$children, function(child) {
+      zar_empty_like(child) %||% logical()
+    })
+    names(columns) <- paste0("V", seq_along(columns))
+    return(structure(columns, class = "data.frame", row.names = integer()))
+  }
+  if (spec$format %in% c("+l", "+L", "+m") || startsWith(spec$format, "+w:")) {
+    return(list())
+  }
   switch(
     spec$format,
     n = NULL,
@@ -277,7 +288,8 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
 #' Nested types follow the table too. A `struct` becomes a data frame
 #' column; `list`, `large_list` and the list views become list columns,
 #' `NULL` for a null list; a `map` becomes a list of data frames with
-#' columns `key` and `value`. A dictionary of strings becomes a factor,
+#' columns `key` and `value`, and an `arrow_keys_sorted` attribute that
+#' writes it back as a map. A dictionary of strings becomes a factor,
 #' ordered when the dictionary is, with the union of every batch's levels;
 #' a dictionary of other values, and a run-end encoded array, decode to
 #' their values' R form. An extension type converts as its storage and

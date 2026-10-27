@@ -183,6 +183,77 @@ test_that("a map reads as key/value data frames, keeping keys_sorted", {
   expect_true(attr(out, "arrow_keys_sorted"))
 })
 
+test_that("a map converts back to the same map", {
+  schema <- test_schema(zspec(
+    "+m",
+    children = list(
+      zspec(
+        "+s",
+        "entries",
+        flags = 0L,
+        children = list(zspec("u", "key", flags = 0L), zspec("i", "value"))
+      )
+    ),
+    flags = 2L + 4L
+  ))
+  array <- test_array(
+    schema,
+    2,
+    list(NULL, le_int(c(0, 2, 2), 4L)),
+    children = list(test_array_spec(
+      2,
+      list(NULL),
+      children = list(
+        test_array_spec(2, list(NULL, le_int(c(0, 1, 2), 4L), charToRaw("ab"))),
+        test_array_spec(2, list(NULL, le_int(c(1, 2), 4L)))
+      )
+    ))
+  )
+  out <- arrow_to_r(array)
+  back <- arrow_array(out)
+  expect_true(arrow_equal(back, array))
+  expect_true(arrow_validate(back, "full"))
+  expect_identical(arrow_to_r(back), out)
+  expect_true(arrow_equal(arrow_array(out, schema = schema), array))
+})
+
+test_that("a list with arrow_keys_sorted is written as a map", {
+  m <- structure(
+    list(data.frame(key = c("a", "b"), value = c(1.5, NA)), NULL),
+    arrow_keys_sorted = FALSE
+  )
+  array <- arrow_array(m)
+  expect_identical(
+    format(arrow_schema(array)),
+    format(arrow_schema(m))
+  )
+  spec <- .Call(zar_c_schema_to_spec, arrow_schema(array))
+  expect_identical(spec$format, "+m")
+  expect_identical(bitwAnd(spec$flags, 4L), 0L)
+  expect_identical(arrow_to_r(array), m)
+  df <- data.frame(id = 1:2)
+  df$m <- m
+  expect_identical(as.data.frame(arrow_stream(df, batch = 1)), df)
+  expect_identical(arrow_read(arrow_write(df, NULL))$m, m)
+  empty <- structure(list(NULL, NULL), arrow_keys_sorted = TRUE)
+  expect_identical(arrow_to_r(arrow_array(empty)), empty)
+})
+
+test_that("a map needs two-column data frames without null keys", {
+  null_key <- structure(
+    list(data.frame(key = c("a", NA), value = 1:2)),
+    arrow_keys_sorted = FALSE
+  )
+  expect_error(arrow_array(null_key), class = "zuarrow_type_error")
+  three <- structure(
+    list(data.frame(key = "a", value = 1L, extra = 2L)),
+    arrow_keys_sorted = FALSE
+  )
+  expect_error(arrow_array(three), class = "zuarrow_type_error")
+  not_frames <- structure(list(1:2), arrow_keys_sorted = TRUE)
+  expect_error(arrow_array(not_frames), class = "zuarrow_type_error")
+})
+
 test_that("a lossy value inside a list fails, or converts under allow", {
   schema <- test_schema(zspec("+l", children = list(zspec("l", "item"))))
   array <- test_array(
