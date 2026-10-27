@@ -166,6 +166,26 @@ test_that("warn converts with one warning per lossy column", {
   expect_identical(out, 2^53)
 })
 
+test_that("warn gives one warning per column over every batch", {
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("l", "a"), zspec("l", "b"))
+  ))
+  big <- 2^53 + 2
+  df <- data.frame(a = c(big, 1, big, big, 2, big), b = c(1, big, 2, big, 3, 4))
+  stream <- arrow_stream(df, batch = 2L, schema = schema)
+  columns <- character()
+  out <- withCallingHandlers(
+    arrow_to_r(stream, lossy = "warn"),
+    zuarrow_lossy_warning = function(w) {
+      columns <<- c(columns, w$column)
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(columns, c("a", "b"))
+  expect_identical(out, df)
+})
+
 test_that("allow gives integer64 when bit64 is loaded", {
   local_mocked_bindings(zar_bit64_loaded = function() TRUE)
   big <- test_array(
