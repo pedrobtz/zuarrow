@@ -131,9 +131,8 @@ zar_prepare_spec <- function(x, spec, call = NULL) {
     attributes(out) <- attributes(x)
     return(out)
   }
-  is_list_type <- spec$format %in%
-    c("+l", "+L", "+m") ||
-    startsWith(spec$format, "+w:")
+  variable_list <- spec$format %in% c("+l", "+L", "+m")
+  is_list_type <- variable_list || startsWith(spec$format, "+w:")
   if (is_list_type && is.matrix(x)) {
     width <- ncol(x)
     return(structure(

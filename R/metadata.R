@@ -82,16 +82,16 @@ zar_metadata_raw <- function(value, call = sys.call(-1)) {
     return(NULL)
   }
   keys <- names(value)
-  ok_values <- is.character(value) &&
-    !anyNA(value) ||
-    is.list(value) &&
-      all(vapply(
-        value,
-        function(v) {
-          is.raw(v) || is.character(v) && length(v) == 1L && !is.na(v)
-        },
-        NA
-      ))
+  ok_chr <- is.character(value) && !anyNA(value)
+  ok_list <- is.list(value) &&
+    all(vapply(
+      value,
+      function(v) {
+        is.raw(v) || (is.character(v) && length(v) == 1L && !is.na(v))
+      },
+      NA
+    ))
+  ok_values <- ok_chr || ok_list
   if (!ok_values || is.null(keys) || anyNA(keys) || any(!nzchar(keys))) {
     zar_abort(
       "type",

@@ -255,11 +255,9 @@ zar_covers_exact <- function(kind, prefix) {
   }
   nested <- c("+s", "+l", "+L", "+vl", "+vL", "+m")
   if (kind == "format") {
-    return(
-      prefix %in%
-        c(zar_exact_formats, nested) ||
-        any(startsWith(prefix, c("w:", "+w:", "tss:", "tsm:")))
-    )
+    listed <- prefix %in% c(zar_exact_formats, nested)
+    parameterised <- any(startsWith(prefix, c("w:", "+w:", "tss:", "tsm:")))
+    return(listed || parameterised)
   }
   any(startsWith(
     c(zar_exact_formats, nested, "w:1", "+w:1", "tss:", "tsm:"),

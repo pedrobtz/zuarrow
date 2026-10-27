@@ -193,7 +193,8 @@ zar_infer_type <- function(x, name, call = NULL) {
       call = call
     )
   }
-  if (!is.object(x) || is.list(x) && identical(class(x), "list")) {
+  plain_list <- is.list(x) && identical(class(x), "list")
+  if (!is.object(x) || plain_list) {
     format <- switch(
       typeof(x),
       logical = "b",
