@@ -58,6 +58,30 @@ test_that("a list of data frames is a list of structs", {
   expect_identical(arrow_to_r(array), x)
 })
 
+test_that("a list of data frames keeps every row of every element", {
+  x <- list(data.frame(a = 1:3), NULL, data.frame(a = 4:5))
+  array <- arrow_array(x)
+  expect_identical(arrow_to_r(array), x)
+  expect_true(arrow_validate(array, "full"))
+  df <- data.frame(id = 1:3)
+  df$rows <- list(
+    data.frame(a = 1:3, b = "x"),
+    data.frame(a = 4L, b = "y"),
+    NULL
+  )
+  expect_identical(as.data.frame(arrow_stream(df, batch = 2)), df)
+})
+
+test_that("a list column whose values outnumber its offsets is refused", {
+  schema <- arrow_schema(list(1:2))
+  prep <- structure(
+    list(offsets = c(0, 1), null = FALSE, values = 1:3),
+    class = "zar_list_prep"
+  )
+  out <- .Call(zar_c_from_r, prep, schema, 0, 1, NA_real_)
+  expect_error(zar_check(out), class = "zuarrow_type_error")
+})
+
 test_that("a list column inside a data frame round-trips through a stream", {
   df <- data.frame(id = 1:4)
   df$tags <- list(c("a", "b"), NULL, "c", character())

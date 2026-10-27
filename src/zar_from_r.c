@@ -567,6 +567,23 @@ static SEXP zar_prep_get(SEXP prep, const char *name) {
   return R_NilValue;
 }
 
+/* The number of rows an R object holds as a list column's values: a data
+   frame's rows, a prepared list's elements, a vector's length. -1 when it
+   cannot be told, as for a registered column. */
+static int64_t zar_value_rows(SEXP x) {
+  if (x == R_NilValue) return 0;
+  if (Rf_inherits(x, "data.frame")) {
+    SEXP rn = Rf_getAttrib(x, R_RowNamesSymbol);
+    return (int64_t)Rf_xlength(rn);
+  }
+  if (Rf_inherits(x, "zar_list_prep")) {
+    SEXP offsets = zar_prep_get(x, "offsets");
+    return TYPEOF(offsets) == REALSXP ? (int64_t)Rf_xlength(offsets) - 1 : -1;
+  }
+  if (Rf_inherits(x, "zar_registered")) return -1;
+  return (int64_t)Rf_xlength(x);
+}
+
 /* A list column R has flattened: list(offsets, null, values), offsets the
    cumulative element lengths (n + 1 doubles), null a logical per element,
    values every element's values concatenated (section 6.4). */
@@ -582,10 +599,17 @@ static int zar_build_list(struct ArrowArray *array,
     ArrowErrorSet(&b->error, "a malformed list column");
     return zar_build_fail(b, NULL, NA_REAL);
   }
+  const double *off = REAL(offsets);
+  int64_t rows = zar_value_rows(values);
+  double last = off[Rf_xlength(offsets) - 1];
+  if (rows >= 0 && (double)rows != last) {
+    ArrowErrorSet(&b->error, "the list's values hold %" PRId64 " rows where its offsets end at %.0f",
+                  rows, last);
+    return zar_build_fail(b, "type", NA_REAL);
+  }
   if (zar_set_validity(array, nulls, start, n, zar_na_lgl_true, b) != NANOARROW_OK) {
     return EINVAL;
   }
-  const double *off = REAL(offsets);
   int64_t first = (int64_t)off[start];
   int64_t total = (int64_t)off[start + n] - first;
   enum ArrowType t = sv->type;

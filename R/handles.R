@@ -210,7 +210,7 @@ zar_infer_list <- function(x, name) {
   } else {
     zar_infer_spec(values, "item")
   }
-  total <- sum(lengths(present))
+  total <- sum(zar_element_lengths(present))
   zar_spec(if (total > 2^31 - 1) "+L" else "+l", name, children = list(child))
 }
 
@@ -222,6 +222,17 @@ zar_null_elements <- function(x) {
     null[null] <- vapply(x[null], is.null, NA, USE.NAMES = FALSE)
   }
   null
+}
+
+# How many values each element of a list column holds: rows for a data
+# frame, whose values zar_flatten() binds by row, the length otherwise.
+zar_element_lengths <- function(x) {
+  out <- as.double(lengths(x))
+  frames <- vapply(x, is.data.frame, NA, USE.NAMES = FALSE)
+  if (any(frames)) {
+    out[frames] <- vapply(x[frames], nrow, 0L, USE.NAMES = FALSE)
+  }
+  out
 }
 
 # Every element's values, concatenated, or NULL when there are none.

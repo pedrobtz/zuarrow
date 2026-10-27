@@ -87,3 +87,8 @@
   every reader opens the output.
 * The output is deterministic: the same input gives the same bytes, with
   no timestamps and every padding byte zeroed.
+
+## Fixes
+
+* A list column of data frames keeps every row of every element; before,
+  its offsets counted columns, not rows, and rows were dropped (#31).
