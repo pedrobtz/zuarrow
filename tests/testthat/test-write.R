@@ -281,19 +281,22 @@ test_that("arrow reads what arrow_write() writes", {
   df <- basic_df()
   for (compression in c("none", "lz4", "zstd")) {
     file <- arrow_write(df, NULL, compression = compression)
-    theirs <- as.data.frame(arrow::read_feather(file))
-    expect_identical(theirs$i, df$i)
-    expect_identical(theirs$s, df$s)
-    expect_identical(theirs$d, df$d)
-    expect_identical(as.character(theirs$f), as.character(df$f))
-    expect_identical(theirs$dt, df$dt)
+    expect_identical(
+      as.data.frame(arrow::read_feather(file)),
+      df,
+      info = compression
+    )
     stream <- arrow_write(
       df,
       NULL,
       format = "stream",
       compression = compression
     )
-    expect_identical(as.data.frame(arrow::read_ipc_stream(stream))$s, df$s)
+    expect_identical(
+      as.data.frame(arrow::read_ipc_stream(stream)),
+      df,
+      info = compression
+    )
   }
 })
 

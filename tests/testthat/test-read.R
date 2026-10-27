@@ -210,8 +210,7 @@ test_that("arrow reads what arrow wrote, the same way", {
   path <- test_data("basic-zstd.arrow")
   ours <- without_metadata(arrow_read(path))
   theirs <- as.data.frame(arrow::read_feather(path))
-  expect_identical(ours$s, theirs$s)
-  expect_identical(ours$d, theirs$d)
+  expect_identical(ours, theirs)
 })
 
 test_that("fields that share a dictionary must share its value type", {
