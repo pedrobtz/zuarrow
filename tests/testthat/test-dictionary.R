@@ -167,3 +167,23 @@ test_that("a non-string dictionary index out of range is a format error", {
   )
   expect_error(arrow_to_r(negative), class = "zuarrow_format_error")
 })
+
+test_that("invalid UTF-8 in a dictionary value is a format error", {
+  # The only check a foreign handle's dictionary gets before conversion.
+  schema <- arrow_schema(factor("a"))
+  bad <- test_array(
+    schema,
+    1,
+    list(NULL, le_int(0, 4L)),
+    dictionary = test_array_spec(
+      1,
+      list(NULL, le_int(c(0, 2), 4L), as.raw(c(0xc3, 0x28)))
+    )
+  )
+  for (lossy in c("error", "allow")) {
+    expect_error(
+      arrow_to_r(bad, lossy = lossy),
+      class = "zuarrow_format_error"
+    )
+  }
+})

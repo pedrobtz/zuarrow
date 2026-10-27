@@ -289,3 +289,12 @@ test_that("every array zuarrow builds passes full validation", {
     expect_true(arrow_validate(arrow_array(x), "full"))
   }
 })
+
+test_that("a struct schema needs a data frame", {
+  schema <- arrow_schema(data.frame(a = 1L))
+  expect_error(arrow_array(1:3, schema = schema), class = "zuarrow_type_error")
+  expect_error(
+    arrow_array(list(1:3), schema = schema),
+    class = "zuarrow_type_error"
+  )
+})

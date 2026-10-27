@@ -337,3 +337,43 @@ test_that("conditions from a handled nested field name its path", {
   )
   expect_identical(w$column, "s$b")
 })
+
+test_that("a from handler's array must match the schema's type and length", {
+  x <- structure(1:2, class = "fake_int")
+  local_registration(
+    "i",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_int"
+  )
+  expect_error(arrow_array(x, schema = "l"), class = "zuarrow_registry_error")
+  arrow_unregister("i")
+  local_registration(
+    "i",
+    from = function(x) arrow_array(1:5),
+    class = "fake_int"
+  )
+  expect_error(arrow_array(x, schema = "i"), class = "zuarrow_registry_error")
+  expect_error(
+    arrow_array(data.frame(v = 1, w = I(x))),
+    class = "zuarrow_registry_error"
+  )
+})
+
+test_that("more than 256 registered columns is a limit error", {
+  local_registration(
+    "i",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_int"
+  )
+  column <- structure(1L, class = "fake_int")
+  fits <- as.data.frame(
+    rep(list(I(column)), 256L),
+    col.names = paste0("c", 1:256)
+  )
+  expect_s3_class(arrow_array(fits), "zuarrow_array")
+  past <- as.data.frame(
+    rep(list(I(column)), 257L),
+    col.names = paste0("c", 1:257)
+  )
+  expect_error(arrow_array(past), class = "zuarrow_limit_error")
+})

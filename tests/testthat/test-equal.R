@@ -163,3 +163,9 @@ test_that("nested values under a null struct row do not count", {
     arrow_array(factor(c("a", "b"), levels = c("b", "a")))
   ))
 })
+
+test_that("a dictionary on one side only is a difference", {
+  out <- arrow_equal(arrow_array(factor("a")), arrow_array(0L))
+  expect_false(out)
+  expect_type(attr(out, "reason"), "character")
+})

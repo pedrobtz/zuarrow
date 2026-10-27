@@ -318,3 +318,11 @@ test_that("a fixed_size_list with a null row round-trips", {
   ))
   expect_identical(arrow_to_r(arrow_array(df, schema = schema)), df)
 })
+
+test_that("a ragged list to a fixed_size_list is a type error", {
+  fsl <- test_schema(zspec("+w:2", children = list(zspec("i", "item"))))
+  expect_error(
+    arrow_array(list(1:2, 1:3), schema = fsl),
+    class = "zuarrow_type_error"
+  )
+})

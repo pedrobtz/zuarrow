@@ -97,3 +97,22 @@ test_that("nanoarrow reads what arrow_stream() writes", {
     df
   )
 })
+
+test_that("a stream whose next batch fails raises a classed error", {
+  # A lazy reader over a stream cut short fails in get_next(), as a foreign
+  # producer can: every consumer of a stream reaches that branch.
+  bytes <- arrow_write(data.frame(a = 1:4), NULL, format = "stream", batch = 2L)
+  cut <- bytes[seq_len(length(bytes) - 40L)]
+  stream <- function() arrow_read(cut, lazy = TRUE)
+
+  s <- stream()
+  expect_identical(arrow_next(s), data.frame(a = 1:2))
+  expect_error(arrow_next(s), class = "zuarrow_format_error")
+  expect_error(arrow_to_r(stream()), class = "zuarrow_format_error")
+  expect_error(arrow_write(stream(), NULL), class = "zuarrow_format_error")
+  expect_error(arrow_validate(stream()), class = "zuarrow_handle_error")
+  expect_error(
+    arrow_equal(stream(), arrow_read(bytes, lazy = TRUE)),
+    class = "zuarrow_handle_error"
+  )
+})
