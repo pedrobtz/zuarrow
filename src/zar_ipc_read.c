@@ -4,6 +4,10 @@
    each decoded batch passes nanoarrow's full validation and zuarrow's UTF-8
    check before R sees it. The reader is an ArrowArrayStream, so arrow_read()
    with lazy = TRUE hands it out as a stream handle. */
+/* 64-bit file offsets on 32-bit POSIX systems, for fseeko() and ftello(). */
+#if !defined(_WIN32) && !defined(_FILE_OFFSET_BITS)
+#define _FILE_OFFSET_BITS 64
+#endif
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -777,9 +781,16 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
     *kind = "io";
     return EIO;
   }
-  long n = -1;
-  if (fseek(f, 0, SEEK_END) == 0) n = ftell(f);
-  if (n < 0 || fseek(f, 0, SEEK_SET) != 0) {
+  /* 64-bit offsets: long is 32 bits on Windows, so ftell() stops at 2 GiB. */
+  int64_t n = -1;
+#ifdef _WIN32
+  if (_fseeki64(f, 0, SEEK_END) == 0) n = (int64_t)_ftelli64(f);
+  int rewound = n >= 0 && _fseeki64(f, 0, SEEK_SET) == 0;
+#else
+  if (fseeko(f, 0, SEEK_END) == 0) n = (int64_t)ftello(f);
+  int rewound = n >= 0 && fseeko(f, 0, SEEK_SET) == 0;
+#endif
+  if (!rewound) {
     fclose(f);
     ArrowErrorSet(error, "cannot find the size of '%s'", path);
     *kind = "io";
@@ -788,6 +799,12 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
   if ((double)n > max_bytes) {
     fclose(f);
     ArrowErrorSet(error, "'%s' is larger than max_bytes", path);
+    *kind = "limit";
+    return EINVAL;
+  }
+  if ((uint64_t)n > (uint64_t)SIZE_MAX) {
+    fclose(f);
+    ArrowErrorSet(error, "'%s' is too large to hold in memory", path);
     *kind = "limit";
     return EINVAL;
   }
@@ -800,7 +817,7 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
   }
   size_t got = n > 0 ? fread(buf, 1, (size_t)n, f) : 0;
   fclose(f);
-  if ((long)got != n) {
+  if ((int64_t)got != n) {
     free(buf);
     ArrowErrorSet(error, "cannot read '%s'", path);
     *kind = "io";

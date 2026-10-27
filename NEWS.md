@@ -146,3 +146,5 @@
 * A compression `level` outside the codec's range, and any codec failure
   while writing, is a `zuarrow_codec_error`. Before, it was an unclassed
   `zuarrow_error` (#39).
+* `arrow_read()` finds the size of a file through 64-bit offsets, so a file
+  over 2 GiB opens on Windows (#51).
