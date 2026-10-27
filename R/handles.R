@@ -1,13 +1,6 @@
 # Handles: schema, array and stream external pointers in nanoarrow's r.h
 # layout (D6), classed c("zuarrow_<kind>", "nanoarrow_<kind>") (D7).
 
-zar_is_schema <- function(x) inherits(x, "nanoarrow_schema")
-zar_is_array <- function(x) inherits(x, "nanoarrow_array")
-zar_is_stream <- function(x) inherits(x, "nanoarrow_array_stream")
-zar_is_handle <- function(x) {
-  zar_is_schema(x) || zar_is_array(x) || zar_is_stream(x)
-}
-
 #' Arrow schemas
 #'
 #' `arrow_schema()` makes a schema handle from a format string, from an R
@@ -57,6 +50,13 @@ arrow_schema <- function(x) {
   }
   spec <- zar_infer_spec(x, name = "", call = call)
   zar_check(.Call(zar_c_schema_from_spec, spec))
+}
+
+zar_is_schema <- function(x) inherits(x, "nanoarrow_schema")
+zar_is_array <- function(x) inherits(x, "nanoarrow_array")
+zar_is_stream <- function(x) inherits(x, "nanoarrow_array_stream")
+zar_is_handle <- function(x) {
+  zar_is_schema(x) || zar_is_array(x) || zar_is_stream(x)
 }
 
 # Every batch left in a stream, read to its end.

@@ -34,3 +34,15 @@ zar_io <- function(expr, what, call, ...) {
   }
   out
 }
+
+`%||%` <- function(x, y) if (is.null(x)) y else x
+
+zar_check_flag <- function(x, name, call) {
+  if (!is.logical(x) || length(x) != 1L || is.na(x)) {
+    zar_abort(
+      "type",
+      sprintf("`%s` must be `TRUE` or `FALSE`.", name),
+      call = call
+    )
+  }
+}

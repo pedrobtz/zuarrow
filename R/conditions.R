@@ -25,3 +25,25 @@ zar_check <- function(out, call = sys.call(-1)) {
   }
   out
 }
+
+zar_lossy_warn <- function(name, spec, frame, k, call) {
+  format <- if (frame) spec$children[[k]]$format else spec$format
+  warning(structure(
+    class = c(
+      "zuarrow_lossy_warning",
+      "zuarrow_warning",
+      "warning",
+      "condition"
+    ),
+    list(
+      message = sprintf(
+        "%s (Arrow format `%s`) was converted to R with loss.",
+        zar_column_label(name, k),
+        format
+      ),
+      call = call,
+      column = name,
+      arrow_type = format
+    )
+  ))
+}
