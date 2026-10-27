@@ -7,8 +7,10 @@
 arrow_types()
 }
 \value{
-A data frame with columns \code{arrow}, \code{format}, \code{r}, \code{exact},
-\code{lossy_r} and \code{exact_with}.
+A data frame of character columns: \code{arrow}, \code{format}, \code{r},
+\code{exact}, \code{lossy_r} and \code{exact_with}. \code{exact} describes when the R form
+is exact, as text such as \code{"yes"}, \code{"no"} or \code{"within +/-2^53"}, not
+as a logical.
 }
 \description{
 Lists every Arrow type zuarrow converts without a registration: its

@@ -17,9 +17,10 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' `timestamp[us]` in its time zone or UTC, `difftime` to `duration[us]`,
 #' a list of raw vectors to `binary`, a list with the `arrow_keys_sorted`
 #' attribute that [arrow_to_r()] gives a map to `map`, any other list to
-#' `list<T>` with `T` from its elements, and a data frame to a `struct`. A class registered
-#' with [arrow_register()] goes through its `from` handler, and a matrix is
-#' written as a `fixed_size_list` with `schema = arrow_matrix()`. The
+#' `list<T>` with `T` from its elements, and a data frame to a `struct`. A
+#' class registered with [arrow_register()] goes through its `from`
+#' handler, and a matrix is written as a `fixed_size_list` with
+#' `schema = arrow_matrix()`. The
 #' attributes `arrow_extension`, `arrow_extension_metadata` and
 #' `arrow_field_metadata` become field metadata. Any other class is a
 #' `zuarrow_type_error`.
@@ -944,8 +945,10 @@ zar_check_row_names <- function(row.names, call) {
 #' `lossy = "allow"` gives otherwise, and the package that reads it
 #' exactly.
 #'
-#' @returns A data frame with columns `arrow`, `format`, `r`, `exact`,
-#'   `lossy_r` and `exact_with`.
+#' @returns A data frame of character columns: `arrow`, `format`, `r`,
+#'   `exact`, `lossy_r` and `exact_with`. `exact` describes when the R form
+#'   is exact, as text such as `"yes"`, `"no"` or `"within +/-2^53"`, not
+#'   as a logical.
 #' @export
 #' @examples
 #' arrow_types()

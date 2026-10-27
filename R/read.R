@@ -54,8 +54,9 @@ arrow_limits <- function(
 #' `zuarrow_format_error` or a `zuarrow_limit_error`, never a crash. A file
 #' whose footer repeats the schema differently is a `zuarrow_format_error`
 #' too. Each batch then passes the full validation of [arrow_validate()]
-#' before it is converted. Bodies compressed with LZ4 or zstd are decompressed through
-#' 'zukomp'. Big-endian input is a `zuarrow_format_error`.
+#' before it is converted. Bodies compressed with LZ4 or zstd are
+#' decompressed through 'zukomp'. Big-endian input is a
+#' `zuarrow_format_error`.
 #'
 #' Dictionary batches, and the deltas a stream may send between record
 #' batches, are applied as the format says; a file that replaces a

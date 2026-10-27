@@ -21,9 +21,9 @@ match, and their metadata too unless \code{metadata = FALSE}. Two arrays are
 equal when their schemas are and they hold the same values, compared
 value by value: a null equals a null whatever bytes lie under it, and
 offsets do not matter. A dictionary or run-end encoded array compares by
-the values it decodes to. Two streams are equal when their schemas are and they yield
-the same number of batches, each pair equal. Comparing streams reads
-them both to the end.
+the values it decodes to. Two streams are equal when their schemas are
+and they yield the same number of batches, each pair equal. Comparing
+streams reads them both to the end.
 }
 \examples{
 arrow_equal(arrow_schema("i"), arrow_schema("i"))

@@ -33,9 +33,10 @@ Without a \code{schema}, each R class maps to one Arrow type: \code{logical} to
 \code{timestamp[us]} in its time zone or UTC, \code{difftime} to \code{duration[us]},
 a list of raw vectors to \code{binary}, a list with the \code{arrow_keys_sorted}
 attribute that \code{\link[=arrow_to_r]{arrow_to_r()}} gives a map to \code{map}, any other list to
-\verb{list<T>} with \code{T} from its elements, and a data frame to a \code{struct}. A class registered
-with \code{\link[=arrow_register]{arrow_register()}} goes through its \code{from} handler, and a matrix is
-written as a \code{fixed_size_list} with \code{schema = arrow_matrix()}. The
+\verb{list<T>} with \code{T} from its elements, and a data frame to a \code{struct}. A
+class registered with \code{\link[=arrow_register]{arrow_register()}} goes through its \code{from}
+handler, and a matrix is written as a \code{fixed_size_list} with
+\code{schema = arrow_matrix()}. The
 attributes \code{arrow_extension}, \code{arrow_extension_metadata} and
 \code{arrow_field_metadata} become field metadata. Any other class is a
 \code{zuarrow_type_error}.
