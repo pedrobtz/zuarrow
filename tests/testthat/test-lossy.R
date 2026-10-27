@@ -34,13 +34,34 @@ test_that("each row of the lossy table errors by default and converts under allo
     time64 = test_fixed("ttn", 3723e9, 8L),
     duration = test_fixed("tDs", 90, 8L)
   )
+  utc <- function(x) .POSIXct(x, tz = "UTC")
+  secs <- function(x) as.difftime(x, units = "secs")
+  expected <- list(
+    # 2^53 + 1 rounds to the nearest double, 2^53.
+    int64 = 2^53,
+    uint64 = 2^53,
+    decimal32 = 123.45,
+    decimal64 = 123.45,
+    decimal128 = 123.45,
+    decimal256 = 123.45,
+    timestamp_us = utc(1792576800),
+    timestamp_ns = utc(1792576800),
+    date64 = utc(86400),
+    time32 = secs(3723),
+    time64 = secs(3723),
+    duration = secs(90)
+  )
   for (name in names(cases)) {
     expect_error(
       arrow_to_r(cases[[name]]),
       class = "zuarrow_lossy_error",
       info = name
     )
-    expect_no_error(arrow_to_r(cases[[name]], lossy = "allow"))
+    expect_identical(
+      arrow_to_r(cases[[name]], lossy = "allow"),
+      expected[[name]],
+      info = name
+    )
   }
 })
 
