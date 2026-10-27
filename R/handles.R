@@ -126,7 +126,7 @@ zar_infer_type <- function(x, name) {
   handler <- zar_handler_for_class(x)
   if (!is.null(handler)) {
     array <- zar_from_handler(handler, x[0L])
-    spec <- .Call(zar_c_schema_to_spec, arrow_schema(array))
+    spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(array)))
     spec$name <- name
     return(spec)
   }

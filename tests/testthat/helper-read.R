@@ -28,3 +28,21 @@ md5_of <- function(bytes) {
   writeBin(bytes, path)
   unname(tools::md5sum(path))
 }
+
+# `bytes` with the first run equal to `from` replaced by `to`, of the same
+# length, so a test can corrupt one field of a valid IPC message.
+patch_bytes <- function(bytes, from, to) {
+  if (is.character(from)) {
+    from <- charToRaw(from)
+  }
+  stopifnot(length(from) == length(to))
+  n <- length(from)
+  at <- which(vapply(
+    seq_len(length(bytes) - n + 1L),
+    function(i) identical(bytes[i:(i + n - 1L)], from),
+    logical(1)
+  ))
+  stopifnot(length(at) >= 1L)
+  bytes[at[[1]]:(at[[1]] + n - 1L)] <- to
+  bytes
+}

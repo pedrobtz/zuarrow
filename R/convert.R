@@ -115,7 +115,7 @@ zar_nrow <- function(x) {
 # and matrices become a zar_list_prep, flattened once (C never calls R),
 # and data frames are prepared column by column (section 6.4).
 zar_prepare <- function(x, schema) {
-  zar_prepare_spec(x, .Call(zar_c_schema_to_spec, schema))
+  zar_prepare_spec(x, zar_check(.Call(zar_c_schema_to_spec, schema)))
 }
 
 zar_prepare_spec <- function(x, spec) {
@@ -423,7 +423,7 @@ zar_check_flag <- function(x, name, call) {
 }
 
 zar_is_struct <- function(schema) {
-  identical(.Call(zar_c_schema_to_spec, schema)$format, "+s")
+  identical(zar_check(.Call(zar_c_schema_to_spec, schema))$format, "+s")
 }
 
 zar_to_code <- function(proto, call) {
@@ -496,7 +496,7 @@ zar_convert <- function(
   max_depth = 64L,
   copy = TRUE
 ) {
-  spec <- .Call(zar_c_schema_to_spec, schema)
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema))
   frame <- identical(spec$format, "+s")
   fields <- if (frame) spec$children else list(spec)
   names <- vapply(fields, function(f) if (is.na(f$name)) "" else f$name, "")
@@ -693,7 +693,7 @@ zar_apply_handler <- function(handler, arrays, k, frame, schema, rows, call) {
 }
 
 zar_field_schema <- function(schema, k) {
-  spec <- .Call(zar_c_schema_to_spec, schema)$children[[k]]
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema))$children[[k]]
   zar_check(.Call(zar_c_schema_from_spec, spec))
 }
 
@@ -713,7 +713,7 @@ zar_empty_array <- function(schema) {
       }
     )
   }
-  spec <- .Call(zar_c_schema_to_spec, schema)
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema))
   zar_check(.Call(zar_c_array_from_buffers, schema, empty_spec(spec)))
 }
 

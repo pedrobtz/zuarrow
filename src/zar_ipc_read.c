@@ -170,9 +170,26 @@ static int zar_check_shared_dictionaries(struct zar_reader *r) {
   return NANOARROW_OK;
 }
 
-/* After the schema: the depth limit, little-endian only (D13), the
-   decoder set up for batches and the dictionaries for their values. */
-static int zar_reader_set_schema(struct zar_reader *r) {
+/* Whether a field's name, or any of its children's, holds a NUL. The
+   decoder copies names as C strings, so a NUL would cut a name silently. */
+static int zar_field_names_have_nul(ns(Field_vec_t) fields) {
+  size_t n = ns(Field_vec_len(fields));
+  for (size_t i = 0; i < n; i++) {
+    ns(Field_table_t) field = ns(Field_vec_at(fields, i));
+    if (ns(Field_name_is_present(field))) {
+      flatbuffers_string_t name = ns(Field_name_get(field));
+      if (strlen(name) != flatbuffers_string_len(name)) return 1;
+    }
+    if (zar_field_names_have_nul(ns(Field_children(field)))) return 1;
+  }
+  return 0;
+}
+
+/* After the schema: the depth limit, names and metadata keys that can
+   become R strings, little-endian only (D13), the decoder set up for
+   batches and the dictionaries for their values. `header` is the schema
+   message. */
+static int zar_reader_set_schema(struct zar_reader *r, struct ArrowBufferView header) {
   if (r->decoder.endianness == NANOARROW_IPC_ENDIANNESS_BIG) {
     ArrowErrorSet(&r->error, "the input is big-endian; zuarrow reads little-endian only");
     return zar_reader_fail(r, "format", EINVAL);
@@ -181,6 +198,15 @@ static int zar_reader_set_schema(struct zar_reader *r) {
     ArrowErrorSet(&r->error, "the schema nests deeper than max_depth (%d)",
                   r->limits.max_depth);
     return zar_reader_fail(r, "limit", EINVAL);
+  }
+  ns(Message_table_t) message = ns(Message_as_root(header.data.data));
+  ns(Schema_table_t) fb_schema = (ns(Schema_table_t))ns(Message_header(message));
+  if (fb_schema != NULL && zar_field_names_have_nul(ns(Schema_fields(fb_schema)))) {
+    ArrowErrorSet(&r->error, "a field name holds a NUL");
+    return zar_reader_fail(r, "format", EINVAL);
+  }
+  if (zar_schema_check_text(&r->schema, &r->error) != NANOARROW_OK) {
+    return zar_reader_fail(r, "format", EINVAL);
   }
   if (zar_check_shared_dictionaries(r) != NANOARROW_OK) return EINVAL;
   int code = ArrowIpcDecoderSetSchemaWithDictionaries(&r->decoder, &r->schema,
@@ -501,7 +527,7 @@ static int zar_open_stream(struct zar_reader *r) {
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   r->encodings_ready = 1;
   r->pos = r->next_pos;
-  return zar_reader_set_schema(r);
+  return zar_reader_set_schema(r, header);
 }
 
 static int zar_open_file(struct zar_reader *r) {
@@ -567,7 +593,7 @@ static int zar_open_file(struct zar_reader *r) {
                                                      &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   r->encodings_ready = 1;
-  code = zar_reader_set_schema(r);
+  code = zar_reader_set_schema(r, header);
   if (code != NANOARROW_OK) return code;
 
   /* Every dictionary in the footer, before the first batch. */

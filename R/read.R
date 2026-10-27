@@ -211,7 +211,7 @@ zar_read_connection <- function(con, limits, call) {
 }
 
 zar_column_index <- function(stream, columns, call) {
-  spec <- .Call(zar_c_schema_to_spec, arrow_schema(stream))
+  spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(stream)))
   names <- vapply(
     spec$children,
     function(f) if (is.na(f$name)) "" else f$name,

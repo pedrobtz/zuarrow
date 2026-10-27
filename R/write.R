@@ -134,7 +134,7 @@ arrow_write <- function(
 # as dictionaries or strings, an array as one batch, a stream read through.
 zar_write_source <- function(data, batch, dictionary, metadata, call) {
   if (is.data.frame(data)) {
-    spec <- .Call(zar_c_schema_to_spec, arrow_schema(data))
+    spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(data)))
     if (!dictionary) {
       spec <- zar_without_dictionaries(spec)
     }

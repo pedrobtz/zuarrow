@@ -1950,6 +1950,9 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     }
   }
 
+  if (zar_schema_check_text(schema, &e.error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &e.error);
+  }
   struct ArrowSchemaView top;
   if (ArrowSchemaViewInit(&top, schema, &e.error) != NANOARROW_OK) {
     return zar_failure_from_error("format", &e.error);

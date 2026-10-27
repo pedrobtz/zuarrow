@@ -217,3 +217,18 @@ test_that("inputs the fuzz target found are refused cleanly", {
     )
   }
 })
+
+test_that("a field name or metadata key R cannot hold is a format error", {
+  df <- data.frame(xQx = 1L)
+  for (format in c("file", "stream")) {
+    bytes <- arrow_write(df, NULL, format = format, metadata = c(kQk = "v"))
+    nul_key <- patch_bytes(bytes, "kQk", as.raw(c(0x6b, 0x00, 0x6b)))
+    expect_error(arrow_read(nul_key), class = "zuarrow_format_error")
+    bad_key <- patch_bytes(bytes, "kQk", as.raw(c(0x6b, 0xff, 0x6b)))
+    expect_error(arrow_read(bad_key), class = "zuarrow_format_error")
+    nul_name <- patch_bytes(bytes, "xQx", as.raw(c(0x78, 0x00, 0x78)))
+    expect_error(arrow_read(nul_name), class = "zuarrow_format_error")
+    bad_name <- patch_bytes(bytes, "xQx", as.raw(c(0x78, 0xff, 0x78)))
+    expect_error(arrow_read(bad_name), class = "zuarrow_format_error")
+  }
+})

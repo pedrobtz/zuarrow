@@ -465,6 +465,9 @@ SEXP zar_c_schema_from_spec(SEXP spec) {
   return out;
 }
 
+/* Metadata as a named list of raw values. Its keys must have passed
+   zar_metadata_check_keys(): a key with a NUL cannot become an R string,
+   so each entry point that reaches here refuses one first. */
 static SEXP zar_metadata_to_list(const char *metadata) {
   struct ArrowMetadataReader reader;
   if (metadata == NULL ||
@@ -521,6 +524,9 @@ SEXP zar_c_schema_to_spec(SEXP x) {
   struct ArrowError error;
   struct ArrowSchema *schema = zar_schema_from_xptr(x, &error);
   if (schema == NULL) return zar_failure_from_error("handle", &error);
+  if (zar_schema_check_text(schema, &error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &error);
+  }
   return zar_schema_spec(schema);
 }
 
@@ -530,6 +536,9 @@ SEXP zar_c_schema_metadata(SEXP x) {
   struct ArrowError error;
   struct ArrowSchema *schema = zar_schema_from_xptr(x, &error);
   if (schema == NULL) return zar_failure_from_error("handle", &error);
+  if (zar_metadata_check_keys(schema->metadata, &error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &error);
+  }
   return zar_metadata_to_list(schema->metadata);
 }
 

@@ -60,6 +60,14 @@ SEXP zar_schema_copy_of(SEXP x);
 /* The offset of the first byte that is not valid UTF-8, or -1. */
 int64_t zar_utf8_invalid_at(const uint8_t *s, int64_t n);
 
+/* Whether every metadata key could become an R string: no NUL, valid
+   UTF-8. Values are bytes and are not checked. */
+int zar_metadata_check_keys(const char *metadata, struct ArrowError *error);
+
+/* Checks every field name is valid UTF-8 and every metadata key passes
+   zar_metadata_check_keys(), in a schema and its children. */
+int zar_schema_check_text(const struct ArrowSchema *schema, struct ArrowError *error);
+
 /* Checks every binary-view and string-view struct in a view and its
    children names a range inside its buffers, which nanoarrow does not. */
 int zar_view_check_layout(const struct ArrowArrayView *view, const char *path,

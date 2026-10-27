@@ -138,3 +138,8 @@
 * `arrow_write()` computes a null count the producer left unknown (`-1`)
   before it writes the batch. Before, the file it wrote could not be read
   back (#34).
+* `arrow_read()` refuses a field name or metadata key that holds a NUL or
+  is not valid UTF-8 with a `zuarrow_format_error`, and so do
+  `arrow_metadata()` and `arrow_to_r()` for such a schema. Before, a NUL
+  raised an unclassed error, a NUL in a name cut it short, and invalid
+  bytes became a string marked UTF-8 (#38).
