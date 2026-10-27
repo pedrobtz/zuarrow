@@ -54,7 +54,9 @@ arrow_limits <- function(
 #'
 #' Dictionary batches, and the deltas a stream may send between record
 #' batches, are applied as the format says; a file that replaces a
-#' dictionary is an error, as the format forbids it.
+#' dictionary is an error, as the format forbids it. A delta that extends a
+#' dictionary already holding values is not supported yet and is a
+#' `zuarrow_format_error`.
 #'
 #' A raw vector is read where it is. With `lazy = TRUE` the handle holds a
 #' copy instead, because a handle can be passed to another consumer that
