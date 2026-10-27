@@ -125,6 +125,24 @@ test_that("nested and list columns are written", {
   )
 })
 
+test_that("an unknown null count is computed before it is written", {
+  # The C Data Interface allows null_count = -1; a FieldNode does not.
+  batch <- test_array(
+    test_schema(zspec("+s", children = list(zspec("i", "x")))),
+    3,
+    list(NULL),
+    children = list(test_array_spec(
+      3,
+      list(as.raw(0x05), le_int(c(1, 2, 3), 4L)),
+      null_count = -1
+    ))
+  )
+  for (format in c("file", "stream")) {
+    out <- arrow_read(arrow_write(batch, NULL, format = format))
+    expect_identical(out$x, c(1L, NA, 3L), info = format)
+  }
+})
+
 test_that("an incompressible buffer is written as it is", {
   withr::local_seed(1)
   df <- data.frame(x = stats::runif(1000))

@@ -135,3 +135,6 @@
   null rows still hold their width of child values. Before, it was a
   `zuarrow_type_error`, so such a column read from Arrow could not be
   written back (found by the #48 oracle).
+* `arrow_write()` computes a null count the producer left unknown (`-1`)
+  before it writes the batch. Before, the file it wrote could not be read
+  back (#34).

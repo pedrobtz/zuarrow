@@ -139,6 +139,15 @@ static int zar_emit(struct zar_writer *w, struct ArrowBuffer *blocks,
   return NANOARROW_OK;
 }
 
+/* The C Data Interface allows an unknown null count (-1); a FieldNode
+   needs the count. Computes it for every node of a view, dictionaries
+   included, before the view is encoded. */
+static void zar_fill_null_counts(struct ArrowArrayView *view) {
+  if (view->null_count < 0) view->null_count = ArrowArrayViewComputeNullCount(view);
+  for (int64_t i = 0; i < view->n_children; i++) zar_fill_null_counts(view->children[i]);
+  if (view->dictionary != NULL) zar_fill_null_counts(view->dictionary);
+}
+
 /* ---- dictionaries ----------------------------------------------------- */
 
 /* Collects the dictionary views of a batch in the encoder's id order:
@@ -273,6 +282,7 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       kind = "format";
       break;
     }
+    zar_fill_null_counts(view);
 
     /* Dictionaries: written before the first batch, and again only when a
        stream's batch brings a different one. */
