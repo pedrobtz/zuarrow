@@ -292,3 +292,23 @@ test_that("nesting deeper than max_depth is a limit error", {
   )
   expect_error(arrow_to_r(array), class = "zuarrow_limit_error")
 })
+
+test_that("a fixed_size_list with a null row round-trips", {
+  fsl <- test_schema(zspec("+w:2", children = list(zspec("i", "item"))))
+  x <- list(1:2, NULL, 3:4)
+  array <- arrow_array(x, schema = fsl)
+  expect_true(arrow_validate(array, "full"))
+  expect_identical(arrow_to_r(array), x)
+  all_null <- arrow_array(list(NULL, NULL), schema = fsl)
+  expect_identical(arrow_to_r(all_null), list(NULL, NULL))
+  df <- data.frame(i = 1:2)
+  df$l <- list(NULL, c("a", "b"))
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(
+      zspec("i", "i"),
+      zspec("+w:2", "l", list(zspec("u", "item")))
+    )
+  ))
+  expect_identical(arrow_to_r(arrow_array(df, schema = schema)), df)
+})

@@ -131,3 +131,7 @@
 * An inexact registration may not replace the exact conversion of
   second and millisecond timestamps, `fixed_size_list` or the list views
   (#78).
+* A list column with `NULL` elements writes to a `fixed_size_list`, whose
+  null rows still hold their width of child values. Before, it was a
+  `zuarrow_type_error`, so such a column read from Arrow could not be
+  written back (found by the #48 oracle).

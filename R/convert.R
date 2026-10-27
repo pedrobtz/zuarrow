@@ -146,6 +146,11 @@ zar_prepare_spec <- function(x, spec) {
     ))
   }
   if (is_list_type && is.list(x) && !is.data.frame(x)) {
+    nulls <- zar_null_elements(x)
+    if (startsWith(spec$format, "+w:") && any(nulls)) {
+      width <- as.integer(substring(spec$format, 4))
+      x <- zar_fill_null_lists(x, nulls, width, spec$children[[1L]])
+    }
     values <- zar_flatten(x)
     child <- spec$children[[1L]]
     if (is.null(values)) {
@@ -154,12 +159,30 @@ zar_prepare_spec <- function(x, spec) {
     return(structure(
       list(
         offsets = c(0, cumsum(zar_element_lengths(x))),
-        null = zar_null_elements(x),
+        null = nulls,
         values = zar_prepare_spec(values, child)
       ),
       class = "zar_list_prep"
     ))
   }
+  x
+}
+
+# A fixed_size_list keeps `width` child slots under a null row: the null
+# elements become `width` NAs of the other elements' type.
+zar_fill_null_lists <- function(x, nulls, width, child) {
+  template <- if (all(nulls)) {
+    zar_empty_like(child) %||% NA
+  } else {
+    x[[which(!nulls)[1L]]]
+  }
+  na_rows <- rep(NA_integer_, width)
+  filler <- if (is.data.frame(template)) {
+    template[na_rows, , drop = FALSE]
+  } else {
+    template[na_rows]
+  }
+  x[nulls] <- list(filler)
   x
 }
 
