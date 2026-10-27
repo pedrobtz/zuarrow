@@ -650,6 +650,27 @@ static int zar_build_list(struct ArrowArray *array,
                          (R_xlen_t)first, total, b);
 }
 
+/* Checks a factor's levels are strings and rows [start, start + n) of its
+   codes are NA or name a level. */
+static int zar_check_factor(SEXP x, SEXP levels, R_xlen_t start, int64_t n,
+                            struct zar_build *b) {
+  if (TYPEOF(levels) != STRSXP) {
+    ArrowErrorSet(&b->error, "a factor without character levels");
+    return zar_build_fail(b, "type", NA_REAL);
+  }
+  R_xlen_t n_levels = Rf_xlength(levels);
+  const int *codes = INTEGER(x) + start;
+  for (int64_t i = 0; i < n; i++) {
+    int code = codes[i];
+    if (code != NA_INTEGER && (code < 1 || code > n_levels)) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " holds code %d, outside the factor's %ld levels",
+                    (int64_t)start + i + 1, code, (long)n_levels);
+      return zar_build_fail(b, "type", (double)start + i + 1);
+    }
+  }
+  return NANOARROW_OK;
+}
+
 /* A factor as dictionary<index, utf8>: the codes as indices, the levels as
    the dictionary (section 6.5). */
 static int zar_build_dictionary(struct ArrowArray *array,
@@ -662,6 +683,8 @@ static int zar_build_dictionary(struct ArrowArray *array,
   if (ArrowSchemaViewInit(&index_view, &index_schema, &b->error) != NANOARROW_OK) {
     return zar_build_fail(b, "format", NA_REAL);
   }
+  SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
+  if (zar_check_factor(x, levels, start, n, b) != NANOARROW_OK) return EINVAL;
   SEXP codes = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
   const int *src = INTEGER(x) + start;
   int *dst = INTEGER(codes);
@@ -669,11 +692,6 @@ static int zar_build_dictionary(struct ArrowArray *array,
   int status = zar_build_numeric(array, index_view.type, codes, 0, n, 1.0, 0, b);
   UNPROTECT(1);
   if (status != NANOARROW_OK) return status;
-  SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
-  if (TYPEOF(levels) != STRSXP) {
-    ArrowErrorSet(&b->error, "a factor without character levels");
-    return zar_build_fail(b, "type", NA_REAL);
-  }
   return zar_build_array(array->dictionary, schema->dictionary, levels, 0,
                          (int64_t)Rf_xlength(levels), b);
 }
@@ -813,6 +831,9 @@ static int zar_build_array(struct ArrowArray *array,
     if (t == NANOARROW_TYPE_STRING || t == NANOARROW_TYPE_LARGE_STRING) {
       /* dictionary = FALSE: the factor's labels as strings. */
       SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
+      if (zar_check_factor(x, levels, start, n, b) != NANOARROW_OK) {
+        return EINVAL;
+      }
       SEXP labels = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)n));
       const int *codes = INTEGER(x) + start;
       for (int64_t i = 0; i < n; i++) {

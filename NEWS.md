@@ -96,3 +96,6 @@
   is a `zuarrow_type_error` naming the row. Before, it built an invalid
   array or raised an unclassed error. Column names are checked the same
   way (#35).
+* Writing a factor whose code names no level, or whose levels are not
+  strings, is a `zuarrow_type_error` naming the row, with or without a
+  dictionary (#36).

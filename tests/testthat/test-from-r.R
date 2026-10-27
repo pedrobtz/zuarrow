@@ -120,6 +120,25 @@ test_that("invalid UTF-8 and bytes-encoded strings are type errors", {
   )
 })
 
+test_that("a factor code outside its levels is a type error", {
+  for (code in c(5L, 0L, -1L)) {
+    f <- structure(c(1L, code), levels = "a", class = "factor")
+    err <- expect_error(arrow_array(f), class = "zuarrow_type_error")
+    expect_match(conditionMessage(err), "row 2")
+    expect_error(arrow_array(f, schema = "u"), class = "zuarrow_type_error")
+    expect_error(
+      arrow_write(data.frame(f = I(f)), NULL, dictionary = FALSE),
+      class = "zuarrow_type_error"
+    )
+  }
+  numeric_levels <- structure(1L, levels = 1L, class = "factor")
+  expect_error(arrow_array(numeric_levels), class = "zuarrow_type_error")
+  expect_error(
+    arrow_array(numeric_levels, schema = "u"),
+    class = "zuarrow_type_error"
+  )
+})
+
 test_that("a column name that is not UTF-8 is a type error", {
   for (enc in c("bytes", "UTF-8")) {
     name <- "caf\xe9"
