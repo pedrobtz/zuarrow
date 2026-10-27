@@ -697,6 +697,13 @@ const char *zar_reader_kind(const struct ArrowArrayStream *stream) {
   return r->kind == NULL ? "format" : r->kind;
 }
 
+/* The kind the reader recorded for its last failure, NULL included, for
+   the fuzz target to check that every failure names one. */
+const char *zar_reader_recorded_kind(const struct ArrowArrayStream *stream) {
+  if (stream->get_next != &zar_stream_get_next) return NULL;
+  return ((const struct zar_reader *)stream->private_data)->kind;
+}
+
 /* ---- opening ---------------------------------------------------------- */
 
 /* Opens a reader over `data` into `out`. With `owns` set the reader takes

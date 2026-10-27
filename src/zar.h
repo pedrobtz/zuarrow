@@ -92,6 +92,10 @@ int zar_parse_time(const char *s, int digits, int64_t *out);
    stream is not one arrow_read() made (src/zar_ipc_read.c). */
 const char *zar_reader_kind(const struct ArrowArrayStream *stream);
 
+/* The kind a reader stream recorded for its last failure, NULL when none
+   was recorded. R-free, for the fuzz target. */
+const char *zar_reader_recorded_kind(const struct ArrowArrayStream *stream);
+
 /* Opens a reader over a copy of `size` bytes into `out`, with the limits
    c(max_message, max_depth, max_batch_rows, max_bytes). On failure returns
    non-zero with `error` and `*kind` set. R-free, for the fuzz target. */

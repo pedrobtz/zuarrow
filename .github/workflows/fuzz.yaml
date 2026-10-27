@@ -15,6 +15,13 @@ concurrency:
 # The IPC reader built without R (ZAR_STANDALONE, design section 9): framing,
 # verification, limits and validation over hostile bytes. Without R there
 # are no codecs, so compressed bodies stop at a codec error.
+#
+# Seeds: apache/arrow-testing at the commit tests/testthat/fixtures-files.txt
+# pins, checked out by github-packages. seed-corpus takes one directory, so
+# the stream directory (the golden files and the stream crash corpus) is the
+# seed corpus, and the file crash corpus and tests/testthat/data are extra
+# corpus directories in libfuzzer-args, which libFuzzer reads but does not
+# write to. Keep the commit in step with fixtures-files.txt.
 jobs:
   fuzz:
     uses: pedrobtz/r-actions/.github/workflows/fuzz.yml@v1
@@ -31,5 +38,11 @@ jobs:
         -g -O1 -fno-omit-frame-pointer -DZAR_STANDALONE
         -DNANOARROW_NAMESPACE=zuarrow -DNANOARROW_DLL= -DFLATCC_NO_ASSERT
         -Isrc -Isrc/vendor/nanoarrow
-      seed-corpus: tests/testthat/data
+      github-packages: apache/arrow-testing@9ff285c88565f0f6abc855918c6a342e70e4909c
+      seed-corpus: .github-packages/arrow-testing/data/arrow-ipc-stream
+      libfuzzer-args: >-
+        .github-packages/arrow-testing/data/arrow-ipc-file
+        tests/testthat/data
       max-total-time: ${{ github.event_name == 'schedule' && 3600 || 120 }}
+      # The job must outlast max-total-time by ten minutes.
+      timeout-minutes: ${{ github.event_name == 'schedule' && 75 || 30 }}
