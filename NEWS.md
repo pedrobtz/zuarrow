@@ -101,3 +101,5 @@
   dictionary (#36).
 * `arrow_write()` leaves an array it writes usable. Before, it released
   the caller's array, so it could not be read or written again (#40).
+* `arrow_array()` and `arrow_stream()` no longer set an attribute on the
+  schema handle they are given (#53).

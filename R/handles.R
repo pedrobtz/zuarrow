@@ -19,7 +19,8 @@ zar_is_handle <- function(x) {
 #' `int32` or `"tsu:UTC"` for a microsecond timestamp in UTC. Any other R
 #' object gives the schema it would be written with: a data frame gives a
 #' `struct` with one field per column. On a handle, `arrow_schema()` never
-#' raises on the content: it copies the schema, or asks a stream for it.
+#' raises on the content: it returns a zuarrow schema handle as it is,
+#' copies any other schema, or asks a stream for it.
 #'
 #' `format()` gives the type notation Arrow's own tools print, such as
 #' `int64` or `struct<x: int32>`, and `print()` shows it.

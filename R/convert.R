@@ -54,6 +54,9 @@ arrow_array <- function(x, schema = NULL) {
   if (is.null(schema) && !is.null(handler)) {
     return(zar_from_handler(handler, x))
   }
+  # A given schema is kept as it is; an inferred one may switch to
+  # large_utf8.
+  limit <- if (is.null(schema)) zar_utf8_limit() else NA_real_
   schema <- zar_schema_for(x, schema)
   prepared <- zar_prepare(x, schema)
   zar_check(.Call(
@@ -62,7 +65,7 @@ arrow_array <- function(x, schema = NULL) {
     schema,
     0,
     zar_nrow(x),
-    if (is.null(attr(schema, "zar_given"))) zar_utf8_limit() else NA_real_
+    limit
   ))
 }
 
@@ -244,9 +247,7 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
       call = call
     ))
   }
-  out <- arrow_schema(schema)
-  attr(out, "zar_given") <- TRUE
-  out
+  arrow_schema(schema)
 }
 
 #' Convert Arrow data to R

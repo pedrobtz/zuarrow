@@ -49,6 +49,21 @@ test_that("a schema writes the values as its type, checked", {
   expect_error(arrow_array(TRUE, schema = "i"), class = "zuarrow_type_error")
 })
 
+test_that("a given schema handle is left as it was", {
+  withr::local_options(zuarrow.utf8_limit = 5)
+  s <- arrow_schema("u")
+  before <- attributes(s)
+  arrow_array(1L, schema = arrow_schema("i"))
+  arrow_array(c("abc", "def"), schema = s)
+  arrow_stream(data.frame(x = 1L), schema = arrow_schema(data.frame(x = 1L)))
+  expect_identical(attributes(s), before)
+  # A schema made without one still switches to large_utf8.
+  expect_identical(
+    format(arrow_schema(arrow_array(c("abc", "def")))),
+    "large_string"
+  )
+})
+
 test_that("the lossy error from export names the row", {
   err <- tryCatch(
     arrow_array(c(1L, 200L, 300L), schema = "c"),
