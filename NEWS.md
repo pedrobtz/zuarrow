@@ -120,3 +120,6 @@
   `lossy = "warn"` or `"allow"`, as a plain string is, and the lossy error
   names the dictionary column's format. Before, it raised an unclassed
   error (#37).
+* With `copy = FALSE`, strings inside list elements are copied, as the
+  design says, rather than each element deferring and keeping every batch
+  alive (#55).

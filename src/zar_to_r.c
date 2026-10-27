@@ -80,15 +80,18 @@ struct zar_plan {
 
 /* ---- scratch: the views, owned by an external pointer ------------------ */
 
-/* The array views live in malloc()ed memory owned by an external pointer
-   whose finalizer resets them, so an R allocation that longjmps during
-   the fill cannot leak them. Everything else is R_alloc()ed. */
+/* The array views and the text buffer live in malloc()ed memory owned by
+   an external pointer whose finalizer resets them, so an R allocation
+   that longjmps during the fill cannot leak them. Everything else is
+   R_alloc()ed. */
 struct zar_scratch {
   int64_t n;
   struct ArrowArrayView *views;
+  struct ArrowBuffer text; /* the canonical text of one value at a time */
 };
 
 static void zar_scratch_free(struct zar_scratch *s) {
+  ArrowBufferReset(&s->text);
   if (s->views != NULL) {
     for (int64_t i = 0; i < s->n; i++) ArrowArrayViewReset(&s->views[i]);
     free(s->views);
@@ -133,6 +136,7 @@ struct zar_err {
   int64_t row; /* 0-based top-level row, or -1 */
   const char *format;
   int copy;    /* FALSE: string columns may be deferred (zar_altrep.c) */
+  int in_list; /* building a list element, which is never deferred */
   SEXP arrays; /* the batches' array handles, which deferred strings keep */
 };
 
@@ -1616,7 +1620,9 @@ static SEXP zar_build_list(struct zar_plan *p, struct zar_slice *slices,
         return R_NilValue;
       }
       struct zar_slice cs = {child, begin, end - begin, NULL, NULL};
+      e->in_list++;
       SEXP value = zar_build(item, &cs, 1, end - begin, text, e);
+      e->in_list--;
       if (e->kind != NULL) {
         UNPROTECT(1);
         return R_NilValue;
@@ -1764,11 +1770,13 @@ static SEXP zar_build_factor(struct zar_plan *p, struct zar_slice *slices,
 
 /* Whether a string column can be deferred: copy = FALSE, plain string or
    large_string storage read directly (not through a dictionary or a
-   run-end encoding), and no enclosing struct with nulls. Anything else is
+   run-end encoding), not an element of a list column (D8 defers columns,
+   not list items), and no enclosing struct with nulls. Anything else is
    copied as before. */
 static int zar_deferrable(const struct zar_plan *p, const struct zar_slice *slices,
                           int64_t n_slices, const struct zar_err *e) {
-  if (e->copy || p->target != ZAR_T_CHR || e->arrays == NULL || e->arrays == R_NilValue) {
+  if (e->copy || e->in_list > 0 || p->target != ZAR_T_CHR || e->arrays == NULL ||
+      e->arrays == R_NilValue) {
     return 0;
   }
   for (int64_t b = 0; b < n_slices; b++) {
@@ -1946,7 +1954,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   }
   int64_t n_cols = frame ? schema->n_children : 1;
 
-  /* The scratch owns the views from here on. */
+  /* The scratch owns the views and the text buffer from here on. */
   SEXP scratch_xptr = PROTECT(R_MakeExternalPtr(NULL, R_NilValue, R_NilValue));
   R_RegisterCFinalizer(scratch_xptr, &zar_scratch_finalize);
   struct zar_scratch *sc =
@@ -1955,6 +1963,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     UNPROTECT(1);
     return zar_failure(NULL, "cannot allocate conversion scratch");
   }
+  ArrowBufferInit(&sc->text);
   R_SetExternalPtrAddr(scratch_xptr, sc);
   sc->views = (struct ArrowArrayView *)calloc(
       n_batches > 0 ? (size_t)n_batches : 1, sizeof(struct ArrowArrayView));
@@ -2028,15 +2037,12 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
 
   SEXP columns = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n_cols));
   SEXP names = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)n_cols));
-  struct ArrowBuffer text;
-  ArrowBufferInit(&text);
   for (int64_t c = 0; c < n_cols; c++) {
     struct zar_plan *p = &plans[c];
     SET_STRING_ELT(names, (R_xlen_t)c,
                    Rf_mkCharCE(p->schema->name == NULL ? "" : p->schema->name, CE_UTF8));
-    SEXP col = zar_build(p, col_slices[c], n_batches, rows, &text, &e);
+    SEXP col = zar_build(p, col_slices[c], n_batches, rows, &sc->text, &e);
     if (e.kind != NULL) {
-      ArrowBufferReset(&text);
       UNPROTECT(3);
       return zar_column_failure(e.kind, e.error.message, (int)c + 1, NA_REAL,
                                 e.format == NULL ? p->schema->format : e.format,
@@ -2044,7 +2050,6 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     }
     SET_VECTOR_ELT(columns, (R_xlen_t)c, col);
   }
-  ArrowBufferReset(&text);
 
   int n_warned = 0;
   for (int64_t c = 0; c < n_cols; c++) n_warned += warned[c];

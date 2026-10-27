@@ -185,3 +185,14 @@ test_that("an empty string array with no offsets converts both ways", {
     expect_identical(arrow_to_r(empty, copy = FALSE), character())
   }
 })
+
+test_that("strings inside list elements are not deferred", {
+  x <- list(c("a", "b"), NULL, c("c", NA))
+  df <- data.frame(i = 1:3)
+  df$l <- x
+  out <- arrow_to_r(arrow_stream(df, batch = 1L), copy = FALSE)
+  for (k in c(1L, 3L)) {
+    expect_null(deferred_info(out$l[[k]]))
+  }
+  expect_identical(out$l, x)
+})
