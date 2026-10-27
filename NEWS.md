@@ -153,3 +153,5 @@
 * `arrow_read()` refuses a file whose footer's copy of the schema differs
   from its schema message with a `zuarrow_format_error`. Before, it read
   the message's copy, where libarrow reads the footer's (#33).
+* `arrow_read(lazy = TRUE)` with `to`, `lossy` or `copy` set is a
+  `zuarrow_type_error`. Before, it ignored them silently (#78).

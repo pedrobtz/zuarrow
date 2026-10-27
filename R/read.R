@@ -48,9 +48,8 @@ arrow_limits <- function(
 #' [arrow_limits()] binds, so malformed or hostile bytes are a
 #' `zuarrow_format_error` or a `zuarrow_limit_error`, never a crash. A file
 #' whose footer repeats the schema differently is a `zuarrow_format_error`
-#' too. Each
-#' batch then passes the full validation of [arrow_validate()] before it is
-#' converted. Bodies compressed with LZ4 or zstd are decompressed through
+#' too. Each batch then passes the full validation of [arrow_validate()]
+#' before it is converted. Bodies compressed with LZ4 or zstd are decompressed through
 #' 'zukomp'. Big-endian input is a `zuarrow_format_error`.
 #'
 #' Dictionary batches, and the deltas a stream may send between record
@@ -66,6 +65,8 @@ arrow_limits <- function(
 #'   top-level columns to read. Only those are decoded.
 #' @param lazy `FALSE` to read every batch into one data frame; `TRUE` to
 #'   return a stream handle whose batches are decoded by [arrow_next()].
+#'   With `lazy = TRUE`, `to`, `lossy` and `copy` belong to that later
+#'   conversion, and setting one here is a `zuarrow_type_error`.
 #' @inheritParams arrow_to_r
 #' @param limits An [arrow_limits()] object.
 #' @returns A data frame, or with `lazy = TRUE` a stream handle.
@@ -96,6 +97,16 @@ arrow_read <- function(
     zar_abort("type", "`lazy` must be `TRUE` or `FALSE`.", call = call)
   }
   zar_check_flag(copy, "copy", call)
+  if (lazy && (!is.null(to) || lossy != "error" || !copy)) {
+    zar_abort(
+      "type",
+      paste(
+        "`to`, `lossy` and `copy` apply when converting;",
+        "with `lazy = TRUE` pass them to arrow_next() or arrow_to_r()."
+      ),
+      call = call
+    )
+  }
   source <- zar_read_source(x, limits, call)
   stream <- zar_check(
     .Call(

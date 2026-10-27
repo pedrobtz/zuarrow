@@ -185,6 +185,26 @@ test_that("flipped bytes never crash the reader", {
   }
 })
 
+test_that("to, lossy and copy with lazy = TRUE are type errors", {
+  path <- test_data("basic.arrow")
+  expect_error(
+    arrow_read(path, lazy = TRUE, lossy = "allow"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_read(path, lazy = TRUE, to = list(i = double())),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_read(path, lazy = TRUE, copy = FALSE),
+    class = "zuarrow_type_error"
+  )
+  expect_s3_class(
+    arrow_read(path, lazy = TRUE, lossy = "error", copy = TRUE),
+    "zuarrow_array_stream"
+  )
+})
+
 test_that("a missing path is an io error", {
   expect_error(arrow_read(tempfile()), class = "zuarrow_io_error")
   expect_error(arrow_read(tempdir()), class = "zuarrow_io_error")
