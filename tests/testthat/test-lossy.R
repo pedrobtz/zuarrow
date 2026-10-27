@@ -209,6 +209,29 @@ test_that("to names the R type a column must become", {
   expect_error(arrow_to_r(big, to = integer()), class = "zuarrow_lossy_error")
 })
 
+test_that("to = integer() checks uint32 and uint64 at the range limits", {
+  for (format in c("I", "L")) {
+    width <- if (format == "I") 4L else 8L
+    fits <- test_fixed(format, c(0, 2^31 - 1), width)
+    expect_identical(
+      arrow_to_r(fits, to = integer()),
+      c(0L, .Machine$integer.max)
+    )
+    past <- test_fixed(format, c(0, 2^31), width)
+    err <- expect_error(
+      arrow_to_r(past, to = integer()),
+      class = "zuarrow_lossy_error"
+    )
+    expect_identical(err$row, 2)
+  }
+  top <- test_array(
+    test_schema(zspec("L")),
+    1,
+    list(NULL, le_hex("ffffffffffffffff"))
+  )
+  expect_error(arrow_to_r(top, to = integer()), class = "zuarrow_lossy_error")
+})
+
 test_that("a target that cannot take the column is a type error", {
   expect_error(
     arrow_to_r(arrow_array(TRUE), to = character()),

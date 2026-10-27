@@ -64,6 +64,47 @@ test_that("a given schema handle is left as it was", {
   )
 })
 
+test_that("export checks every integer width at its limits", {
+  limits <- list(
+    c = c(-2^7, 2^7 - 1),
+    s = c(-2^15, 2^15 - 1),
+    i = c(-2^31, 2^31 - 1),
+    C = c(0, 2^8 - 1),
+    S = c(0, 2^16 - 1),
+    I = c(0, 2^32 - 1)
+  )
+  for (format in names(limits)) {
+    range <- limits[[format]]
+    array <- arrow_array(range, schema = format)
+    expect_identical(
+      arrow_to_r(array, to = double()),
+      range,
+      info = format
+    )
+    if (range[[2]] < 2^31) {
+      ints <- arrow_array(as.integer(range[range > -2^31]), schema = format)
+      expect_true(arrow_validate(ints, "full"), info = format)
+    }
+    for (past in c(range[[1]] - 1, range[[2]] + 1)) {
+      expect_error(
+        arrow_array(c(0, past), schema = format),
+        class = "zuarrow_lossy_error",
+        info = format
+      )
+    }
+  }
+  expect_identical(arrow_to_r(arrow_array(2^53, schema = "L")), 2^53)
+  expect_error(arrow_array(2^64, schema = "L"), class = "zuarrow_lossy_error")
+  expect_error(arrow_array(-1, schema = "L"), class = "zuarrow_lossy_error")
+  expect_error(arrow_array(-1L, schema = "S"), class = "zuarrow_lossy_error")
+  expect_error(arrow_array(65536L, schema = "S"), class = "zuarrow_lossy_error")
+  expect_error(
+    arrow_array(-32769L, schema = "s"),
+    class = "zuarrow_lossy_error"
+  )
+  expect_error(arrow_array(32768L, schema = "s"), class = "zuarrow_lossy_error")
+})
+
 test_that("the lossy error from export names the row", {
   err <- tryCatch(
     arrow_array(c(1L, 200L, 300L), schema = "c"),
