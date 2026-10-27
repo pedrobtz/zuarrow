@@ -137,6 +137,14 @@ test_that("limits bind before the bytes are used", {
   )
 })
 
+test_that("a limit error names the limit", {
+  bytes <- arrow_write(data.frame(x = 1:3))
+  expect_snapshot(
+    arrow_read(bytes, limits = arrow_limits(max_bytes = 100)),
+    error = TRUE
+  )
+})
+
 test_that("a compressed buffer claiming too much is a limit error", {
   # Each compressed buffer's prefix is checked against max_message before
   # anything is allocated for it; the header fits, the claim does not.

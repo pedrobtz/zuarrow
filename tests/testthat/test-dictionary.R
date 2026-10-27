@@ -125,7 +125,7 @@ test_that("a level with an embedded NUL is cut there under warn and allow", {
   )
   err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
   expect_identical(err$arrow_type, "i")
-  expect_no_match(conditionMessage(err), "lossy = \"character\"", fixed = TRUE)
+  expect_snapshot(arrow_to_r(array), error = TRUE)
   expect_identical(
     arrow_to_r(array, lossy = "allow"),
     factor(c("a", "a", "c"), levels = c("a", "c"))

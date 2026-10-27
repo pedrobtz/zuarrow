@@ -75,6 +75,8 @@ test_that("invalid UTF-8 in a child or a dictionary is found", {
     arrow_validate(bad_child, "full"),
     class = "zuarrow_format_error"
   )
+  # The message names the path to the failing child.
+  expect_snapshot(arrow_validate(bad_child, "full"), error = TRUE)
 })
 
 test_that("a dictionary index out of range fails at the full level", {

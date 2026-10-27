@@ -12,6 +12,23 @@ test_that("an int64 past 2^53 is a lossy error naming the row and zuint", {
   expect_identical(err$row, 3)
   expect_identical(err$target, "zuint")
   expect_identical(err$arrow_type, "l")
+  # An unnamed array has no column name; the message calls it column 1.
+  expect_identical(err$column, "")
+})
+
+test_that("the lossy error names the column, type, row and target", {
+  df <- data.frame(x = c(1, 2^53 + 2))
+  schema <- test_schema(zspec("+s", children = list(zspec("l", "x"))))
+  array <- arrow_array(df, schema = schema)
+  err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
+  expect_identical(err$column, "x")
+  expect_snapshot(arrow_to_r(array), error = TRUE)
+  # A string with a NUL has no family package; its message is snapshot in
+  # "an embedded NUL is lossy with no text form".
+  nul <- test_utf8(c(0L, 3L), as.raw(c(0x61, 0x00, 0x62)))
+  err <- expect_error(arrow_to_r(nul), class = "zuarrow_lossy_error")
+  expect_null(err$target)
+  expect_identical(err$column, "")
 })
 
 test_that("each row of the lossy table errors by default and converts under allow", {
@@ -223,13 +240,11 @@ test_that("an embedded NUL is lossy with no text form", {
     class = "zuarrow_lossy_error"
   )
   expect_identical(arrow_to_r(nul, lossy = "allow"), "a")
-  # The hint does not offer the text form such a string lacks.
-  err <- expect_error(arrow_to_r(nul), class = "zuarrow_lossy_error")
-  expect_no_match(conditionMessage(err), "lossy = \"character\"", fixed = TRUE)
-  expect_match(conditionMessage(err), "lossy = \"allow\"", fixed = TRUE)
+  # The hint does not offer the text form such a string lacks, as it does
+  # for a number.
+  expect_snapshot(arrow_to_r(nul), error = TRUE)
   big <- arrow_array(2^53 + 2, schema = "l")
-  err <- expect_error(arrow_to_r(big), class = "zuarrow_lossy_error")
-  expect_match(conditionMessage(err), "lossy = \"character\"", fixed = TRUE)
+  expect_snapshot(arrow_to_r(big), error = TRUE)
 })
 
 test_that("the scan finds lossy values in any batch of a stream", {
