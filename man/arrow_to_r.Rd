@@ -3,11 +3,36 @@
 \name{arrow_to_r}
 \alias{arrow_to_r}
 \alias{arrow_next}
+\alias{as.data.frame.zuarrow_array_stream}
+\alias{as.data.frame.zuarrow_array}
+\alias{as.vector.zuarrow_array}
 \title{Convert Arrow data to R}
 \usage{
 arrow_to_r(x, to = NULL, lossy = zar_lossy_policies, copy = TRUE)
 
 arrow_next(stream, to = NULL, lossy = zar_lossy_policies, copy = TRUE)
+
+\method{as.data.frame}{zuarrow_array_stream}(
+  x,
+  row.names = NULL,
+  optional = FALSE,
+  ...,
+  to = NULL,
+  lossy = zar_lossy_policies,
+  copy = TRUE
+)
+
+\method{as.data.frame}{zuarrow_array}(
+  x,
+  row.names = NULL,
+  optional = FALSE,
+  ...,
+  to = NULL,
+  lossy = zar_lossy_policies,
+  copy = TRUE
+)
+
+\method{as.vector}{zuarrow_array}(x, mode = "any")
 }
 \arguments{
 \item{x}{An array or stream handle.}
@@ -30,6 +55,16 @@ types, and strings read through a dictionary, a run-end encoding or a
 \code{struct} with nulls, are copied either way.}
 
 \item{stream}{A stream handle.}
+
+\item{row.names}{Must be \code{NULL}: the rows of a converted data frame have
+no names.}
+
+\item{optional}{Ignored. Column names always come from the schema.}
+
+\item{...}{Unused.}
+
+\item{mode}{Must be \code{"any"}: the array converts to its own R form, as
+\code{arrow_to_r()} gives it, with the default \code{lossy = "error"}.}
 }
 \value{
 An R vector, or a data frame.
@@ -37,6 +72,9 @@ An R vector, or a data frame.
 \code{arrow_next()} returns the next batch as a data frame (or a
 vector, for a stream that is not of \code{struct}), or \code{NULL} once the
 stream has ended.
+
+The \code{as.data.frame()} methods return a data frame. An array or
+stream that is not of \code{struct} is a \code{zuarrow_type_error}.
 }
 \description{
 \code{arrow_to_r()} converts an array to an R vector, and a stream or a

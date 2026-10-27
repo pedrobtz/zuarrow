@@ -42,6 +42,26 @@ test_that("as.data.frame() takes the same lossy default", {
 
 test_that("as.vector() converts an array", {
   expect_identical(as.vector(arrow_array(c(1L, NA))), c(1L, NA))
+  expect_identical(as.vector(arrow_array(1:2), mode = "any"), 1:2)
+})
+
+test_that("arguments the methods cannot honour are type errors", {
+  array <- arrow_array(1:2)
+  expect_error(
+    as.vector(array, mode = "character"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(as.vector(array, mode = "list"), class = "zuarrow_type_error")
+  df <- data.frame(x = 1:2)
+  expect_error(
+    as.data.frame(arrow_stream(df), row.names = c("a", "b")),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    as.data.frame(arrow_array(df), row.names = c("a", "b")),
+    class = "zuarrow_type_error"
+  )
+  expect_identical(as.data.frame(arrow_array(df), optional = TRUE), df)
 })
 
 test_that("a stream that is not of struct reads as one vector", {

@@ -163,3 +163,6 @@
   to a path or a connection, and the message keeps the cause, as
   `arrow_read()` does. Before, a connection raised unclassed errors and a
   path lost the cause (#76).
+* `as.vector()` with a `mode` other than `"any"`, and `as.data.frame()`
+  with `row.names`, are a `zuarrow_type_error`. Before, both were ignored
+  silently. `optional` is documented as ignored (#77).

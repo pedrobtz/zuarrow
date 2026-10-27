@@ -829,6 +829,13 @@ zar_lossy_warn <- function(name, column, spec, frame, k, call) {
 
 `%||%` <- function(x, y) if (is.null(x)) y else x
 
+#' @rdname arrow_to_r
+#' @param row.names Must be `NULL`: the rows of a converted data frame have
+#'   no names.
+#' @param optional Ignored. Column names always come from the schema.
+#' @param ... Unused.
+#' @returns The `as.data.frame()` methods return a data frame. An array or
+#'   stream that is not of `struct` is a `zuarrow_type_error`.
 #' @export
 as.data.frame.zuarrow_array_stream <- function(
   x,
@@ -840,6 +847,7 @@ as.data.frame.zuarrow_array_stream <- function(
   copy = TRUE
 ) {
   call <- sys.call()
+  zar_check_row_names(row.names, call)
   lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
   out <- arrow_to_r(x, to = to, lossy = lossy, copy = copy)
   if (!is.data.frame(out)) {
@@ -852,6 +860,7 @@ as.data.frame.zuarrow_array_stream <- function(
   out
 }
 
+#' @rdname arrow_to_r
 #' @export
 as.data.frame.zuarrow_array <- function(
   x,
@@ -863,6 +872,7 @@ as.data.frame.zuarrow_array <- function(
   copy = TRUE
 ) {
   call <- sys.call()
+  zar_check_row_names(row.names, call)
   lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
   out <- arrow_to_r(x, to = to, lossy = lossy, copy = copy)
   if (!is.data.frame(out)) {
@@ -875,9 +885,26 @@ as.data.frame.zuarrow_array <- function(
   out
 }
 
+#' @rdname arrow_to_r
+#' @param mode Must be `"any"`: the array converts to its own R form, as
+#'   `arrow_to_r()` gives it, with the default `lossy = "error"`.
 #' @export
 as.vector.zuarrow_array <- function(x, mode = "any") {
+  call <- sys.call()
+  if (!identical(mode, "any")) {
+    zar_abort(
+      "type",
+      "`mode` must be \"any\". Use `arrow_to_r()` with `to` for another type.",
+      call = call
+    )
+  }
   arrow_to_r(x)
+}
+
+zar_check_row_names <- function(row.names, call) {
+  if (!is.null(row.names)) {
+    zar_abort("type", "`row.names` must be `NULL`.", call = call)
+  }
 }
 
 #' The built-in type table
