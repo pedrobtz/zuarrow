@@ -1,5 +1,5 @@
 # Every condition inherits from zuarrow_error (design section 8). C never
-# raises one: it returns a zar_failure and zar_call() turns it into the
+# raises one: it returns a zar_failure and zar_check() turns it into the
 # condition here, so C can free what it owns first.
 
 zar_abort <- function(kind, message, call = NULL, ..., .fields = list()) {
