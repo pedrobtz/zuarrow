@@ -144,7 +144,12 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
     schema <- zar_check(.Call(zar_c_schema_from_spec, spec), call = call)
     stream <- arrow_stream(data, batch = batch, schema = schema)
   } else if (zar_is_array(data)) {
-    stream <- .Call(zar_c_stream_from_arrays, arrow_schema(data), list(data))
+    # A borrowed array, so the stream does not consume the caller's.
+    borrowed <- zar_check(.Call(zar_c_array_borrow, data), call = call)
+    stream <- zar_check(
+      .Call(zar_c_stream_from_arrays, arrow_schema(data), list(borrowed)),
+      call = call
+    )
   } else if (zar_is_stream(data)) {
     stream <- data
   } else {

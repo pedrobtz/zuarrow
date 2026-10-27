@@ -643,6 +643,26 @@ static void zar_release_borrowed(struct ArrowArray *array) {
   array->release = NULL;
 }
 
+/* An array handle over the same buffers as `x`, for a consumer that moves
+   the array it is given, such as a stream. Releasing it leaves `x` alone;
+   its protected field holds `x`, so the buffers outlive it. */
+SEXP zar_c_array_borrow(SEXP x) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  SEXP tag = zar_array_schema_xptr(x, &error);
+  if (tag == NULL) return zar_failure_from_error("handle", &error);
+  SEXP out = PROTECT(zar_array_owning_xptr(tag));
+  struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
+  *dst = *array;
+  dst->private_data = NULL;
+  dst->release = &zar_release_borrowed;
+  R_SetExternalPtrProtected(out, x);
+  UNPROTECT(1);
+  return out;
+}
+
 /* Field k of a struct array as its own array handle (section 6.10). The
    child is sliced by the parent's offset and length; the handle's
    protected field holds the parent, so the buffers outlive it. Null rows

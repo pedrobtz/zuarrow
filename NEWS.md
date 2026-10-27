@@ -99,3 +99,5 @@
 * Writing a factor whose code names no level, or whose levels are not
   strings, is a `zuarrow_type_error` naming the row, with or without a
   dictionary (#36).
+* `arrow_write()` leaves an array it writes usable. Before, it released
+  the caller's array, so it could not be read or written again (#40).

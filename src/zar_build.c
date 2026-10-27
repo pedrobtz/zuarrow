@@ -96,7 +96,8 @@ SEXP zar_c_array_from_buffers(SEXP schema_xptr, SEXP spec) {
 }
 
 /* A stream over `arrays`, which it takes ownership of: each array handle
-   is moved into the stream and left released. */
+   is moved into the stream and left released. The stream holds the list,
+   so a borrowed array's parent outlives it. */
 SEXP zar_c_stream_from_arrays(SEXP schema_xptr, SEXP arrays) {
   struct ArrowError error;
   error.message[0] = '\0';
@@ -128,6 +129,7 @@ SEXP zar_c_stream_from_arrays(SEXP schema_xptr, SEXP arrays) {
         (struct ArrowArray *)R_ExternalPtrAddr(VECTOR_ELT(arrays, i));
     ArrowBasicArrayStreamSetArray(stream, (int64_t)i, array);
   }
+  R_SetExternalPtrProtected(out, arrays);
   UNPROTECT(1);
   return out;
 }

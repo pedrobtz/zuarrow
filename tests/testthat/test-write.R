@@ -97,6 +97,24 @@ test_that("arrays and streams are written as they are", {
   )
 })
 
+test_that("writing an array leaves it usable", {
+  df <- data.frame(x = 1:3, s = c("a", "b", NA))
+  array <- arrow_array(df)
+  deferred <- arrow_to_r(array, copy = FALSE)
+  first <- arrow_write(array, NULL)
+  expect_identical(arrow_write(array, NULL), first)
+  expect_identical(arrow_to_r(array), df)
+  expect_identical(deferred, df)
+  gc()
+  expect_identical(without_metadata(arrow_read(first)), df)
+})
+
+test_that("writing a released array is a handle error", {
+  array <- arrow_array(data.frame(x = 1:3))
+  stream <- .Call(zar_c_stream_from_arrays, arrow_schema(array), list(array))
+  expect_error(arrow_write(array, NULL), class = "zuarrow_handle_error")
+})
+
 test_that("nested and list columns are written", {
   df <- data.frame(id = 1:3)
   df$pos <- data.frame(x = c(1, 2, 3))
