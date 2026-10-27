@@ -313,13 +313,13 @@ static int zar_metadata_from_list(SEXP metadata, struct ArrowBuffer *out,
     ArrowErrorSet(error, "metadata must be a named list of raw vectors");
     return EINVAL;
   }
-  if (ArrowMetadataBuilderInit(out, NULL) != NANOARROW_OK) {
-    ArrowErrorSet(error, "cannot allocate metadata");
-    return ENOMEM;
-  }
+  // Translate every key before the builder owns memory: a translation that
+  // longjmps then leaves nothing to free (R_alloc is reclaimed by R).
+  struct ArrowStringView *keys =
+      n > 0 ? (struct ArrowStringView *)R_alloc((size_t)n, sizeof(*keys))
+            : NULL;
   for (R_xlen_t i = 0; i < n; i++) {
-    SEXP value = VECTOR_ELT(metadata, i);
-    if (TYPEOF(value) != RAWSXP) {
+    if (TYPEOF(VECTOR_ELT(metadata, i)) != RAWSXP) {
       ArrowErrorSet(error, "metadata values must be raw vectors");
       return EINVAL;
     }
@@ -329,10 +329,18 @@ static int zar_metadata_from_list(SEXP metadata, struct ArrowBuffer *out,
       ArrowErrorSet(error, "a metadata key is not valid UTF-8");
       return EILSEQ;
     }
-    struct ArrowStringView k = {key, (int64_t)key_len};
+    keys[i].data = key;
+    keys[i].size_bytes = (int64_t)key_len;
+  }
+  if (ArrowMetadataBuilderInit(out, NULL) != NANOARROW_OK) {
+    ArrowErrorSet(error, "cannot allocate metadata");
+    return ENOMEM;
+  }
+  for (R_xlen_t i = 0; i < n; i++) {
+    SEXP value = VECTOR_ELT(metadata, i);
     struct ArrowStringView v = {(const char *)RAW(value),
                                 (int64_t)Rf_xlength(value)};
-    if (ArrowMetadataBuilderAppend(out, k, v) != NANOARROW_OK) {
+    if (ArrowMetadataBuilderAppend(out, keys[i], v) != NANOARROW_OK) {
       ArrowErrorSet(error, "cannot allocate metadata");
       return ENOMEM;
     }
@@ -381,6 +389,7 @@ static int zar_schema_build(struct ArrowSchema *out, SEXP spec,
   SEXP metadata = zar_list_get(spec, "metadata");
   if (metadata != R_NilValue && Rf_xlength(metadata) > 0) {
     struct ArrowBuffer buffer;
+    ArrowBufferInit(&buffer);
     int code = zar_metadata_from_list(metadata, &buffer, error);
     if (code == NANOARROW_OK &&
         ArrowSchemaSetMetadata(out, (const char *)buffer.data) !=
@@ -548,6 +557,10 @@ SEXP zar_c_schema_with_metadata(SEXP x, SEXP metadata) {
   struct ArrowSchema *schema = zar_schema_from_xptr(x, &error);
   if (schema == NULL) return zar_failure_from_error("handle", &error);
 
+  /* Make the owning pointer and translate the keys before `buffer` holds
+     memory, so no R allocation can longjmp over it. */
+  SEXP out = PROTECT(zar_schema_owning_xptr());
+  struct ArrowSchema *dst = (struct ArrowSchema *)R_ExternalPtrAddr(out);
   struct ArrowBuffer buffer;
   ArrowBufferInit(&buffer);
   int code = NANOARROW_OK;
@@ -555,14 +568,11 @@ SEXP zar_c_schema_with_metadata(SEXP x, SEXP metadata) {
     code = zar_metadata_from_list(metadata, &buffer, &error);
     if (code != NANOARROW_OK) {
       ArrowBufferReset(&buffer);
-      return zar_failure_from_error(NULL, &error);
+      UNPROTECT(1);
+      return zar_failure_from_error(code == ENOMEM ? NULL : "type", &error);
     }
   }
 
-  /* No R allocation between here and the return that could longjmp over
-     `buffer`: the owning pointer is made first. */
-  SEXP out = PROTECT(zar_schema_owning_xptr());
-  struct ArrowSchema *dst = (struct ArrowSchema *)R_ExternalPtrAddr(out);
   code = ArrowSchemaDeepCopy(schema, dst);
   if (code == NANOARROW_OK) {
     code = ArrowSchemaSetMetadata(

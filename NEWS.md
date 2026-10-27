@@ -90,6 +90,10 @@
 
 ## Fixes
 
+* `arrow_metadata<-` raises `zuarrow_type_error` for a key that is not
+  valid UTF-8 or a value that is not raw. Before, it raised a plain
+  `zuarrow_error`.
+
 * A list column of data frames keeps every row of every element; before,
   its offsets counted columns, not rows, and rows were dropped (#31).
 * Writing a string that is not valid UTF-8, or that is marked as `"bytes"`,
