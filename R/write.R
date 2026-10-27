@@ -206,15 +206,7 @@ zar_check_level <- function(level, compression, call) {
 
 zar_without_dictionaries <- function(spec) {
   if (!is.null(spec$dictionary)) {
-    spec <- spec$dictionary[c(
-      "format",
-      "name",
-      "flags",
-      "metadata",
-      "children",
-      "dictionary"
-    )]
-    spec$name <- spec$name
+    spec <- spec$dictionary[names(zar_spec(""))]
   }
   spec$children <- lapply(spec$children, function(child) {
     name <- child$name
