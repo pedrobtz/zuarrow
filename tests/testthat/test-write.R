@@ -158,6 +158,28 @@ test_that("compression levels are passed to the codec", {
   expect_identical(without_metadata(arrow_read(best)), df)
 })
 
+test_that("a level outside the codec's range is a codec error", {
+  df <- data.frame(s = rep("abc", 100))
+  expect_error(
+    arrow_write(df, NULL, compression = "zstd", level = 1000L),
+    class = "zuarrow_codec_error"
+  )
+  expect_error(
+    arrow_write(df, NULL, compression = "lz4", level = 99L),
+    class = "zuarrow_codec_error"
+  )
+  # The codec's own refusal, past the R check, is a codec error too.
+  array <- arrow_array(df)
+  out <- .Call(
+    zuarrow:::zar_c_write,
+    list(array),
+    arrow_schema(array),
+    list(TRUE, 2L, 1000L)
+  )
+  expect_s3_class(out, "zar_failure")
+  expect_identical(out$kind, "codec")
+})
+
 test_that("the same input gives the same bytes", {
   # A leg whose bytes differ fails here: the hashes are the platform-free
   # output of the fixed input (design section 6.8).

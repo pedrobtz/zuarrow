@@ -24,7 +24,8 @@
 #' @param x `NULL` to return the bytes, a path, or a connection.
 #' @param format `"file"` or `"stream"`.
 #' @param compression `"none"`, `"lz4"` or `"zstd"`.
-#' @param level `NULL` for the codec's default, or a level on its scale.
+#' @param level `NULL` for the codec's default, or a level on its scale. A
+#'   level outside the codec's range is a `zuarrow_codec_error`.
 #' @param batch The most rows in one record batch, for a data frame.
 #' @param dictionary Whether factors are written as dictionaries.
 #' @param metadata `NULL`, or a named character vector of schema metadata.
@@ -73,6 +74,7 @@ arrow_write <- function(
       call = call
     )
   }
+  zar_check_level(level, compression, call)
   if (
     !is.logical(dictionary) || length(dictionary) != 1L || is.na(dictionary)
   ) {
@@ -179,6 +181,33 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
     arrays[[length(arrays) + 1L]] <- next_batch
   }
   list(schema = schema, arrays = arrays)
+}
+
+# A level outside the codec's range, as zukomp reports it, is a codec error
+# before anything is encoded.
+zar_check_level <- function(level, compression, call) {
+  if (is.null(level) || compression == "none") {
+    return(invisible())
+  }
+  id <- if (compression == "lz4") "lz4-frame" else compression
+  codecs <- zukomp::komp_codecs()
+  row <- codecs[codecs$id == id, ]
+  if (nrow(row) == 1L && !is.na(row$level_min)) {
+    if (level < row$level_min || level > row$level_max) {
+      zar_abort(
+        "codec",
+        sprintf(
+          "`level` must be between %d and %d for %s, not %s.",
+          row$level_min,
+          row$level_max,
+          compression,
+          format(level)
+        ),
+        call = call
+      )
+    }
+  }
+  invisible()
 }
 
 zar_without_dictionaries <- function(spec) {

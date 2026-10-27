@@ -143,3 +143,6 @@
   `arrow_metadata()` and `arrow_to_r()` for such a schema. Before, a NUL
   raised an unclassed error, a NUL in a name cut it short, and invalid
   bytes became a string marked UTF-8 (#38).
+* A compression `level` outside the codec's range, and any codec failure
+  while writing, is a `zuarrow_codec_error`. Before, it was an unclassed
+  `zuarrow_error` (#39).
