@@ -123,6 +123,7 @@ SEXP zar_deferred_strings(SEXP arrays, const struct zar_deferred_chunk *chunks,
 /* Whether `x` is a deferred string vector, and how many of its elements
    have been created: for tests. */
 SEXP zar_c_deferred_info(SEXP x);
+SEXP zar_c_deferred_probe(SEXP x, SEXP op, SEXP i, SEXP value);
 #endif
 
 #endif /* ZAR_H */

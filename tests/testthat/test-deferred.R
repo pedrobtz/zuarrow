@@ -196,3 +196,45 @@ test_that("strings inside list elements are not deferred", {
   }
   expect_identical(out$l, x)
 })
+
+test_that("order() and match() take the data pointer and drop the batches", {
+  x <- arrow_to_r(arrow_array(c("b", NA, "a")), copy = FALSE)
+  expect_identical(x[[1]], "b")
+  expect_identical(deferred_info(x), list(made = 1, holds_arrays = TRUE))
+  expect_identical(order(x), c(3L, 1L, 2L))
+  expect_identical(deferred_info(x), list(made = 3, holds_arrays = FALSE))
+  expect_identical(match("a", x), 3L)
+  expect_identical(x, c("b", NA, "a"))
+})
+
+test_that("the data pointer of a partly made vector holds every value", {
+  df <- data.frame(s = c("p", "q", NA, "r", "s"))
+  x <- arrow_to_r(arrow_stream(df, batch = 2L), copy = FALSE)$s
+  expect_identical(deferred_probe(x, "or_null"), FALSE)
+  expect_identical(x[[4]], "r")
+  expect_identical(deferred_probe(x, "or_null"), FALSE)
+  expect_identical(deferred_info(x), list(made = 1, holds_arrays = TRUE))
+  expect_identical(deferred_probe(x, "dataptr"), df$s)
+  expect_identical(deferred_info(x), list(made = 5, holds_arrays = FALSE))
+  expect_identical(deferred_probe(x, "or_null"), TRUE)
+  expect_identical(deferred_probe(x, "dataptr"), df$s)
+  expect_identical(x, df$s)
+})
+
+test_that("setting an element in place makes the others first", {
+  x <- arrow_to_r(arrow_array(c("a", "b", "c")), copy = FALSE)
+  expect_identical(deferred_info(x)$made, 0)
+  deferred_probe(x, "set", 2L, "z")
+  expect_identical(deferred_info(x), list(made = 3, holds_arrays = FALSE))
+  expect_identical(x[[1]], "a")
+  expect_identical(x[[2]], "z")
+  expect_identical(x, c("a", "z", "c"))
+})
+
+test_that("no_na is true only for batches without a validity bitmap", {
+  x <- arrow_to_r(arrow_array(c("a", "b")), copy = FALSE)
+  expect_true(deferred_probe(x, "no_na"))
+  expect_identical(deferred_info(x)$made, 0)
+  y <- arrow_to_r(arrow_array(c("a", NA)), copy = FALSE)
+  expect_false(deferred_probe(y, "no_na"))
+})

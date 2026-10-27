@@ -58,6 +58,7 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_write, 3),
     ZAR_CALL(zar_c_to_r, 3),
     ZAR_CALL(zar_c_deferred_info, 1),
+    ZAR_CALL(zar_c_deferred_probe, 4),
     ZAR_CALL(zar_c_from_r, 4),
     ZAR_CALL(zar_c_utf8_over, 2),
     {NULL, NULL, 0}};
