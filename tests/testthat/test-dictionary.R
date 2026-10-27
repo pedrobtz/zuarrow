@@ -107,3 +107,34 @@ test_that("nanoarrow's dictionaries read as factors", {
   f <- factor(c("x", "y", "x"))
   expect_identical(arrow_to_r(nanoarrow::as_nanoarrow_array(f)), f)
 })
+
+test_that("a non-string dictionary index out of range is a format error", {
+  schema <- test_schema(list(
+    format = "i",
+    name = "",
+    flags = 2L,
+    metadata = NULL,
+    children = list(),
+    dictionary = zspec("g")
+  ))
+  array <- test_array(
+    schema,
+    2,
+    list(NULL, le_int(c(0, 100000), 4L)),
+    dictionary = test_array_spec(
+      1,
+      list(NULL, writeBin(1.5, raw(), endian = "little"))
+    )
+  )
+  expect_error(arrow_to_r(array), class = "zuarrow_format_error")
+  negative <- test_array(
+    schema,
+    1,
+    list(NULL, le_int(-1, 4L)),
+    dictionary = test_array_spec(
+      1,
+      list(NULL, writeBin(1.5, raw(), endian = "little"))
+    )
+  )
+  expect_error(arrow_to_r(negative), class = "zuarrow_format_error")
+})

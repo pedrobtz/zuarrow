@@ -335,18 +335,29 @@ static void zar_list_range(const struct ArrowArrayView *v, int64_t j,
 }
 
 /* A slice through a dictionary: element i of `s` is the dictionary value
-   its index names. */
-static struct zar_slice zar_dictionary_slice(const struct zar_slice *s) {
+/* its index names, in `out`. An index outside the dictionary is a format
+   failure: foreign arrays get default validation, which does not check
+   dictionary indices. */
+static int zar_dictionary_slice(const struct zar_slice *s, struct zar_slice *out,
+                                const char *format, struct zar_err *e) {
   int64_t *map =
       (int64_t *)R_alloc((size_t)(s->length > 0 ? s->length : 1), sizeof(int64_t));
+  int64_t n_dict = s->view->dictionary->length;
   for (int64_t i = 0; i < s->length; i++) {
     int64_t j = zar_j(s, i);
-    map[i] = (j < 0 || ArrowArrayViewIsNull(s->view, j))
-                 ? -1
-                 : ArrowArrayViewGetIntUnsafe(s->view, j);
+    if (j < 0 || ArrowArrayViewIsNull(s->view, j)) {
+      map[i] = -1;
+      continue;
+    }
+    int64_t idx = ArrowArrayViewGetIntUnsafe(s->view, j);
+    if (idx < 0 || idx >= n_dict) {
+      ArrowErrorSet(&e->error, "dictionary index %ld is out of range", (long)idx);
+      return zar_fail(e, "format", -1, format);
+    }
+    map[i] = idx;
   }
-  struct zar_slice out = {s->view->dictionary, 0, s->length, map, s->up};
-  return out;
+  *out = (struct zar_slice){s->view->dictionary, 0, s->length, map, s->up};
+  return NANOARROW_OK;
 }
 
 /* A slice through a run-end encoding: element i is the value of the run
@@ -1840,8 +1851,12 @@ static SEXP zar_build(struct zar_plan *p, struct zar_slice *slices,
       struct zar_slice *ms = (struct zar_slice *)R_alloc(
           (size_t)(n_slices > 0 ? n_slices : 1), sizeof(struct zar_slice));
       for (int64_t b = 0; b < n_slices; b++) {
-        ms[b] = p->target == ZAR_T_DECODE ? zar_dictionary_slice(&slices[b])
-                                          : zar_ree_slice(&slices[b]);
+        if (p->target == ZAR_T_REE) {
+          ms[b] = zar_ree_slice(&slices[b]);
+        } else if (zar_dictionary_slice(&slices[b], &ms[b], p->schema->format, e) !=
+                   NANOARROW_OK) {
+          return R_NilValue;
+        }
       }
       struct zar_plan *values = p->target == ZAR_T_DECODE ? p->dict : &p->children[0];
       out = zar_build(values, ms, n_slices, rows, text, e);

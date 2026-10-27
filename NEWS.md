@@ -113,3 +113,6 @@
 * `arrow_equal()` compares arrays value by value, as the design says: the
   bytes under a null slot and the array offset no longer count, and a
   dictionary or run-end encoded array compares by its decoded values (#64).
+* A dictionary index outside its dictionary is a `zuarrow_format_error`
+  for every dictionary, not only for factors. Before, a dictionary of
+  numbers read past its end (#50).
