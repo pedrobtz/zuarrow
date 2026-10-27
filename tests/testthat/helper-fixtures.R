@@ -67,3 +67,23 @@ no_r_form <- function(case) grepl("union|interval", case)
 read_golden <- function(path) {
   tryCatch(arrow_read(path, lossy = "character"), zuarrow_error = function(e) e)
 }
+
+# The expected outcome of each crash-corpus file: file (relative to
+# fixtures/ or to tests/testthat for data/), expect, note.
+crash_expected <- function() {
+  utils::read.csv(
+    test_path("crash-expected.csv"),
+    comment.char = "#",
+    stringsAsFactors = FALSE
+  )
+}
+
+# The outcome of reading a crash file: "data.frame" or the condition's
+# first class.
+crash_outcome <- function(path) {
+  result <- tryCatch(
+    arrow_read(path, lossy = "allow"),
+    zuarrow_error = function(e) e
+  )
+  if (is.data.frame(result)) "data.frame" else class(result)[[1]]
+}

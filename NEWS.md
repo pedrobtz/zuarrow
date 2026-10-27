@@ -150,3 +150,6 @@
   over 2 GiB opens on Windows (#51).
 * `arrow_read()` reads a raw vector in place rather than copying it, except
   with `lazy = TRUE`, whose handle keeps its own copy (#57).
+* `arrow_read()` refuses a file whose footer's copy of the schema differs
+  from its schema message with a `zuarrow_format_error`. Before, it read
+  the message's copy, where libarrow reads the footer's (#33).

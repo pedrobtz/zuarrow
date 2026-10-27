@@ -46,7 +46,9 @@ arrow_limits <- function(
 #' The input is checked before it is used: every message is verified,
 #' every buffer must lie inside its message, and every limit of
 #' [arrow_limits()] binds, so malformed or hostile bytes are a
-#' `zuarrow_format_error` or a `zuarrow_limit_error`, never a crash. Each
+#' `zuarrow_format_error` or a `zuarrow_limit_error`, never a crash. A file
+#' whose footer repeats the schema differently is a `zuarrow_format_error`
+#' too. Each
 #' batch then passes the full validation of [arrow_validate()] before it is
 #' converted. Bodies compressed with LZ4 or zstd are decompressed through
 #' 'zukomp'. Big-endian input is a `zuarrow_format_error`.

@@ -54,7 +54,9 @@ found from the first bytes, whatever the source is called.
 The input is checked before it is used: every message is verified,
 every buffer must lie inside its message, and every limit of
 \code{\link[=arrow_limits]{arrow_limits()}} binds, so malformed or hostile bytes are a
-\code{zuarrow_format_error} or a \code{zuarrow_limit_error}, never a crash. Each
+\code{zuarrow_format_error} or a \code{zuarrow_limit_error}, never a crash. A file
+whose footer repeats the schema differently is a \code{zuarrow_format_error}
+too. Each
 batch then passes the full validation of \code{\link[=arrow_validate]{arrow_validate()}} before it is
 converted. Bodies compressed with LZ4 or zstd are decompressed through
 'zukomp'. Big-endian input is a \code{zuarrow_format_error}.

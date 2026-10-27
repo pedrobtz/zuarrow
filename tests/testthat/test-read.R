@@ -225,27 +225,18 @@ test_that("fields that share a dictionary must share its value type", {
 
 test_that("inputs the fuzz target found are refused cleanly", {
   # Each crashed or tripped a sanitizer in zuarrow's reader or the vendored
-  # decoder before its fix (tools/patches/0005 to 0012, and the reader's own
-  # footer, field-node, alignment, view and shared-dictionary checks).
-  files <- list.files(test_path("data"), "^crash-", full.names = TRUE)
-  expect_gte(length(files), 10L)
-  for (f in files) {
-    result <- tryCatch(
-      arrow_read(f, lossy = "allow"),
-      zuarrow_error = function(e) e
+  # decoder before its fix; crash-expected.csv names the fix each pins.
+  files <- list.files(test_path("data"), "^crash-")
+  expected <- crash_expected()
+  expected <- expected[startsWith(expected$file, "data/"), ]
+  expect_setequal(paste0("data/", files), expected$file)
+  for (k in seq_len(nrow(expected))) {
+    expect_identical(
+      crash_outcome(test_path(expected$file[[k]])),
+      expected$expect[[k]],
+      info = expected$file[[k]]
     )
-    expect_true(
-      is.data.frame(result) ||
-        inherits(
-          result,
-          c(
-            "zuarrow_format_error",
-            "zuarrow_limit_error",
-            "zuarrow_codec_error"
-          )
-        ),
-      info = basename(f)
-    )
+    expect_true(nzchar(expected$note[[k]]), info = expected$file[[k]])
   }
 })
 

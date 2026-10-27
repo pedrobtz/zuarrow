@@ -34,6 +34,7 @@ struct zar_reader {
   struct ArrowIpcDictionaries dictionaries;
   struct ArrowSchema schema;     /* the input's schema */
   struct ArrowSchema out_schema; /* the selected columns */
+  struct ArrowSchema footer_schema; /* a file footer's copy of the schema */
   int dictionaries_ready;
   int encodings_ready;
 
@@ -113,6 +114,7 @@ static void zar_reader_free(struct zar_reader *r) {
   if (r->encodings_ready) ArrowIpcDictionaryEncodingsReset(&r->encodings);
   if (r->schema.release != NULL) r->schema.release(&r->schema);
   if (r->out_schema.release != NULL) r->out_schema.release(&r->out_schema);
+  if (r->footer_schema.release != NULL) r->footer_schema.release(&r->footer_schema);
   if (r->owns_data) free(r->data);
   free(r->blocks);
   free(r->dict_blocks);
@@ -154,6 +156,32 @@ static int zar_same_type(const struct ArrowSchema *a, const struct ArrowSchema *
     if (!zar_same_type(a->children[i], b->children[i])) return 0;
   }
   return zar_same_type(a->dictionary, b->dictionary);
+}
+
+static int zar_same_text(const char *a, const char *b) {
+  if (a == NULL || b == NULL) return a == b;
+  return strcmp(a, b) == 0;
+}
+
+static int zar_same_metadata(const char *a, const char *b) {
+  int64_t na = a == NULL ? 0 : ArrowMetadataSizeOf(a);
+  int64_t nb = b == NULL ? 0 : ArrowMetadataSizeOf(b);
+  return na == nb && (na == 0 || memcmp(a, b, (size_t)na) == 0);
+}
+
+/* Whether two schemas are the same: types, names, flags and metadata,
+   recursively. */
+static int zar_same_schema(const struct ArrowSchema *a, const struct ArrowSchema *b) {
+  if (a == NULL || b == NULL) return a == b;
+  if (strcmp(a->format, b->format) != 0 || a->n_children != b->n_children ||
+      !zar_same_text(a->name, b->name) || a->flags != b->flags ||
+      !zar_same_metadata(a->metadata, b->metadata)) {
+    return 0;
+  }
+  for (int64_t i = 0; i < a->n_children; i++) {
+    if (!zar_same_schema(a->children[i], b->children[i])) return 0;
+  }
+  return zar_same_schema(a->dictionary, b->dictionary);
 }
 
 /* Fields may share a dictionary id, but a dictionary batch is decoded with
@@ -568,6 +596,12 @@ static int zar_open_file(struct zar_reader *r) {
   code = ArrowIpcDecoderDecodeFooter(&r->decoder, all, &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   struct ArrowIpcFooter *footer = r->decoder.footer;
+  /* Reading a message resets the decoder's footer, so its schema is kept
+     for the comparison with the schema message. */
+  if (ArrowSchemaDeepCopy(&footer->schema, &r->footer_schema) != NANOARROW_OK) {
+    ArrowErrorSet(&r->error, "cannot allocate the footer's schema");
+    return zar_reader_fail(r, NULL, ENOMEM);
+  }
   r->n_blocks = footer->record_batch_blocks.size_bytes / (int64_t)sizeof(struct ArrowIpcFileBlock);
   r->n_dict_blocks = footer->dictionary_blocks.size_bytes / (int64_t)sizeof(struct ArrowIpcFileBlock);
   r->blocks = (struct ArrowIpcFileBlock *)malloc(
@@ -600,6 +634,12 @@ static int zar_open_file(struct zar_reader *r) {
   r->encodings_ready = 1;
   code = zar_reader_set_schema(r, header);
   if (code != NANOARROW_OK) return code;
+  /* The footer repeats the schema; a file whose two copies disagree has no
+     one reading, so it is refused rather than read by either. */
+  if (!zar_same_schema(&r->footer_schema, &r->schema)) {
+    ArrowErrorSet(&r->error, "the footer's schema differs from the file's schema message");
+    return zar_reader_fail(r, "format", EINVAL);
+  }
 
   /* Every dictionary in the footer, before the first batch. */
   for (int64_t k = 0; k < r->n_dict_blocks; k++) {
