@@ -663,6 +663,32 @@ SEXP zar_c_array_borrow(SEXP x) {
   return out;
 }
 
+/* Which rows of an array are null by its own validity bitmap, as a
+   logical vector; NULL when it has no bitmap. Registered handlers get a
+   struct's fields through zar_c_array_child(), which leaves the struct's
+   null rows to R. */
+SEXP zar_c_array_nulls(SEXP x) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  if (array->n_buffers == 0 || array->buffers[0] == NULL ||
+      array->null_count == 0) {
+    return R_NilValue;
+  }
+  if (array->length > R_XLEN_T_MAX) {
+    return zar_failure("limit", "the array holds more rows than R allows");
+  }
+  const uint8_t *bits = (const uint8_t *)array->buffers[0];
+  SEXP out = PROTECT(Rf_allocVector(LGLSXP, (R_xlen_t)array->length));
+  int *dst = LOGICAL(out);
+  for (int64_t i = 0; i < array->length; i++) {
+    dst[i] = !ArrowBitGet(bits, array->offset + i);
+  }
+  UNPROTECT(1);
+  return out;
+}
+
 /* Field k of a struct array as its own array handle (section 6.10). The
    child is sliced by the parent's offset and length; the handle's
    protected field holds the parent, so the buffers outlive it. Null rows

@@ -483,17 +483,13 @@ zar_convert <- function(
   }
 
   # Registered handlers convert their columns in R (section 6.10); an
-  # inexact one only when the policy accepts loss.
+  # inexact one only when the policy accepts loss. A struct with a handled
+  # field at any depth is converted in R too, field by field.
   handlers <- lapply(seq_along(fields), function(k) {
     if (codes[[k]] != 0L) {
       return(NULL)
     }
-    h <- zar_handler_for(fields[[k]]$format, zar_extension_name(fields[[k]]))
-    if (is.null(h) || (!h$exact && lossy %in% c("error", "character"))) {
-      NULL
-    } else {
-      h
-    }
+    zar_field_handler(fields[[k]], lossy)
   })
   handled <- !vapply(handlers, is.null, NA)
   codes[handled] <- 9L
@@ -513,16 +509,32 @@ zar_convert <- function(
   for (k in out$warned) {
     zar_lossy_warn(out$names[[k]], out$columns[[k]], spec, frame, k, call)
   }
+  nulls <- if (frame && any(handled)) zar_struct_nulls(arrays, call)
   for (k in which(handled)) {
-    out$columns[[k]] <- zar_apply_handler(
-      handlers[[k]],
-      arrays,
-      k,
-      frame,
-      schema,
-      out$rows,
-      call
-    )
+    out$columns[[k]] <- if (isTRUE(handlers[[k]]$nested)) {
+      zar_convert_struct_field(
+        arrays,
+        k,
+        schema,
+        lossy,
+        call,
+        max_depth,
+        copy
+      )
+    } else {
+      zar_apply_handler(
+        handlers[[k]],
+        arrays,
+        k,
+        frame,
+        schema,
+        out$rows,
+        call
+      )
+    }
+    if (!is.null(nulls)) {
+      out$columns[[k]] <- zar_null_rows(out$columns[[k]], nulls)
+    }
     if (!handlers[[k]]$exact && lossy == "warn") {
       zar_lossy_warn(names[[k]], NULL, spec, frame, k, call)
     }
@@ -542,6 +554,88 @@ zar_convert <- function(
     attr(df, "arrow_metadata") <- metadata
   }
   df
+}
+
+# The handler for a field, or list(nested = TRUE) for a struct one of
+# whose fields, at any depth, has a handler; NULL otherwise.
+zar_field_handler <- function(field, lossy) {
+  h <- zar_handler_for(field$format, zar_extension_name(field))
+  if (!is.null(h) && (h$exact || !lossy %in% c("error", "character"))) {
+    return(h)
+  }
+  if (identical(field$format, "+s")) {
+    for (child in field$children) {
+      if (!is.null(zar_field_handler(child, lossy))) {
+        return(list(key = field$format, nested = TRUE, exact = TRUE))
+      }
+    }
+  }
+  NULL
+}
+
+# A struct field converted as a data frame of its own, so its fields'
+# handlers apply.
+zar_convert_struct_field <- function(
+  arrays,
+  k,
+  schema,
+  lossy,
+  call,
+  max_depth,
+  copy
+) {
+  children <- lapply(arrays, function(a) {
+    zar_check(.Call(zar_c_array_child, a, k - 1L), call = call)
+  })
+  out <- zar_convert(
+    children,
+    zar_field_schema(schema, k),
+    NULL,
+    lossy,
+    call,
+    max_depth = max_depth - 1L,
+    copy = copy
+  )
+  attr(out, "arrow_metadata") <- NULL
+  out
+}
+
+# The null rows of a stream of struct arrays, or NULL when none is null.
+zar_struct_nulls <- function(arrays, call) {
+  pieces <- lapply(arrays, function(a) {
+    zar_check(.Call(zar_c_array_nulls, a), call = call)
+  })
+  if (all(vapply(pieces, is.null, NA))) {
+    return(NULL)
+  }
+  unlist(Map(
+    function(piece, a) {
+      piece %||% logical(.Call(zar_c_array_info, a)$length)
+    },
+    pieces,
+    arrays
+  ))
+}
+
+# A handled column with the rows of a null enclosing struct set to NA, as
+# the built-in conversion sets them.
+zar_null_rows <- function(x, rows) {
+  if (is.data.frame(x)) {
+    for (k in seq_along(x)) {
+      x[[k]] <- zar_null_rows(x[[k]], rows)
+    }
+    return(x)
+  }
+  if (is.matrix(x)) {
+    x[rows, ] <- NA
+    return(x)
+  }
+  if (is.list(x) && !is.object(x)) {
+    x[rows] <- list(NULL)
+    return(x)
+  }
+  x[rows] <- NA
+  x
 }
 
 zar_apply_handler <- function(handler, arrays, k, frame, schema, rows, call) {

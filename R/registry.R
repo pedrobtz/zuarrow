@@ -68,7 +68,8 @@ zar_format_pattern <- paste0(
 #' earlier registration, with a message naming both packages.
 #'
 #' Registered handlers apply to the top-level columns of a data frame and
-#' to the fields of nested data frames, not to the items of a list column.
+#' to the fields of nested data frames, at any depth, not to the items of a
+#' list column. A field under a null row of its data frame is `NA`.
 #'
 #' @param key A format string, a prefix pattern or an extension name.
 #' @param to `NULL`, or a function of `(array, schema)` returning an R

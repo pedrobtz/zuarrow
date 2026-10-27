@@ -208,3 +208,82 @@ test_that("a handler that returns the wrong length is a registry error", {
     class = "zuarrow_registry_error"
   )
 })
+
+test_that("handlers convert the fields of nested data frames", {
+  local_registration("l", to = as_text_int64)
+  inner <- zspec("+s", "s", children = list(zspec("l", "b"), zspec("i", "c")))
+  outer <- zspec("+s", "t", children = list(zspec("l", "d")))
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("l", "a"), inner, zspec("+s", "u", list(outer)))
+  ))
+  make <- function() {
+    test_array(
+      schema,
+      2,
+      list(NULL),
+      children = list(
+        test_array_spec(2, list(NULL, le_int(c(1, 2), 8L))),
+        test_array_spec(
+          2,
+          list(as.raw(0x01)),
+          null_count = 1,
+          children = list(
+            test_array_spec(2, list(NULL, le_int(c(3, 4), 8L))),
+            test_array_spec(2, list(NULL, le_int(c(5, 6), 4L)))
+          )
+        ),
+        test_array_spec(
+          2,
+          list(as.raw(0x01)),
+          null_count = 1,
+          children = list(test_array_spec(
+            2,
+            list(NULL),
+            children = list(test_array_spec(2, list(NULL, le_int(c(7, 8), 8L))))
+          ))
+        )
+      )
+    )
+  }
+  out <- arrow_to_r(make())
+  expect_s3_class(out$a, "fake_int64")
+  expect_s3_class(out$s$b, "fake_int64")
+  # Row 2 of `s` is null, so its fields are NA.
+  expect_identical(unclass(out$s$b), c("3", NA))
+  expect_identical(out$s$c, c(5L, NA))
+  expect_s3_class(out$u$t$d, "fake_int64")
+  # Row 2 of `u` is null, so the fields of `t` within it are NA too.
+  expect_identical(unclass(out$u$t$d), c("7", NA))
+
+  stream <- test_stream(schema, list(make(), make()))
+  out <- arrow_to_r(stream)
+  expect_identical(unclass(out$s$b), c("3", NA, "3", NA))
+})
+
+test_that("handlers do not apply to the items of a list column", {
+  local_registration("l", to = as_text_int64)
+  df <- data.frame(i = 1:2)
+  df$l <- list(c(1, 2), 3)
+  array <- arrow_array(
+    df,
+    schema = test_schema(zspec(
+      "+s",
+      children = list(
+        zspec("i", "i"),
+        zspec("+l", "l", list(zspec("l", "item")))
+      )
+    ))
+  )
+  out <- arrow_to_r(array)
+  expect_identical(out$l, list(c(1, 2), 3))
+})
+
+test_that("a nested data frame converted for a handler matches the built-in", {
+  df <- data.frame(id = 1:3)
+  df$s <- data.frame(x = c(1.5, NA, 3), y = c("a", "b", NA))
+  df$s$t <- data.frame(z = 4:6)
+  expected <- arrow_to_r(arrow_stream(df, batch = 2L))
+  local_registration("i", to = function(array, schema) arrow_to_r(array))
+  expect_identical(arrow_to_r(arrow_stream(df, batch = 2L)), expected)
+})
