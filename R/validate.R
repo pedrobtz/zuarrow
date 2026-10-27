@@ -35,7 +35,11 @@ arrow_validate <- function(x, level = c("full", "default", "minimal")) {
   if (zar_is_stream(x)) {
     return(invisible(zar_check(.Call(zar_c_stream_validate, x, code))))
   }
-  zar_abort("handle", "`x` must be a schema, array or stream handle.")
+  zar_abort(
+    "handle",
+    "`x` must be a schema, array or stream handle.",
+    call = call
+  )
 }
 
 #' Compare two schemas, arrays or streams
@@ -58,9 +62,8 @@ arrow_validate <- function(x, level = c("full", "default", "minimal")) {
 #' arrow_equal(arrow_schema("i"), arrow_schema("i"))
 #' arrow_equal(arrow_schema("i"), arrow_schema("l"))
 arrow_equal <- function(x, y, metadata = TRUE) {
-  if (!is.logical(metadata) || length(metadata) != 1L || is.na(metadata)) {
-    zar_abort("type", "`metadata` must be `TRUE` or `FALSE`.")
-  }
+  call <- sys.call()
+  zar_check_flag(metadata, "metadata", call)
   if (zar_is_schema(x) && zar_is_schema(y)) {
     return(zar_check(.Call(zar_c_schema_equal, x, y, metadata)))
   }
@@ -72,6 +75,7 @@ arrow_equal <- function(x, y, metadata = TRUE) {
   }
   zar_abort(
     "handle",
-    "`x` and `y` must be two schema, two array or two stream handles."
+    "`x` and `y` must be two schema, two array or two stream handles.",
+    call = call
   )
 }

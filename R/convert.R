@@ -51,24 +51,21 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' stream <- arrow_stream(data.frame(x = 1:5), batch = 2)
 #' as.data.frame(stream)
 arrow_array <- function(x, schema = NULL) {
+  call <- sys.call()
   handler <- zar_handler_for_class(x)
   if (is.null(schema) && !is.null(handler)) {
-    return(zar_from_handler(handler, x))
+    return(zar_from_handler(handler, x, call))
   }
-  schema <- zar_schema_for(x, schema)
-  prepared <- zar_prepare(x, schema)
-  zar_check(.Call(
-    zar_c_from_r,
-    zar_batch(prepared, 0, zar_nrow(x)),
-    schema,
-    0,
-    zar_nrow(x)
-  ))
+  schema <- zar_schema_for(x, schema, call)
+  prepared <- zar_prepare(x, schema, call)
+  n <- zar_nrow(x)
+  zar_check(.Call(zar_c_from_r, zar_batch(prepared, 0, n, call), schema, 0, n))
 }
 
 #' @rdname arrow_array
 #' @export
 arrow_stream <- function(x, batch = 65536L, schema = NULL) {
+  call <- sys.call()
   if (
     !is.numeric(batch) ||
       length(batch) != 1L ||
@@ -76,17 +73,17 @@ arrow_stream <- function(x, batch = 65536L, schema = NULL) {
       batch < 1 ||
       batch != floor(batch)
   ) {
-    zar_abort("type", "`batch` must be a positive whole number.")
+    zar_abort("type", "`batch` must be a positive whole number.", call = call)
   }
-  schema <- zar_schema_for(x, schema)
-  prepared <- zar_prepare(x, schema)
+  schema <- zar_schema_for(x, schema, call)
+  prepared <- zar_prepare(x, schema, call)
   n <- zar_nrow(x)
   starts <- if (n == 0) numeric() else seq(0, n - 1, by = batch)
   arrays <- lapply(starts, function(start) {
     len <- min(batch, n - start)
     zar_check(.Call(
       zar_c_from_r,
-      zar_batch(prepared, start, len),
+      zar_batch(prepared, start, len, call),
       schema,
       start,
       len
@@ -114,11 +111,11 @@ zar_nrow <- function(x) {
 # Prepares an R object for the C builder against its schema: list columns
 # and matrices become a zar_list_prep, flattened once (C never calls R),
 # and data frames are prepared column by column (section 6.4).
-zar_prepare <- function(x, schema) {
-  zar_prepare_spec(x, zar_check(.Call(zar_c_schema_to_spec, schema)))
+zar_prepare <- function(x, schema, call = NULL) {
+  zar_prepare_spec(x, zar_check(.Call(zar_c_schema_to_spec, schema)), call)
 }
 
-zar_prepare_spec <- function(x, spec) {
+zar_prepare_spec <- function(x, spec, call = NULL) {
   if (!is.null(zar_handler_for_class(x))) {
     return(structure(list(x = x), class = "zar_registered"))
   }
@@ -127,7 +124,9 @@ zar_prepare_spec <- function(x, spec) {
       identical(spec$format, "+s") &&
       length(spec$children) == length(x)
   ) {
-    out <- Map(zar_prepare_spec, x, spec$children)
+    out <- lapply(seq_along(x), function(k) {
+      zar_prepare_spec(x[[k]], spec$children[[k]], call)
+    })
     attributes(out) <- attributes(x)
     return(out)
   }
@@ -140,7 +139,7 @@ zar_prepare_spec <- function(x, spec) {
       list(
         offsets = as.double(seq(0, nrow(x)) * width),
         null = rep(FALSE, nrow(x)),
-        values = zar_prepare_spec(as.vector(t(x)), spec$children[[1L]])
+        values = zar_prepare_spec(as.vector(t(x)), spec$children[[1L]], call)
       ),
       class = "zar_list_prep"
     ))
@@ -151,7 +150,7 @@ zar_prepare_spec <- function(x, spec) {
       width <- as.integer(substring(spec$format, 4))
       x <- zar_fill_null_lists(x, nulls, width, spec$children[[1L]])
     }
-    values <- zar_flatten(x)
+    values <- zar_flatten(x, call)
     child <- spec$children[[1L]]
     if (is.null(values)) {
       values <- zar_empty_like(child)
@@ -160,7 +159,7 @@ zar_prepare_spec <- function(x, spec) {
       list(
         offsets = c(0, cumsum(zar_element_lengths(x))),
         null = nulls,
-        values = zar_prepare_spec(values, child)
+        values = zar_prepare_spec(values, child, call)
       ),
       class = "zar_list_prep"
     ))
@@ -212,10 +211,10 @@ zar_empty_like <- function(spec) {
 
 # Rows [start, start + n) of the registered columns, built by their
 # handlers. Every other column is sliced by the C builder.
-zar_batch <- function(x, start, n) {
+zar_batch <- function(x, start, n, call = NULL) {
   if (inherits(x, "zar_registered")) {
     handler <- zar_handler_for_class(x$x)
-    return(zar_from_handler(handler, x$x[seq_len(n) + start]))
+    return(zar_from_handler(handler, x$x[seq_len(n) + start], call))
   }
   if (is.data.frame(x)) {
     registered <- vapply(
@@ -229,7 +228,7 @@ zar_batch <- function(x, start, n) {
       attrs <- attributes(x)
       x <- unclass(x)
       for (k in which(registered)) {
-        x[[k]] <- zar_batch(x[[k]], start, n)
+        x[[k]] <- zar_batch(x[[k]], start, n, call)
       }
       attributes(x) <- attrs
     }
@@ -266,13 +265,13 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
         call = call
       )
     }
-    item <- zar_infer_spec(as.vector(x[0L, , drop = TRUE]), "item")
+    item <- zar_infer_spec(as.vector(x[0L, , drop = TRUE]), "item", call)
     spec <- zar_spec(paste0("+w:", ncol(x)), "", children = list(item))
     return(zar_check(.Call(zar_c_schema_from_spec, spec), call = call))
   }
   if (is.null(schema)) {
     return(zar_check(
-      .Call(zar_c_schema_from_spec, zar_infer_spec(x, name = "")),
+      .Call(zar_c_schema_from_spec, zar_infer_spec(x, name = "", call = call)),
       call = call
     ))
   }

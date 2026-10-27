@@ -207,8 +207,9 @@ arrow_register <- function(
 #' @rdname arrow_register
 #' @export
 arrow_unregister <- function(key) {
+  call <- sys.call()
   if (!is.character(key) || length(key) != 1L || is.na(key)) {
-    zar_abort("registry", "`key` must be one string.")
+    zar_abort("registry", "`key` must be one string.", call = call)
   }
   zar_registry$entries[[key]] <- NULL
   invisible(key)

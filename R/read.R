@@ -21,6 +21,7 @@ arrow_limits <- function(
   max_batch_rows = 2^31 - 1,
   max_bytes = Inf
 ) {
+  call <- sys.call()
   values <- list(
     max_message = max_message,
     max_depth = max_depth,
@@ -30,7 +31,11 @@ arrow_limits <- function(
   for (name in names(values)) {
     v <- values[[name]]
     if (!is.numeric(v) || length(v) != 1L || is.na(v) || v < 0) {
-      zar_abort("type", sprintf("`%s` must be one non-negative number.", name))
+      zar_abort(
+        "type",
+        sprintf("`%s` must be one non-negative number.", name),
+        call = call
+      )
     }
   }
   values$max_depth <- as.integer(min(values$max_depth, .Machine$integer.max))
@@ -95,9 +100,7 @@ arrow_read <- function(
   if (!inherits(limits, "zuarrow_limits")) {
     zar_abort("type", "`limits` must come from arrow_limits().", call = call)
   }
-  if (!is.logical(lazy) || length(lazy) != 1L || is.na(lazy)) {
-    zar_abort("type", "`lazy` must be `TRUE` or `FALSE`.", call = call)
-  }
+  zar_check_flag(lazy, "lazy", call)
   zar_check_flag(copy, "copy", call)
   if (lazy && (!is.null(to) || lossy != "error" || !copy)) {
     zar_abort(

@@ -37,6 +37,7 @@ zar_is_handle <- function(x) {
 #' arrow_schema(data.frame(x = 1:3, y = c("a", "b", "c")))
 #' format(arrow_schema(as.Date("2026-10-21")))
 arrow_schema <- function(x) {
+  call <- sys.call()
   if (zar_is_schema(x) && inherits(x, "zuarrow_schema")) {
     zar_check_live(x)
     return(x)
@@ -46,11 +47,16 @@ arrow_schema <- function(x) {
   }
   if (is.character(x) && length(x) == 1L && is.null(attributes(x))) {
     if (is.na(x) || !nzchar(x)) {
-      zar_abort("format", "A format string can't be empty or `NA`.")
+      zar_abort(
+        "format",
+        "A format string can't be empty or `NA`.",
+        call = call
+      )
     }
     return(zar_check(.Call(zar_c_schema_from_spec, zar_spec(x))))
   }
-  zar_check(.Call(zar_c_schema_from_spec, zar_infer_spec(x, name = "")))
+  spec <- zar_infer_spec(x, name = "", call = call)
+  zar_check(.Call(zar_c_schema_from_spec, spec))
 }
 
 zar_check_live <- function(x, call = sys.call(-1)) {
@@ -88,23 +94,27 @@ zar_spec <- function(
 
 # The schema an R object is written with (design section 6.2), with its
 # field metadata and extension name from the attributes section 6.6 names.
-zar_infer_spec <- function(x, name) {
-  spec <- zar_infer_type(x, name)
-  zar_with_field_metadata(spec, x)
+zar_infer_spec <- function(x, name, call = NULL) {
+  spec <- zar_infer_type(x, name, call)
+  zar_with_field_metadata(spec, x, call)
 }
 
-zar_with_field_metadata <- function(spec, x) {
+zar_with_field_metadata <- function(spec, x, call = NULL) {
   metadata <- list()
   field <- attr(x, "arrow_field_metadata", exact = TRUE)
   if (!is.null(field)) {
-    metadata <- zar_metadata_raw(field, call = NULL)
+    metadata <- zar_metadata_raw(field, call = call)
   }
   extension <- attr(x, "arrow_extension", exact = TRUE)
   if (!is.null(extension)) {
     if (
       !is.character(extension) || length(extension) != 1L || is.na(extension)
     ) {
-      zar_abort("type", "The `arrow_extension` attribute must be one string.")
+      zar_abort(
+        "type",
+        "The `arrow_extension` attribute must be one string.",
+        call = call
+      )
     }
     metadata[["ARROW:extension:name"]] <- charToRaw(enc2utf8(extension))
     ext_metadata <- attr(x, "arrow_extension_metadata", exact = TRUE)
@@ -122,16 +132,19 @@ zar_with_field_metadata <- function(spec, x) {
   spec
 }
 
-zar_infer_type <- function(x, name) {
+zar_infer_type <- function(x, name, call = NULL) {
   handler <- zar_handler_for_class(x)
   if (!is.null(handler)) {
-    array <- zar_from_handler(handler, x[0L])
+    array <- zar_from_handler(handler, x[0L], call)
     spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(array)))
     spec$name <- name
     return(spec)
   }
   if (is.data.frame(x)) {
-    children <- Map(zar_infer_spec, x, names(x))
+    # Not Map(): mapply() would evaluate `call`, a language object.
+    children <- lapply(seq_along(x), function(k) {
+      zar_infer_spec(x[[k]], names(x)[[k]], call)
+    })
     return(zar_spec("+s", name, children = unname(children)))
   }
   if (is.null(x)) {
@@ -156,7 +169,11 @@ zar_infer_type <- function(x, name) {
     # The exact text of section 6.3 is written back as the type it names.
     type <- attr(x, "arrow_type")
     if (!is.character(type) || length(type) != 1L || is.na(type)) {
-      zar_abort("type", "The `arrow_type` attribute must be one format string.")
+      zar_abort(
+        "type",
+        "The `arrow_type` attribute must be one format string.",
+        call = call
+      )
     }
     return(zar_spec(type, name))
   }
@@ -172,7 +189,8 @@ zar_infer_type <- function(x, name) {
       paste(
         "Can't infer an Arrow type for a matrix.",
         "Use `schema = arrow_matrix()` to write it as a fixed_size_list."
-      )
+      ),
+      call = call
     )
   }
   if (!is.object(x) || is.list(x) && identical(class(x), "list")) {
@@ -192,7 +210,7 @@ zar_infer_type <- function(x, name) {
       return(zar_spec(format, name))
     }
     if (is.list(x)) {
-      return(zar_infer_list(x, name))
+      return(zar_infer_list(x, name, call))
     }
   }
   zar_abort(
@@ -201,26 +219,26 @@ zar_infer_type <- function(x, name) {
       "Can't map an R object of class <%s> to an Arrow type.",
       paste(class(x), collapse = "/")
     ),
-    call = NULL
+    call = call
   )
 }
 
 # A list of raw vectors is binary; any other list is list<T>, T from the
 # elements, which must share one class (section 6.4).
-zar_infer_list <- function(x, name) {
+zar_infer_list <- function(x, name, call = NULL) {
   sorted <- attr(x, "arrow_keys_sorted", exact = TRUE)
   if (!is.null(sorted)) {
-    return(zar_infer_map(x, name, sorted))
+    return(zar_infer_map(x, name, sorted, call))
   }
   present <- x[!zar_null_elements(x)]
   if (length(present) > 0L && all(vapply(present, is.raw, NA))) {
     return(zar_spec("z", name))
   }
-  values <- zar_flatten(x)
+  values <- zar_flatten(x, call)
   child <- if (is.null(values)) {
     zar_spec("n", "item")
   } else {
-    zar_infer_spec(values, "item")
+    zar_infer_spec(values, "item", call)
   }
   total <- sum(zar_element_lengths(present))
   zar_spec(if (total > 2^31 - 1) "+L" else "+l", name, children = list(child))
@@ -229,9 +247,13 @@ zar_infer_list <- function(x, name) {
 # A list with the arrow_keys_sorted attribute arrow_to_r() gives a map is a
 # map again: its elements data frames of columns key and value (section
 # 6.4).
-zar_infer_map <- function(x, name, sorted) {
+zar_infer_map <- function(x, name, sorted, call = NULL) {
   if (!is.logical(sorted) || length(sorted) != 1L || is.na(sorted)) {
-    zar_abort("type", "The `arrow_keys_sorted` attribute must be one logical.")
+    zar_abort(
+      "type",
+      "The `arrow_keys_sorted` attribute must be one logical.",
+      call = call
+    )
   }
   present <- x[!zar_null_elements(x)]
   entries <- vapply(
@@ -245,16 +267,17 @@ zar_infer_map <- function(x, name, sorted) {
       paste(
         "Each element of a map column must be a data frame",
         "with columns `key` and `value`."
-      )
+      ),
+      call = call
     )
   }
-  values <- zar_flatten(x)
+  values <- zar_flatten(x, call)
   if (is.null(values)) {
     key <- zar_spec("n", "key")
     value <- zar_spec("n", "value")
   } else {
-    key <- zar_infer_spec(values$key, "key")
-    value <- zar_infer_spec(values$value, "value")
+    key <- zar_infer_spec(values$key, "key", call)
+    value <- zar_infer_spec(values$value, "value", call)
   }
   key$flags <- 0L
   zar_spec(
@@ -316,7 +339,7 @@ zar_flatten <- function(x, call = NULL) {
   do.call(c, present)
 }
 
-zar_from_handler <- function(handler, x) {
+zar_from_handler <- function(handler, x, call = NULL) {
   array <- handler$from(x)
   if (!zar_is_array(array)) {
     zar_abort(
@@ -324,7 +347,8 @@ zar_from_handler <- function(handler, x) {
       sprintf(
         "The `from` handler for `%s` did not return an array handle.",
         handler$key
-      )
+      ),
+      call = call
     )
   }
   array

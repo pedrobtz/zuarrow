@@ -80,11 +80,7 @@ arrow_write <- function(
     )
   }
   zar_check_level(level, compression, call)
-  if (
-    !is.logical(dictionary) || length(dictionary) != 1L || is.na(dictionary)
-  ) {
-    zar_abort("type", "`dictionary` must be `TRUE` or `FALSE`.", call = call)
-  }
+  zar_check_flag(dictionary, "dictionary", call)
   if (
     !is.null(x) &&
       !inherits(x, "connection") &&

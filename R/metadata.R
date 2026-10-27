@@ -20,8 +20,13 @@
 #' arrow_metadata(schema) <- c(origin = "zuarrow")
 #' arrow_metadata(schema)
 arrow_metadata <- function(x) {
+  call <- sys.call()
   if (!zar_is_handle(x)) {
-    zar_abort("handle", "`x` must be a schema, array or stream handle.")
+    zar_abort(
+      "handle",
+      "`x` must be a schema, array or stream handle.",
+      call = call
+    )
   }
   raw <- zar_check(.Call(zar_c_schema_metadata, arrow_schema(x)))
   zar_metadata_values(raw)
@@ -60,10 +65,16 @@ zar_metadata_values <- function(raw) {
 #' @rdname arrow_metadata
 #' @export
 `arrow_metadata<-` <- function(x, value) {
+  call <- sys.call()
   if (!zar_is_schema(x)) {
-    zar_abort("handle", "Metadata can only be replaced on a schema handle.")
+    zar_abort(
+      "handle",
+      "Metadata can only be replaced on a schema handle.",
+      call = call
+    )
   }
-  zar_check(.Call(zar_c_schema_with_metadata, x, zar_metadata_raw(value)))
+  raw <- zar_metadata_raw(value, call = call)
+  zar_check(.Call(zar_c_schema_with_metadata, x, raw))
 }
 
 zar_metadata_raw <- function(value, call = sys.call(-1)) {
