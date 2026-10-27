@@ -29,8 +29,8 @@ random_values <- function(kind, n) {
       as.raw(sample(0:255, sample(0:8, 1), TRUE))
     }),
     factor = factor(
-      sample(c("a", "b", "é"), n, TRUE),
-      levels = c("é", "b", "a")
+      sample(c("a", "b", "\u00e9"), n, TRUE),
+      levels = c("\u00e9", "b", "a")
     ),
     ordered = factor(
       sample(c("lo", "mid", "hi"), n, TRUE),

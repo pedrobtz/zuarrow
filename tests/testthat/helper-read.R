@@ -17,7 +17,7 @@ determinism_df <- function() {
   data.frame(
     i = c(1L, NA, 3L, -4L),
     d = c(1.5, NA, -2, 2^1000),
-    s = c("a", NA, "café", ""),
+    s = c("a", NA, "caf\u00e9", ""),
     f = factor(c("x", "y", NA, "x")),
     dt = as.Date("2026-10-21") + c(0L, NA, 2L, 3L)
   )

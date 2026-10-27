@@ -269,28 +269,34 @@ test_that("a lossy value inside a list fails, or converts under allow", {
 })
 
 test_that("nesting deeper than max_depth is a limit error", {
-  spec <- zspec("i", "item")
-  for (i in 1:70) {
-    spec <- zspec("+l", "item", children = list(spec))
-  }
-  schema <- test_schema(spec)
-  empty <- function(depth) {
-    if (depth == 0) {
-      return(test_array_spec(0, list(NULL, raw())))
+  # An empty array whose schema has `levels` levels: lists around an int32.
+  nested <- function(levels) {
+    spec <- zspec("i", "item")
+    for (i in seq_len(levels - 1L)) {
+      spec <- zspec("+l", "item", children = list(spec))
     }
-    test_array_spec(
+    empty <- function(depth) {
+      if (depth == 1L) {
+        return(test_array_spec(0, list(NULL, raw())))
+      }
+      test_array_spec(
+        0,
+        list(NULL, le_int(0, 4L)),
+        children = list(empty(depth - 1L))
+      )
+    }
+    top <- empty(levels)
+    test_array(
+      test_schema(spec),
       0,
-      list(NULL, le_int(0, 4L)),
-      children = list(empty(depth - 1))
+      top$buffers,
+      children = top$children
     )
   }
-  array <- test_array(
-    schema,
-    0,
-    list(NULL, le_int(0, 4L)),
-    children = list(empty(69))
-  )
-  expect_error(arrow_to_r(array), class = "zuarrow_limit_error")
+  # The default max_depth is 64.
+  expect_type(arrow_to_r(nested(64L)), "list")
+  expect_error(arrow_to_r(nested(65L)), class = "zuarrow_limit_error")
+  expect_error(arrow_to_r(nested(70L)), class = "zuarrow_limit_error")
 })
 
 test_that("a fixed_size_list with a null row round-trips", {

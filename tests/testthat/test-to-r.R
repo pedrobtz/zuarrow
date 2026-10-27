@@ -65,8 +65,8 @@ test_that("int64 and uint64 within 2^53 convert to double", {
 
 test_that("strings convert in every layout", {
   expect_identical(
-    arrow_to_r(arrow_array(c("a", NA, "café"))),
-    c("a", NA, "café")
+    arrow_to_r(arrow_array(c("a", NA, "caf\u00e9"))),
+    c("a", NA, "caf\u00e9")
   )
   large <- test_array("U", 2, list(NULL, le_int(c(0, 1, 3)), charToRaw("abc")))
   expect_identical(arrow_to_r(large), c("a", "bc"))

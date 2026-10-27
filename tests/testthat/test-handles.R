@@ -162,5 +162,7 @@ test_that("finalizers release handles without error", {
     stream <- test_stream("i", list(test_int32(1:10), test_int32(1:5)))
   }
   rm(stream)
+  # An error in a finalizer does not reach gc()'s caller, so this test fails
+  # only by crashing, as a double free or a bad release would.
   expect_no_error(gc())
 })

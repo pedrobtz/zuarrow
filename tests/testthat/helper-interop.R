@@ -176,10 +176,10 @@ interop_cases <- function() {
     ),
     case("float", function() build(c(1.5, NA, -2), na$na_float())),
     case("double", function() build(c(1.5, NA, -2), na$na_double())),
-    case("utf8", function() build(c("a", NA, "é"), na$na_string())),
+    case("utf8", function() build(c("a", NA, "\u00e9"), na$na_string())),
     case(
       "large_utf8",
-      function() build(c("a", NA, "é"), na$na_large_string())
+      function() build(c("a", NA, "\u00e9"), na$na_large_string())
     ),
     case("utf8_view", vu$nanoarrow, vu$zuarrow),
     case(

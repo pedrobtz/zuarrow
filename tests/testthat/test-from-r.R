@@ -157,9 +157,9 @@ test_that("Date exports to date32 and date64", {
 })
 
 test_that("strings are written as UTF-8 whatever their encoding", {
-  latin1 <- iconv("café", "UTF-8", "latin1")
+  latin1 <- iconv("caf\u00e9", "UTF-8", "latin1")
   expect_identical(Encoding(latin1), "latin1")
-  expect_identical(arrow_to_r(arrow_array(latin1)), "café")
+  expect_identical(arrow_to_r(arrow_array(latin1)), "caf\u00e9")
   expect_identical(
     arrow_to_r(arrow_array(c("a", NA), schema = "U")),
     c("a", NA)
@@ -247,7 +247,7 @@ test_that("every inferred character column switches to large_utf8", {
   expect_identical(format(arrow_schema(stream)), format(arrow_schema(df)))
   expect_identical(as.data.frame(stream), df)
   # Bytes are counted as UTF-8: "é" in latin1 is one byte, in UTF-8 two.
-  latin1 <- iconv("ééé", "UTF-8", "latin1")
+  latin1 <- iconv("\u00e9\u00e9\u00e9", "UTF-8", "latin1")
   expect_identical(format(arrow_schema(arrow_array(latin1))), "large_string")
 })
 
@@ -278,7 +278,7 @@ test_that("every array zuarrow builds passes full validation", {
     c(TRUE, NA),
     c(1L, NA),
     c(1.5, NA, NaN),
-    c("a", NA, "é"),
+    c("a", NA, "\u00e9"),
     as.Date(c("2026-10-21", NA)),
     as.POSIXct(c("2026-10-21", NA), tz = "UTC"),
     as.difftime(c(1, NA), units = "secs"),

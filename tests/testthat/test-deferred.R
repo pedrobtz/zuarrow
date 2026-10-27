@@ -1,7 +1,7 @@
 test_that("copy = FALSE gives the same values as copying", {
   df <- data.frame(
     i = 1:6,
-    s = c("a", NA, "café", "", "zz", NA),
+    s = c("a", NA, "caf\u00e9", "", "zz", NA),
     stringsAsFactors = FALSE
   )
   copied <- arrow_to_r(arrow_stream(df, batch = 4L))
