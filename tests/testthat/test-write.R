@@ -263,7 +263,14 @@ test_that("bad arguments are type errors", {
     arrow_write(basic_df(), NULL, dictionary = NA),
     class = "zuarrow_type_error"
   )
-  expect_error(arrow_write(basic_df(), NULL, compression = "gzip"))
+  expect_error(
+    arrow_write(basic_df(), NULL, compression = "gzip"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_write(basic_df(), NULL, format = "feather"),
+    class = "zuarrow_type_error"
+  )
   expect_error(
     arrow_write(basic_df(), file.path(tempfile(), "no", "dir.arrow")),
     class = "zuarrow_io_error"

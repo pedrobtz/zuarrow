@@ -155,3 +155,7 @@
   the message's copy, where libarrow reads the footer's (#33).
 * `arrow_read(lazy = TRUE)` with `to`, `lossy` or `copy` set is a
   `zuarrow_type_error`. Before, it ignored them silently (#78).
+* An unknown `lossy`, `level`, `format` or `compression` is a
+  `zuarrow_type_error`, so it inherits from `zuarrow_error` like every
+  other error. Before, `match.arg()` raised an unclassed error. The value
+  must now match a choice exactly (#32).

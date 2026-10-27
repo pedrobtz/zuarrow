@@ -58,9 +58,14 @@ arrow_write <- function(
       "file"
     }
   } else {
-    match.arg(format)
+    zar_arg_match(format, c("file", "stream"), "format", call)
   }
-  compression <- match.arg(compression)
+  compression <- zar_arg_match(
+    compression,
+    c("none", "lz4", "zstd"),
+    "compression",
+    call
+  )
   if (
     !is.null(level) &&
       (!is.numeric(level) ||

@@ -353,8 +353,8 @@ arrow_to_r <- function(
   lossy = zar_lossy_policies,
   copy = TRUE
 ) {
-  lossy <- match.arg(lossy)
   call <- sys.call()
+  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
   zar_check_flag(copy, "copy", call)
   if (zar_is_array(x)) {
     zar_check_live(x, call = call)
@@ -387,8 +387,8 @@ arrow_next <- function(
   lossy = zar_lossy_policies,
   copy = TRUE
 ) {
-  lossy <- match.arg(lossy)
   call <- sys.call()
+  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
   zar_check_flag(copy, "copy", call)
   if (!zar_is_stream(stream)) {
     zar_abort("handle", "`stream` must be a stream handle.", call = call)
@@ -839,9 +839,15 @@ as.data.frame.zuarrow_array_stream <- function(
   lossy = zar_lossy_policies,
   copy = TRUE
 ) {
-  out <- arrow_to_r(x, to = to, lossy = match.arg(lossy), copy = copy)
+  call <- sys.call()
+  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
+  out <- arrow_to_r(x, to = to, lossy = lossy, copy = copy)
   if (!is.data.frame(out)) {
-    zar_abort("type", "Only a stream of struct converts to a data frame.")
+    zar_abort(
+      "type",
+      "Only a stream of struct converts to a data frame.",
+      call = call
+    )
   }
   out
 }
@@ -856,9 +862,15 @@ as.data.frame.zuarrow_array <- function(
   lossy = zar_lossy_policies,
   copy = TRUE
 ) {
-  out <- arrow_to_r(x, to = to, lossy = match.arg(lossy), copy = copy)
+  call <- sys.call()
+  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
+  out <- arrow_to_r(x, to = to, lossy = lossy, copy = copy)
   if (!is.data.frame(out)) {
-    zar_abort("type", "Only a struct array converts to a data frame.")
+    zar_abort(
+      "type",
+      "Only a struct array converts to a data frame.",
+      call = call
+    )
   }
   out
 }

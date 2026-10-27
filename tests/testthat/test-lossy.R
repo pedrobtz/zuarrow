@@ -253,8 +253,31 @@ test_that("a target that cannot take the column is a type error", {
   expect_error(arrow_to_r(df, to = double()), class = "zuarrow_type_error")
 })
 
-test_that("an unknown policy is an error", {
-  expect_error(arrow_to_r(arrow_array(1L), lossy = "round"))
+test_that("an unknown policy is a type error", {
+  array <- arrow_array(1L)
+  expect_error(arrow_to_r(array, lossy = "round"), class = "zuarrow_type_error")
+  expect_error(arrow_to_r(array, lossy = NA), class = "zuarrow_type_error")
+  expect_error(
+    arrow_to_r(array, lossy = c("error", "warn")),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_next(arrow_stream(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_read(arrow_write(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    as.data.frame(arrow_stream(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    as.data.frame(arrow_array(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_identical(arrow_to_r(array, lossy = "warn"), 1L)
 })
 
 test_that("the exact text is written back as the type it names", {

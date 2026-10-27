@@ -22,7 +22,8 @@
 #' schema <- arrow_schema(data.frame(x = 1:3))
 #' arrow_validate(schema)
 arrow_validate <- function(x, level = c("full", "default", "minimal")) {
-  level <- match.arg(level)
+  call <- sys.call()
+  level <- zar_arg_match(level, c("full", "default", "minimal"), "level", call)
   code <- match(level, c("minimal", "default", "full"))
   if (zar_is_schema(x)) {
     zar_check_live(x)

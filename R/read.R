@@ -90,8 +90,8 @@ arrow_read <- function(
   limits = arrow_limits(),
   copy = TRUE
 ) {
-  lossy <- match.arg(lossy)
   call <- sys.call()
+  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
   if (!inherits(limits, "zuarrow_limits")) {
     zar_abort("type", "`limits` must come from arrow_limits().", call = call)
   }

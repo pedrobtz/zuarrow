@@ -125,6 +125,10 @@ test_that("a schema handle validates when it is live", {
   expect_true(arrow_validate(arrow_schema("i")))
 })
 
-test_that("an unknown level is an error", {
-  expect_error(arrow_validate(test_int32(1L), "strict"))
+test_that("an unknown level is a type error", {
+  expect_error(
+    arrow_validate(test_int32(1L), "strict"),
+    class = "zuarrow_type_error"
+  )
+  expect_true(arrow_validate(test_int32(1L), "minimal"))
 })
