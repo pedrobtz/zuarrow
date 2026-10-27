@@ -937,24 +937,35 @@ unsupported:
   return zar_build_fail(b, "type", NA_REAL);
 }
 
-static int64_t zar_utf8_bytes(SEXP x) {
-  int64_t total = 0;
-  for (R_xlen_t i = 0; i < Rf_xlength(x); i++) {
+/* Whether a character vector holds more than `limit` bytes as UTF-8, so
+   that schema inference writes it as large_utf8 (section 6.2). A string
+   is at most three times as long in UTF-8 as in its own encoding, so the
+   exact count is only needed near the limit. */
+SEXP zar_c_utf8_over(SEXP x, SEXP r_limit) {
+  double limit = Rf_asReal(r_limit);
+  if (TYPEOF(x) != STRSXP) return Rf_ScalarLogical(FALSE);
+  R_xlen_t n = Rf_xlength(x);
+  double native = 0;
+  for (R_xlen_t i = 0; i < n; i++) {
+    SEXP s = STRING_ELT(x, i);
+    if (s != NA_STRING) native += (double)LENGTH(s);
+  }
+  if (native * 3 <= limit) return Rf_ScalarLogical(FALSE);
+  double total = 0;
+  for (R_xlen_t i = 0; i < n && total <= limit; i++) {
     SEXP s = STRING_ELT(x, i);
     size_t len;
-    if (s != NA_STRING && zar_char_utf8(s, &len) != NULL) {
-      total += (int64_t)len;
-    }
+    if (s == NA_STRING) continue;
+    /* A string that cannot be written counts its own bytes; the build
+       refuses it. */
+    if (zar_char_utf8(s, &len) == NULL) len = (size_t)LENGTH(s);
+    total += (double)len;
   }
-  return total;
+  return Rf_ScalarLogical(total > limit);
 }
 
-/* Builds rows [start, start + n) of `x` as an array of `schema_xptr`.
-   `utf8_limit` is NA when the schema was given; otherwise a character
-   vector holding more bytes than it is written as large_utf8 (section
-   6.2). R passes 2^31 - 1, the most utf8's offsets address. */
-SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n,
-                  SEXP utf8_limit) {
+/* Builds rows [start, start + n) of `x` as an array of `schema_xptr`. */
+SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
   struct zar_build b;
   b.error.message[0] = '\0';
   b.kind = NULL;
@@ -970,15 +981,6 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n,
   }
   struct ArrowSchema *schema =
       (struct ArrowSchema *)R_ExternalPtrAddr(schema_copy);
-  double limit = Rf_asReal(utf8_limit);
-  if (!ISNAN(limit) && TYPEOF(x) == STRSXP &&
-      strcmp(schema->format, "u") == 0 && (double)zar_utf8_bytes(x) > limit) {
-    if (ArrowSchemaSetFormat(schema, "U") != NANOARROW_OK) {
-      UNPROTECT(1);
-      return zar_failure(NULL, "cannot allocate a format string");
-    }
-  }
-
   SEXP out = PROTECT(zar_array_owning_xptr(schema_copy));
   struct ArrowArray *array = (struct ArrowArray *)R_ExternalPtrAddr(out);
   int code = ArrowArrayInitFromSchema(array, schema, &b.error);

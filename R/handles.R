@@ -178,7 +178,11 @@ zar_infer_type <- function(x, name) {
       logical = "b",
       integer = "i",
       double = "g",
-      character = "u",
+      character = if (.Call(zar_c_utf8_over, x, zar_utf8_limit())) {
+        "U"
+      } else {
+        "u"
+      },
       NULL
     )
     if (!is.null(format)) {

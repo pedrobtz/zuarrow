@@ -54,9 +54,6 @@ arrow_array <- function(x, schema = NULL) {
   if (is.null(schema) && !is.null(handler)) {
     return(zar_from_handler(handler, x))
   }
-  # A given schema is kept as it is; an inferred one may switch to
-  # large_utf8.
-  limit <- if (is.null(schema)) zar_utf8_limit() else NA_real_
   schema <- zar_schema_for(x, schema)
   prepared <- zar_prepare(x, schema)
   zar_check(.Call(
@@ -64,8 +61,7 @@ arrow_array <- function(x, schema = NULL) {
     zar_batch(prepared, 0, zar_nrow(x)),
     schema,
     0,
-    zar_nrow(x),
-    limit
+    zar_nrow(x)
   ))
 }
 
@@ -92,8 +88,7 @@ arrow_stream <- function(x, batch = 65536L, schema = NULL) {
       zar_batch(prepared, start, len),
       schema,
       start,
-      len,
-      NA_real_
+      len
     ))
   })
   zar_check(.Call(zar_c_stream_from_arrays, schema, arrays))

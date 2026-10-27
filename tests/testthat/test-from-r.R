@@ -178,6 +178,25 @@ test_that("strings past utf8's offsets are written as large_utf8", {
   )
 })
 
+test_that("every inferred character column switches to large_utf8", {
+  withr::local_options(zuarrow.utf8_limit = 5)
+  df <- data.frame(big = c("abcdef", "gh"), small = c("a", "b"))
+  df$tags <- list("abc", "def")
+  expect_identical(
+    format(arrow_schema(df)),
+    "struct<big: large_string, small: string, tags: list<item: large_string>>"
+  )
+  array <- arrow_array(df)
+  expect_identical(format(arrow_schema(array)), format(arrow_schema(df)))
+  expect_identical(arrow_to_r(array), df)
+  stream <- arrow_stream(df, batch = 1)
+  expect_identical(format(arrow_schema(stream)), format(arrow_schema(df)))
+  expect_identical(as.data.frame(stream), df)
+  # Bytes are counted as UTF-8: "é" in latin1 is one byte, in UTF-8 two.
+  latin1 <- iconv("ééé", "UTF-8", "latin1")
+  expect_identical(format(arrow_schema(arrow_array(latin1))), "large_string")
+})
+
 test_that("binary checks its elements", {
   expect_error(arrow_array(list(as.raw(1), 1L)), class = "zuarrow_type_error")
   fixed <- arrow_array(list(as.raw(1:2), NULL), schema = "w:2")

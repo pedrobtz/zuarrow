@@ -103,3 +103,6 @@
   the caller's array, so it could not be read or written again (#40).
 * `arrow_array()` and `arrow_stream()` no longer set an attribute on the
   schema handle they are given (#53).
+* Every character column switches to `large_utf8` past 2^31 - 1 bytes,
+  including data frame and list columns, and `arrow_schema()` reports the
+  switch (#52).
