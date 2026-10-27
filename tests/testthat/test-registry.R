@@ -176,11 +176,10 @@ test_that("a missing package is a dependency error", {
 })
 
 test_that("a later registration replaces the earlier one with a message", {
-  local_registration("l", to = as_text_int64)
-  expect_message(
-    arrow_register("l", to = as_text_int64, package = "stats"),
-    "stats"
-  )
+  local_unload_hooks(c("stats", "utils"))
+  local_registration("l", to = as_text_int64, package = "utils")
+  # The message names both packages.
+  expect_snapshot(arrow_register("l", to = as_text_int64, package = "stats"))
   expect_identical(
     arrow_registry()$package[arrow_registry()$key == "l"],
     "stats"
@@ -205,12 +204,18 @@ test_that("arrow_registry() lists key, kind, class, package and exact", {
 })
 
 test_that("a package's registrations are removed when it unloads", {
+  local_unload_hooks("stats")
+  event <- packageEvent("stats", "onUnload")
+  # Clear zuarrow's record so the hook is added afresh, and run only it.
+  registry <- zuarrow:::zar_registry
+  registry$hooked <- character()
+  before <- length(getHook(event))
   arrow_register("l", to = as_text_int64, package = "stats")
   withr::defer(arrow_unregister("l"))
   expect_true("l" %in% arrow_registry()$key)
-  for (hook in getHook(packageEvent("stats", "onUnload"))) {
-    hook("stats")
-  }
+  added <- getHook(event)[-seq_len(before)]
+  expect_length(added, 1L)
+  added[[1L]]("stats")
   expect_false("l" %in% arrow_registry()$key)
 })
 
@@ -317,6 +322,7 @@ test_that("conditions from a handled nested field name its path", {
   local_registration("i", to = function(array, schema) arrow_to_r(array))
   err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
   expect_identical(err$column, "s$b")
+  expect_snapshot(arrow_to_r(array), error = TRUE)
   w <- expect_warning(
     arrow_to_r(array, lossy = "warn"),
     class = "zuarrow_lossy_warning"
