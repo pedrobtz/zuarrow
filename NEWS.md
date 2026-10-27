@@ -171,3 +171,6 @@
   message and in `column`. Before, they named `b` alone (#42).
 * Error messages follow one style: "must" for a requirement and "can't"
   for what is impossible, one idea per sentence (#80).
+* A list column of functions, environments or calls is a
+  `zuarrow_type_error`. Before, `arrow_schema(list(sum))` recursed until
+  the C stack overflowed (#82).

@@ -346,6 +346,18 @@ zar_flatten <- function(x, call = NULL) {
     )
   }
   first <- present[[1L]]
+  # c() of functions, environments or calls is a list of them again, so
+  # inference would recurse until the C stack overflows.
+  if (!is.atomic(first) && !is.list(first)) {
+    zar_abort(
+      "type",
+      sprintf(
+        "Can't map a list of <%s> elements to an Arrow type.",
+        paste(class(first), collapse = "/")
+      ),
+      call = call
+    )
+  }
   if (is.data.frame(first)) {
     return(do.call(rbind, present))
   }

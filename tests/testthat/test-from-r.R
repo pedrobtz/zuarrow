@@ -30,6 +30,19 @@ test_that("a class with no Arrow type is a type error", {
   )
 })
 
+test_that("a list of functions, environments or calls is a type error", {
+  elements <- list(sum, function(x) x, new.env(), quote(f(x)), quote(x))
+  for (e in elements) {
+    expect_error(arrow_schema(list(e)), class = "zuarrow_type_error")
+    expect_error(arrow_array(list(e)), class = "zuarrow_type_error")
+    expect_error(arrow_array(list(list(e))), class = "zuarrow_type_error")
+  }
+  expect_error(
+    arrow_array(data.frame(x = I(list(sum)))),
+    class = "zuarrow_type_error"
+  )
+})
+
 test_that("a schema writes the values as its type, checked", {
   expect_identical(
     arrow_to_r(arrow_array(c(1L, -3L), schema = "c")),
