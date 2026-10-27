@@ -123,3 +123,5 @@
 * With `copy = FALSE`, strings inside list elements are copied, as the
   design says, rather than each element deferring and keeping every batch
   alive (#55).
+* A decimal with a negative scale round-trips through its text form: the
+  text needs the scale's trailing zeros, and zero reads as `"0"` (#54).

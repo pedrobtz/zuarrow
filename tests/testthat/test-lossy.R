@@ -271,6 +271,8 @@ test_that("the exact text is written back as the type it names", {
     test_fixed("d:9,3,32", c(-999999999, 1), 4L),
     test_fixed("d:18,0,64", c(123456789012345), 8L),
     test_fixed("d:40,3,256", c(1, -2), 32L),
+    test_fixed("d:5,-2", c(123, -7, 0), 16L),
+    test_fixed("d:3,-2,32", c(999, -999), 4L),
     test_fixed("tsn:UTC", c(1500000001, -1), 8L),
     test_fixed("tsu:", c(0, -1, 1761040800123456), 8L),
     test_fixed("tss:Europe/Lisbon", c(-62135596800, 253402300799), 8L),
@@ -339,4 +341,16 @@ test_that("a parsed decimal at full precision round-trips", {
     as.vector(arrow_to_r(arrow_array(text), lossy = "character")),
     c("99999.99", "-0.01", "0.00")
   )
+})
+
+test_that("a negative-scale decimal parses only with its trailing zeros", {
+  text <- structure(c("12300", "-700", "0"), arrow_type = "d:5,-2")
+  expect_identical(
+    as.vector(arrow_to_r(arrow_array(text), lossy = "character")),
+    c("12300", "-700", "0")
+  )
+  bad <- function(value) arrow_array(structure(value, arrow_type = "d:5,-2"))
+  expect_error(bad("12345"), class = "zuarrow_lossy_error")
+  expect_error(bad("12300.5"), class = "zuarrow_lossy_error")
+  expect_error(bad("1230000000"), class = "zuarrow_lossy_error")
 })

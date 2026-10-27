@@ -1110,7 +1110,12 @@ static int zar_text(const struct zar_plan *p, const struct ArrowArrayView *v,
           ArrowBufferAppendInt8(scratch, 0) != NANOARROW_OK) {
         return ENOMEM;
       }
-      *out = (const char *)scratch->data;
+      char *text = (char *)scratch->data;
+      /* nanoarrow writes zero at a negative scale as "000": write "0". */
+      if (p->sv.decimal_scale < 0 && text[strspn(text, "0")] == '\0') {
+        text[1] = '\0';
+      }
+      *out = text;
       return NANOARROW_OK;
     }
     default:
