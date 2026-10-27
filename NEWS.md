@@ -159,3 +159,7 @@
   `zuarrow_type_error`, so it inherits from `zuarrow_error` like every
   other error. Before, `match.arg()` raised an unclassed error. The value
   must now match a choice exactly (#32).
+* `arrow_write()` raises `zuarrow_io_error` when it cannot open or write
+  to a path or a connection, and the message keeps the cause, as
+  `arrow_read()` does. Before, a connection raised unclassed errors and a
+  path lost the cause (#76).

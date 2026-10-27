@@ -187,35 +187,18 @@ zar_read_source <- function(x, limits, call) {
 # A connection is read through R's connection API in blocks, so a gzipped
 # file or a socket arrives as it is read, up to max_bytes.
 zar_read_connection <- function(con, limits, call) {
-  opened <- !isOpen(con)
-  if (opened) {
-    ok <- tryCatch(
-      {
-        open(con, "rb")
-        TRUE
-      },
-      error = function(e) e
-    )
-    if (!isTRUE(ok)) {
-      zar_abort(
-        "io",
-        sprintf("Cannot open the connection: %s", conditionMessage(ok)),
-        call = call
-      )
-    }
+  if (!isOpen(con)) {
+    zar_io(open(con, "rb"), "Can't open the connection", call)
     on.exit(close(con), add = TRUE)
   }
   blocks <- list()
   total <- 0
   repeat {
-    block <- tryCatch(readBin(con, raw(), 1048576L), error = function(e) e)
-    if (inherits(block, "error")) {
-      zar_abort(
-        "io",
-        sprintf("Cannot read the connection: %s", conditionMessage(block)),
-        call = call
-      )
-    }
+    block <- zar_io(
+      readBin(con, raw(), 1048576L),
+      "Can't read the connection",
+      call
+    )
     if (length(block) == 0L) {
       break
     }

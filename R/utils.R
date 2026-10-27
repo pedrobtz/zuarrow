@@ -19,3 +19,18 @@ zar_arg_match <- function(x, choices, name, call) {
   }
   x
 }
+
+# Runs one I/O step. A warning or error from it becomes zuarrow_io_error,
+# whose message keeps the cause after `what`.
+zar_io <- function(expr, what, call, ...) {
+  out <- tryCatch(expr, error = function(e) e, warning = function(w) w)
+  if (inherits(out, "condition")) {
+    zar_abort(
+      "io",
+      sprintf("%s: %s", what, conditionMessage(out)),
+      call = call,
+      ...
+    )
+  }
+  out
+}

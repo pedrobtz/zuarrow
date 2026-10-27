@@ -115,25 +115,18 @@ arrow_write <- function(
     return(bytes)
   }
   if (inherits(x, "connection")) {
-    opened <- !isOpen(x)
-    if (opened) {
-      open(x, "wb")
+    if (!isOpen(x)) {
+      zar_io(open(x, "wb"), "Can't open the connection", call)
       on.exit(close(x), add = TRUE)
     }
-    writeBin(bytes, x)
+    zar_io(writeBin(bytes, x), "Can't write to the connection", call)
     return(invisible(x))
   }
-  con <- tryCatch(file(x, "wb"), error = function(e) e, warning = function(w) w)
-  if (inherits(con, "condition")) {
-    zar_abort(
-      "io",
-      sprintf("Cannot open `%s` for writing.", x),
-      call = call,
-      path = x
-    )
-  }
+  what <- sprintf("Can't open `%s` for writing", x)
+  con <- zar_io(file(x, "wb"), what, call, path = x)
   on.exit(close(con), add = TRUE)
-  writeBin(bytes, con)
+  what <- sprintf("Can't write to `%s`", x)
+  zar_io(writeBin(bytes, con), what, call, path = x)
   invisible(x)
 }
 

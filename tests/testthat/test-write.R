@@ -51,6 +51,21 @@ test_that("a connection is written to", {
   expect_identical(without_metadata(arrow_read(path)), basic_df())
 })
 
+test_that("a write that fails to open or write is an io error", {
+  missing <- file.path(withr::local_tempdir(), "no", "dir.arrow")
+  expect_error(arrow_write(basic_df(), missing), class = "zuarrow_io_error")
+  # A connection that cannot be opened for writing.
+  con <- file(missing)
+  withr::defer(try(close(con), silent = TRUE))
+  expect_error(arrow_write(basic_df(), con), class = "zuarrow_io_error")
+  # A connection already open, but only for reading.
+  path <- withr::local_tempfile()
+  writeBin(as.raw(1:4), path)
+  con <- file(path, "rb")
+  withr::defer(close(con))
+  expect_error(arrow_write(basic_df(), con), class = "zuarrow_io_error")
+})
+
 test_that("batch splits a data frame into record batches", {
   stream <- arrow_read(arrow_write(basic_df(), NULL, batch = 1), lazy = TRUE)
   n <- 0L
