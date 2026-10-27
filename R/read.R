@@ -170,7 +170,7 @@ zar_read_source <- function(x, limits, call) {
     if (!file.exists(x) || dir.exists(x)) {
       zar_abort(
         "io",
-        sprintf("Cannot open `%s`: no such file.", x),
+        sprintf("Can't open `%s`: no such file.", x),
         call = call,
         path = x
       )

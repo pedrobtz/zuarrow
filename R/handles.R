@@ -46,7 +46,7 @@ arrow_schema <- function(x) {
   }
   if (is.character(x) && length(x) == 1L && is.null(attributes(x))) {
     if (is.na(x) || !nzchar(x)) {
-      zar_abort("format", "A format string cannot be empty or `NA`.")
+      zar_abort("format", "A format string can't be empty or `NA`.")
     }
     return(zar_check(.Call(zar_c_schema_from_spec, zar_spec(x))))
   }
@@ -169,7 +169,10 @@ zar_infer_type <- function(x, name) {
   if (is.matrix(x)) {
     zar_abort(
       "type",
-      "A matrix is written as a fixed_size_list only when asked: use `schema = arrow_matrix()`."
+      paste(
+        "Can't infer an Arrow type for a matrix.",
+        "Use `schema = arrow_matrix()` to write it as a fixed_size_list."
+      )
     )
   }
   if (!is.object(x) || is.list(x) && identical(class(x), "list")) {
@@ -195,7 +198,7 @@ zar_infer_type <- function(x, name) {
   zar_abort(
     "type",
     sprintf(
-      "Cannot map an R object of class <%s> to an Arrow type.",
+      "Can't map an R object of class <%s> to an Arrow type.",
       paste(class(x), collapse = "/")
     ),
     call = NULL
@@ -239,7 +242,10 @@ zar_infer_map <- function(x, name, sorted) {
   if (!all(entries)) {
     zar_abort(
       "type",
-      "Each element of a map column must be a data frame with columns `key` and `value`."
+      paste(
+        "Each element of a map column must be a data frame",
+        "with columns `key` and `value`."
+      )
     )
   }
   values <- zar_flatten(x)

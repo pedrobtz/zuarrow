@@ -169,3 +169,5 @@
 * The lossy error and warning for a field of a nested data frame that is
   converted for a registered handler name its path, such as `s$b`, in the
   message and in `column`. Before, they named `b` alone (#42).
+* Error messages follow one style: "must" for a requirement and "can't"
+  for what is impossible, one idea per sentence (#80).

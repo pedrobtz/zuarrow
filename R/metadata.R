@@ -84,7 +84,10 @@ zar_metadata_raw <- function(value, call = sys.call(-1)) {
   if (!ok_values || is.null(keys) || anyNA(keys) || any(!nzchar(keys))) {
     zar_abort(
       "type",
-      "Metadata must be a named character vector or a named list of strings and raw vectors.",
+      paste(
+        "Metadata must be a named character vector",
+        "or a named list of strings and raw vectors."
+      ),
       call = call
     )
   }

@@ -116,7 +116,7 @@ arrow_register <- function(
   if (is.null(to) && is.null(from)) {
     zar_abort(
       "registry",
-      "A registration needs `to`, `from` or both.",
+      "A registration must have `to`, `from` or both.",
       call = call
     )
   }
@@ -124,10 +124,18 @@ arrow_register <- function(
     !is.null(from) &&
       (!is.character(class) || length(class) == 0L || anyNA(class))
   ) {
-    zar_abort("registry", "`from` needs the R `class` it handles.", call = call)
+    zar_abort(
+      "registry",
+      "`class` must name the R classes `from` handles.",
+      call = call
+    )
   }
   if (is.null(from) && !is.null(class)) {
-    zar_abort("registry", "`class` needs a `from` handler.", call = call)
+    zar_abort(
+      "registry",
+      "`class` must be `NULL` without a `from` handler.",
+      call = call
+    )
   }
   if (!is.logical(exact) || length(exact) != 1L || is.na(exact)) {
     zar_abort("registry", "`exact` must be `TRUE` or `FALSE`.", call = call)
@@ -158,7 +166,7 @@ arrow_register <- function(
     zar_abort(
       "registry",
       sprintf(
-        "`%s` converts exactly already, so a registration for it must be exact.",
+        "A registration for `%s` must be exact, as its built-in conversion is.",
         key
       ),
       call = call

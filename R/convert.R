@@ -262,7 +262,7 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
     if (!is.matrix(x)) {
       zar_abort(
         "type",
-        "`schema = arrow_matrix()` needs a matrix.",
+        "`x` must be a matrix for `schema = arrow_matrix()`.",
         call = call
       )
     }
@@ -407,7 +407,10 @@ zar_bit64_loaded <- function() isNamespaceLoaded("bit64")
 zar_deferred_released <- function() {
   zar_abort(
     "handle",
-    "The Arrow array behind this character vector was released before its strings were created.",
+    paste(
+      "The Arrow array behind this character vector was released",
+      "before its strings were created."
+    ),
     call = NULL
   )
 }
@@ -442,7 +445,10 @@ zar_to_code <- function(proto, call) {
   zar_abort(
     "type",
     sprintf(
-      "`to` holds an unsupported target of class <%s>; use character(), double(), integer() or arrow_matrix().",
+      paste(
+        "Each target in `to` must be character(), double(), integer()",
+        "or arrow_matrix(), not an object of class <%s>."
+      ),
       paste(class(proto), collapse = "/")
     ),
     call = call
@@ -816,7 +822,7 @@ zar_raise_conversion <- function(failure, call, prefix = "") {
   zar_abort(
     "lossy",
     sprintf(
-      "%s (Arrow format `%s`) cannot be converted to R exactly: %s. %s",
+      "%s (Arrow format `%s`) can't be converted to R exactly: %s. %s",
       label,
       format,
       failure$message,
