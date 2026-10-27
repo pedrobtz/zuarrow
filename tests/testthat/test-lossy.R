@@ -182,6 +182,13 @@ test_that("an embedded NUL is lossy with no text form", {
     class = "zuarrow_lossy_error"
   )
   expect_identical(arrow_to_r(nul, lossy = "allow"), "a")
+  # The hint does not offer the text form such a string lacks.
+  err <- expect_error(arrow_to_r(nul), class = "zuarrow_lossy_error")
+  expect_no_match(conditionMessage(err), "lossy = \"character\"", fixed = TRUE)
+  expect_match(conditionMessage(err), "lossy = \"allow\"", fixed = TRUE)
+  big <- arrow_array(2^53 + 2, schema = "l")
+  err <- expect_error(arrow_to_r(big), class = "zuarrow_lossy_error")
+  expect_match(conditionMessage(err), "lossy = \"character\"", fixed = TRUE)
 })
 
 test_that("the scan finds lossy values in any batch of a stream", {

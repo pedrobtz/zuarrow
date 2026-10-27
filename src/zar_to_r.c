@@ -112,9 +112,9 @@ static void zar_scratch_finalize(SEXP xptr) {
 
 static SEXP zar_column_failure(const char *kind, const char *message,
                                int column, double row, const char *format,
-                               const char *name) {
-  const char *names[] = {"kind", "message", "column", "row", "format", "name",
-                         ""};
+                               const char *name, int no_text) {
+  const char *names[] = {"kind",   "message", "column", "row",
+                         "format", "name",    "text",   ""};
   SEXP out = PROTECT(Rf_mkNamed(VECSXP, names));
   SET_VECTOR_ELT(out, 0, Rf_mkString(kind));
   SET_VECTOR_ELT(out, 1, zar_scalar_utf8(message));
@@ -122,6 +122,7 @@ static SEXP zar_column_failure(const char *kind, const char *message,
   SET_VECTOR_ELT(out, 3, Rf_ScalarReal(row));
   SET_VECTOR_ELT(out, 4, zar_scalar_utf8(format == NULL ? "" : format));
   SET_VECTOR_ELT(out, 5, zar_scalar_utf8(name == NULL ? "" : name));
+  SET_VECTOR_ELT(out, 6, Rf_ScalarLogical(!no_text));
   SEXP cls = PROTECT(Rf_mkString("zar_failure"));
   Rf_setAttrib(out, R_ClassSymbol, cls);
   UNPROTECT(2);
@@ -137,6 +138,7 @@ struct zar_err {
   const char *format;
   int copy;    /* FALSE: string columns may be deferred (zar_altrep.c) */
   int in_list; /* building a list element, which is never deferred */
+  int no_text; /* a lossy failure that lossy = "character" cannot fix */
   SEXP arrays; /* the batches' array handles, which deferred strings keep */
 };
 
@@ -966,6 +968,7 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
     if (lossy == ZAR_LOSSY_WARN) *warned = 1;
     return NANOARROW_OK;
   }
+  e->no_text = !text_ok;
   if (bad_row >= 0 && top) {
     ArrowErrorSet(&e->error, "row %ld holds %s", (long)(bad_row + 1), value);
     return zar_fail(e, "lossy", bad_row, p->schema->format);
@@ -2039,7 +2042,8 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       UNPROTECT(1);
       return zar_column_failure(e.kind == NULL ? "type" : e.kind, e.error.message,
                                 (int)c + 1, e.row >= 0 ? (double)(e.row + 1) : NA_REAL,
-                                e.format == NULL ? cs->format : e.format, cs->name);
+                                e.format == NULL ? cs->format : e.format, cs->name,
+                                e.no_text);
     }
   }
 
@@ -2054,7 +2058,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       UNPROTECT(3);
       return zar_column_failure(e.kind, e.error.message, (int)c + 1, NA_REAL,
                                 e.format == NULL ? p->schema->format : e.format,
-                                p->schema->name);
+                                p->schema->name, e.no_text);
     }
     SET_VECTOR_ELT(columns, (R_xlen_t)c, col);
   }

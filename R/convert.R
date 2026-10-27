@@ -776,6 +776,9 @@ zar_raise_conversion <- function(failure, lossy, call) {
   }
   target <- zar_exact_target(format)
   never <- grepl("^(\\+u|ti)", format)
+  # A string with an embedded NUL has no text form, so lossy = "character"
+  # cannot help it.
+  text <- !isFALSE(failure$text)
   hint <- if (never) {
     "Arrow intervals and unions have no R form."
   } else {
@@ -785,7 +788,8 @@ zar_raise_conversion <- function(failure, lossy, call) {
       } else {
         "Use"
       },
-      " `lossy = \"character\"` for its exact text, or `lossy = \"allow\"` to accept the loss."
+      if (text) " `lossy = \"character\"` for its exact text, or",
+      " `lossy = \"allow\"` to accept the loss."
     )
   }
   zar_abort(
