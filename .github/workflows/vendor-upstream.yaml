@@ -8,7 +8,9 @@ name: vendor-upstream
 
 jobs:
   upstream:
-    uses: pedrobtz/r-actions/.github/workflows/vendor-upstream.yml@v1
+    # Pinned to a commit because this call holds a write token; bump it
+    # deliberately, reading the diff.
+    uses: pedrobtz/r-actions/.github/workflows/vendor-upstream.yml@8caf5119301bb2a3bd433b92045b8c75b3097096 # v1 (v1.24.0)
     permissions:
       contents: read
       issues: write
