@@ -55,6 +55,10 @@ arrow_limits <- function(
 #' batches, are applied as the format says; a file that replaces a
 #' dictionary is an error, as the format forbids it.
 #'
+#' A raw vector is read where it is. With `lazy = TRUE` the handle holds a
+#' copy instead, because a handle can be passed to another consumer that
+#' outlives the vector.
+#'
 #' @param x A path, a raw vector, or a connection, which is read to its end.
 #' @param columns `NULL` for every column, or the names or positions of the
 #'   top-level columns to read. Only those are decoded.
@@ -100,7 +104,10 @@ arrow_read <- function(
         "max_depth",
         "max_batch_rows",
         "max_bytes"
-      )]))
+      )])),
+      # A raw vector is read in place only when this call consumes the
+      # stream; a lazy handle may leave R, so it reads a copy.
+      !lazy
     ),
     call = call
   )

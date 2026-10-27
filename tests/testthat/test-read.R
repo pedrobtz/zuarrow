@@ -38,6 +38,37 @@ test_that("a raw vector and a connection read like the path", {
   expect_identical(without_metadata(arrow_read(gzfile(gz))), df)
 })
 
+test_that("a raw vector is read in place, and copied for a lazy handle", {
+  df <- basic_df()
+  for (name in c("basic.arrow", "basic-zstd.arrows")) {
+    bytes <- readBin(test_data(name), raw(), 1e6)
+    # Read in place: the deferred strings outlive the input vector.
+    out <- arrow_read(bytes, copy = FALSE)
+    rm(bytes)
+    gc()
+    expect_identical(without_metadata(out), df, info = name)
+    # A lazy handle keeps its own copy, so it reads after the input is
+    # collected.
+    bytes <- readBin(test_data(name), raw(), 1e6)
+    stream <- arrow_read(bytes, lazy = TRUE)
+    rm(bytes)
+    gc()
+    expect_identical(without_metadata(arrow_to_r(stream)), df, info = name)
+  }
+})
+
+test_that("a misaligned pre-0.15 raw vector reads like its path", {
+  path <- file.path(
+    fixtures_dir(),
+    "arrow-ipc-stream",
+    "integration",
+    "0.14.1",
+    "generated_primitive.stream"
+  )
+  bytes <- readBin(path, raw(), file.size(path))
+  expect_identical(arrow_read(bytes), arrow_read(path))
+})
+
 test_that("columns selects by name or position, in the order given", {
   df <- basic_df()
   out <- arrow_read(test_data("basic.arrow"), columns = c("s", "i"))

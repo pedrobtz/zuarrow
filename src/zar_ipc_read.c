@@ -38,6 +38,7 @@ struct zar_reader {
   int encodings_ready;
 
   uint8_t *data;
+  int owns_data; /* 0 when `data` is an R raw vector read in place */
   int64_t size;
   int64_t pos;      /* the stream cursor */
   int64_t next_pos; /* where the message just read ends */
@@ -112,7 +113,7 @@ static void zar_reader_free(struct zar_reader *r) {
   if (r->encodings_ready) ArrowIpcDictionaryEncodingsReset(&r->encodings);
   if (r->schema.release != NULL) r->schema.release(&r->schema);
   if (r->out_schema.release != NULL) r->out_schema.release(&r->out_schema);
-  free(r->data);
+  if (r->owns_data) free(r->data);
   free(r->blocks);
   free(r->dict_blocks);
   free(r->seen_ids);
@@ -698,13 +699,15 @@ const char *zar_reader_kind(const struct ArrowArrayStream *stream) {
 
 /* ---- opening ---------------------------------------------------------- */
 
-/* Opens a reader over `data`, which it takes ownership of, into `out`. */
-static int zar_reader_open_owned(uint8_t *data, int64_t size, const double *limits,
-                                 const void *codecs, struct ArrowArrayStream *out,
-                                 struct ArrowError *error, const char **kind) {
+/* Opens a reader over `data` into `out`. With `owns` set the reader takes
+   ownership of `data` and frees it; otherwise the caller keeps `data`
+   alive and unchanged until the stream is released. */
+static int zar_reader_open_over(uint8_t *data, int owns, int64_t size, const double *limits,
+                                const void *codecs, struct ArrowArrayStream *out,
+                                struct ArrowError *error, const char **kind) {
   struct zar_reader *r = (struct zar_reader *)calloc(1, sizeof(struct zar_reader));
   if (r == NULL) {
-    free(data);
+    if (owns) free(data);
     ArrowErrorSet(error, "cannot allocate the reader");
     *kind = NULL;
     return ENOMEM;
@@ -714,6 +717,7 @@ static int zar_reader_open_owned(uint8_t *data, int64_t size, const double *limi
   r->n_select = -1;
   r->codecs = codecs;
   r->data = data;
+  r->owns_data = owns;
   r->size = size;
   r->limits.max_message = limits[0];
   r->limits.max_depth = (int)limits[1];
@@ -766,7 +770,7 @@ int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limit
     return ENOMEM;
   }
   if (size > 0) memcpy(copy, data, (size_t)size);
-  return zar_reader_open_owned(copy, size, limits, zar_codecs_api(), out, error, kind);
+  return zar_reader_open_over(copy, 1, size, limits, zar_codecs_api(), out, error, kind);
 }
 
 #ifndef ZAR_STANDALONE
@@ -830,15 +834,28 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
 
 /* Opens a reader over a path (a string) or bytes (a raw vector) and returns
    it as a stream handle. `limits` is c(max_message, max_depth,
-   max_batch_rows, max_bytes). */
-SEXP zar_c_reader_open(SEXP source, SEXP limits) {
+   max_batch_rows, max_bytes).
+
+   With `in_place` TRUE a raw vector is read where it is (design section
+   6.7), held in the handle's protected field so it outlives the reader.
+   That is only safe while the handle stays in R: a consumer that moves the
+   stream out of the handle (nanoarrow, arrow, ADBC) can keep reading after
+   R has collected the vector, and may release the stream on a thread that
+   cannot call R. arrow_read() therefore reads in place only when it
+   consumes the stream itself (lazy = FALSE), and copies for lazy = TRUE.
+   Decoding copies every buffer, so no batch refers to the input. */
+SEXP zar_c_reader_open(SEXP source, SEXP limits, SEXP in_place) {
   struct ArrowError error;
   error.message[0] = '\0';
   const char *kind = NULL;
   SEXP out = PROTECT(zar_stream_owning_xptr());
   struct ArrowArrayStream *stream = (struct ArrowArrayStream *)R_ExternalPtrAddr(out);
   int code;
-  if (TYPEOF(source) == RAWSXP) {
+  if (TYPEOF(source) == RAWSXP && Rf_asLogical(in_place) == TRUE) {
+    code = zar_reader_open_over(RAW(source), 0, (int64_t)Rf_xlength(source), REAL(limits),
+                                zar_codecs_api(), stream, &error, &kind);
+    if (code == NANOARROW_OK) R_SetExternalPtrProtected(out, source);
+  } else if (TYPEOF(source) == RAWSXP) {
     code = zar_reader_open_bytes(RAW(source), (int64_t)Rf_xlength(source), REAL(limits),
                                  stream, &error, &kind);
   } else {
@@ -847,8 +864,8 @@ SEXP zar_c_reader_open(SEXP source, SEXP limits) {
     int64_t size = 0;
     code = zar_read_path(path, &data, &size, REAL(limits)[3], &error, &kind);
     if (code == NANOARROW_OK) {
-      code = zar_reader_open_owned(data, size, REAL(limits), zar_codecs_api(), stream,
-                                   &error, &kind);
+      code = zar_reader_open_over(data, 1, size, REAL(limits), zar_codecs_api(), stream,
+                                  &error, &kind);
     }
   }
   UNPROTECT(1);

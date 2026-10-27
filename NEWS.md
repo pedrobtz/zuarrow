@@ -148,3 +148,5 @@
   `zuarrow_error` (#39).
 * `arrow_read()` finds the size of a file through 64-bit offsets, so a file
   over 2 GiB opens on Windows (#51).
+* `arrow_read()` reads a raw vector in place rather than copying it, except
+  with `lazy = TRUE`, whose handle keeps its own copy (#57).
