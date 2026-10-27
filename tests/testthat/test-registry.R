@@ -213,7 +213,8 @@ test_that("a package's registrations are removed when it unloads", {
   arrow_register("l", to = as_text_int64, package = "stats")
   withr::defer(arrow_unregister("l"))
   expect_true("l" %in% arrow_registry()$key)
-  added <- getHook(event)[-seq_len(before)]
+  hooks <- getHook(event)
+  added <- hooks[seq_along(hooks) > before]
   expect_length(added, 1L)
   added[[1L]]("stats")
   expect_false("l" %in% arrow_registry()$key)

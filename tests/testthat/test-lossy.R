@@ -32,6 +32,8 @@ test_that("the lossy error names the column, type, row and target", {
 })
 
 test_that("each row of the lossy table errors by default and converts under allow", {
+  # Under allow an int64 becomes integer64 when bit64 is loaded.
+  local_mocked_bindings(zar_bit64_loaded = function() FALSE)
   ns <- arrow_array(
     as.POSIXct("2026-10-21 10:00:00", tz = "UTC"),
     schema = "tsn:UTC"
