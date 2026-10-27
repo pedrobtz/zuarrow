@@ -144,14 +144,7 @@ arrow_read <- function(
     return(stream)
   }
   schema <- arrow_schema(stream)
-  batches <- list()
-  repeat {
-    batch <- zar_check(.Call(zar_c_stream_next, stream), call = call)
-    if (is.null(batch)) {
-      break
-    }
-    batches[[length(batches) + 1L]] <- batch
-  }
+  batches <- zar_stream_batches(stream, call)
   zar_convert(
     batches,
     schema,
@@ -221,11 +214,7 @@ zar_read_connection <- function(con, limits, call) {
 
 zar_column_index <- function(stream, columns, call) {
   spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(stream)))
-  names <- vapply(
-    spec$children,
-    function(f) if (is.na(f$name)) "" else f$name,
-    ""
-  )
+  names <- zar_field_names(spec$children)
   if (is.character(columns)) {
     idx <- match(columns, names)
     if (anyNA(idx)) {

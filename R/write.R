@@ -166,15 +166,7 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
   if (!is.data.frame(data) && !is.null(metadata)) {
     arrow_metadata(schema) <- metadata
   }
-  arrays <- list()
-  repeat {
-    next_batch <- zar_check(.Call(zar_c_stream_next, stream), call = call)
-    if (is.null(next_batch)) {
-      break
-    }
-    arrays[[length(arrays) + 1L]] <- next_batch
-  }
-  list(schema = schema, arrays = arrays)
+  list(schema = schema, arrays = zar_stream_batches(stream, call))
 }
 
 # A level outside the codec's range, as zukomp reports it, is a codec error

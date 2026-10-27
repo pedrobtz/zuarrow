@@ -59,6 +59,23 @@ arrow_schema <- function(x) {
   zar_check(.Call(zar_c_schema_from_spec, spec))
 }
 
+# Every batch left in a stream, read to its end.
+zar_stream_batches <- function(stream, call) {
+  batches <- list()
+  repeat {
+    batch <- zar_check(.Call(zar_c_stream_next, stream), call = call)
+    if (is.null(batch)) {
+      return(batches)
+    }
+    batches[[length(batches) + 1L]] <- batch
+  }
+}
+
+# The R names of a spec's fields: a field without a name gets "".
+zar_field_names <- function(fields) {
+  vapply(fields, function(f) if (is.na(f$name)) "" else f$name, "")
+}
+
 zar_check_live <- function(x, call = sys.call(-1)) {
   status <- .Call(zar_c_handle_status, x)
   if (status != "live") {

@@ -361,14 +361,7 @@ arrow_to_r <- function(
   }
   if (zar_is_stream(x)) {
     schema <- arrow_schema(x)
-    batches <- list()
-    repeat {
-      batch <- zar_check(.Call(zar_c_stream_next, x), call = call)
-      if (is.null(batch)) {
-        break
-      }
-      batches[[length(batches) + 1L]] <- batch
-    }
+    batches <- zar_stream_batches(x, call)
     return(zar_convert(batches, schema, to, lossy, call, copy = copy))
   }
   zar_abort("handle", "`x` must be an array or stream handle.", call = call)
@@ -505,7 +498,7 @@ zar_convert <- function(
   spec <- zar_check(.Call(zar_c_schema_to_spec, schema))
   frame <- identical(spec$format, "+s")
   fields <- if (frame) spec$children else list(spec)
-  names <- vapply(fields, function(f) if (is.na(f$name)) "" else f$name, "")
+  names <- zar_field_names(fields)
   codes <- zar_to_codes(to, names, frame, call)
   if (length(codes) == 0L) {
     codes <- integer(length(fields))
