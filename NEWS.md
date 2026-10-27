@@ -116,3 +116,7 @@
 * A dictionary index outside its dictionary is a `zuarrow_format_error`
   for every dictionary, not only for factors. Before, a dictionary of
   numbers read past its end (#50).
+* A factor level with an embedded NUL is cut at the NUL under
+  `lossy = "warn"` or `"allow"`, as a plain string is, and the lossy error
+  names the dictionary column's format. Before, it raised an unclassed
+  error (#37).

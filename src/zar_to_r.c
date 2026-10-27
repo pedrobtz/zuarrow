@@ -902,7 +902,12 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
         }
         int code = zar_resolve(child, cs, n_slices, lossy,
                                p->target == ZAR_T_STRUCT && top, warned, e);
-        if (code != NANOARROW_OK) return code;
+        if (code != NANOARROW_OK) {
+          /* A dictionary's values are part of the column: name its format,
+             not the values' format. */
+          if (child == p->dict) e->format = p->schema->format;
+          return code;
+        }
       }
       if (p->target == ZAR_T_FACTOR && p->dict->target != ZAR_T_CHR) {
         p->target = ZAR_T_DECODE;
@@ -1703,7 +1708,19 @@ static SEXP zar_build_factor(struct zar_plan *p, struct zar_slice *slices,
         zar_fail(e, "format", -1, p->schema->format);
         return R_NilValue;
       }
-      remap[k] = zar_levels_add(&levels, v.data.as_char, v.size_bytes);
+      /* Cut at the first NUL, as zar_string_bytes() cuts a plain string.
+         Under error the scan has already refused a NUL. */
+      int64_t len = v.size_bytes;
+      const char *nul = len > 0 ? memchr(v.data.data, 0, (size_t)len) : NULL;
+      if (nul != NULL) len = nul - v.data.as_char;
+      if (len > INT_MAX) {
+        ArrowErrorSet(&e->error, "dictionary value %ld is longer than R's string limit",
+                      (long)k + 1);
+        UNPROTECT(1);
+        zar_fail(e, "limit", -1, p->schema->format);
+        return R_NilValue;
+      }
+      remap[k] = zar_levels_add(&levels, v.data.as_char, len);
     }
     for (int64_t i = 0; i < s->length; i++, at++) {
       if (zar_is_null(s, i)) {

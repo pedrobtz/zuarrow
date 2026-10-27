@@ -108,6 +108,34 @@ test_that("nanoarrow's dictionaries read as factors", {
   expect_identical(arrow_to_r(nanoarrow::as_nanoarrow_array(f)), f)
 })
 
+test_that("a level with an embedded NUL is cut there under warn and allow", {
+  schema <- arrow_schema(factor("a"))
+  array <- test_array(
+    schema,
+    3,
+    list(NULL, le_int(c(0, 1, 2), 4L)),
+    dictionary = test_array_spec(
+      3,
+      list(
+        NULL,
+        le_int(c(0, 1, 4, 5), 4L),
+        c(charToRaw("a"), as.raw(c(0x61, 0x00, 0x62)), charToRaw("c"))
+      )
+    )
+  )
+  err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
+  expect_identical(err$arrow_type, "i")
+  expect_identical(
+    arrow_to_r(array, lossy = "allow"),
+    factor(c("a", "a", "c"), levels = c("a", "c"))
+  )
+  expect_warning(
+    out <- arrow_to_r(array, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+  expect_identical(out, factor(c("a", "a", "c"), levels = c("a", "c")))
+})
+
 test_that("a non-string dictionary index out of range is a format error", {
   schema <- test_schema(list(
     format = "i",
