@@ -171,9 +171,10 @@ test_that("invalid UTF-8 and bytes-encoded strings are type errors", {
   Encoding(bad) <- "UTF-8"
   bytes <- "caf\xe9"
   Encoding(bytes) <- "bytes"
+  messages <- character()
   for (x in list(c("ok", bad), c("ok", bytes))) {
     err <- expect_error(arrow_array(x), class = "zuarrow_type_error")
-    expect_match(conditionMessage(err), "row 2")
+    messages <- c(messages, conditionMessage(err))
     expect_error(arrow_array(x, schema = "U"), class = "zuarrow_type_error")
     expect_error(
       arrow_write(data.frame(z = x), NULL),
@@ -187,13 +188,15 @@ test_that("invalid UTF-8 and bytes-encoded strings are type errors", {
     arrow_array(structure(bytes, arrow_type = "i")),
     class = "zuarrow_type_error"
   )
+  expect_snapshot(writeLines(messages))
 })
 
 test_that("a factor code outside its levels is a type error", {
+  messages <- character()
   for (code in c(5L, 0L, -1L)) {
     f <- structure(c(1L, code), levels = "a", class = "factor")
     err <- expect_error(arrow_array(f), class = "zuarrow_type_error")
-    expect_match(conditionMessage(err), "row 2")
+    messages <- c(messages, conditionMessage(err))
     expect_error(arrow_array(f, schema = "u"), class = "zuarrow_type_error")
     expect_error(
       arrow_write(data.frame(f = I(f)), NULL, dictionary = FALSE),
@@ -206,6 +209,7 @@ test_that("a factor code outside its levels is a type error", {
     arrow_array(numeric_levels, schema = "u"),
     class = "zuarrow_type_error"
   )
+  expect_snapshot(writeLines(messages))
 })
 
 test_that("a column name that is not UTF-8 is a type error", {
