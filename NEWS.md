@@ -166,3 +166,6 @@
 * `as.vector()` with a `mode` other than `"any"`, and `as.data.frame()`
   with `row.names`, are a `zuarrow_type_error`. Before, both were ignored
   silently. `optional` is documented as ignored (#77).
+* The lossy error and warning for a field of a nested data frame that is
+  converted for a registered handler name its path, such as `s$b`, in the
+  message and in `column`. Before, they named `b` alone (#42).

@@ -494,7 +494,8 @@ zar_convert <- function(
   lossy,
   call,
   max_depth = 64L,
-  copy = TRUE
+  copy = TRUE,
+  prefix = ""
 ) {
   spec <- zar_check(.Call(zar_c_schema_to_spec, schema))
   frame <- identical(spec$format, "+s")
@@ -527,10 +528,11 @@ zar_convert <- function(
   )
   out <- .Call(zar_c_to_r, arrays, schema, opts)
   if (inherits(out, "zar_failure")) {
-    zar_raise_conversion(out, lossy, call)
+    zar_raise_conversion(out, call, prefix)
   }
   for (k in out$warned) {
-    zar_lossy_warn(out$names[[k]], out$columns[[k]], spec, frame, k, call)
+    path <- zar_field_path(prefix, out$names[[k]], k)
+    zar_lossy_warn(path, spec, frame, k, call)
   }
   nulls <- if (frame && any(handled)) zar_struct_nulls(arrays, call)
   for (k in which(handled)) {
@@ -542,7 +544,8 @@ zar_convert <- function(
         lossy,
         call,
         max_depth,
-        copy
+        copy,
+        prefix = paste0(zar_field_path(prefix, names[[k]], k), "$")
       )
     } else {
       zar_apply_handler(
@@ -559,7 +562,13 @@ zar_convert <- function(
       out$columns[[k]] <- zar_null_rows(out$columns[[k]], nulls)
     }
     if (!handlers[[k]]$exact && lossy == "warn") {
-      zar_lossy_warn(names[[k]], NULL, spec, frame, k, call)
+      zar_lossy_warn(
+        zar_field_path(prefix, names[[k]], k),
+        spec,
+        frame,
+        k,
+        call
+      )
     }
   }
   for (k in seq_along(fields)) {
@@ -605,7 +614,8 @@ zar_convert_struct_field <- function(
   lossy,
   call,
   max_depth,
-  copy
+  copy,
+  prefix
 ) {
   children <- lapply(arrays, function(a) {
     zar_check(.Call(zar_c_array_child, a, k - 1L), call = call)
@@ -617,7 +627,8 @@ zar_convert_struct_field <- function(
     lossy,
     call,
     max_depth = max_depth - 1L,
-    copy = copy
+    copy = copy,
+    prefix = prefix
   )
   attr(out, "arrow_metadata") <- NULL
   out
@@ -753,6 +764,15 @@ zar_exact_target <- function(format) {
   NULL
 }
 
+# A nested field is named by its path from the top-level column, such as
+# `s$b`; a field without a name by its position.
+zar_field_path <- function(prefix, name, k) {
+  if (nzchar(prefix) && !nzchar(name)) {
+    return(paste0(prefix, k))
+  }
+  paste0(prefix, name)
+}
+
 zar_column_label <- function(name, column) {
   if (nzchar(name)) {
     sprintf("Column `%s`", name)
@@ -761,9 +781,10 @@ zar_column_label <- function(name, column) {
   }
 }
 
-zar_raise_conversion <- function(failure, lossy, call) {
-  name <- if (is.null(failure$name)) "" else failure$name
-  label <- zar_column_label(name, failure$column %||% 1L)
+zar_raise_conversion <- function(failure, call, prefix = "") {
+  column <- failure$column %||% 1L
+  name <- zar_field_path(prefix, failure$name %||% "", column)
+  label <- zar_column_label(name, column)
   format <- failure$format %||% ""
   if (!identical(failure$kind, "lossy")) {
     zar_abort(
@@ -809,7 +830,7 @@ zar_raise_conversion <- function(failure, lossy, call) {
   )
 }
 
-zar_lossy_warn <- function(name, column, spec, frame, k, call) {
+zar_lossy_warn <- function(name, spec, frame, k, call) {
   format <- if (frame) spec$children[[k]]$format else spec$format
   warning(structure(
     class = c(

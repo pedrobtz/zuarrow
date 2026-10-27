@@ -300,3 +300,34 @@ test_that("a nested data frame converted for a handler matches the built-in", {
   local_registration("i", to = function(array, schema) arrow_to_r(array))
   expect_identical(arrow_to_r(arrow_stream(df, batch = 2L)), expected)
 })
+
+test_that("conditions from a handled nested field name its path", {
+  df <- data.frame(id = 1L)
+  df$s <- data.frame(c = 1L, b = 2^53 + 2)
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(
+      zspec("i", "id"),
+      zspec("+s", "s", children = list(zspec("i", "c"), zspec("l", "b")))
+    )
+  ))
+  array <- arrow_array(df, schema = schema)
+
+  # An exact handler on `c` converts `s` in R, field by field.
+  local_registration("i", to = function(array, schema) arrow_to_r(array))
+  err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
+  expect_identical(err$column, "s$b")
+  w <- expect_warning(
+    arrow_to_r(array, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+  expect_identical(w$column, "s$b")
+
+  # An inexact handler on `b` itself warns under its path too.
+  local_registration("l", to = as_text_int64, exact = FALSE)
+  w <- expect_warning(
+    arrow_to_r(array, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+  expect_identical(w$column, "s$b")
+})
