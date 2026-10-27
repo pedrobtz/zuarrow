@@ -50,7 +50,6 @@ zar_metadata_values <- function(raw) {
       },
       ""
     )
-    names(out) <- names(raw)
     return(out)
   }
   out <- raw

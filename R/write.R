@@ -102,7 +102,7 @@ arrow_write <- function(
       list(
         format == "file",
         match(compression, c("none", "lz4", "zstd")) - 1L,
-        if (is.null(level)) NA_integer_ else as.integer(level)
+        as.integer(level %||% NA)
       )
     ),
     call = call

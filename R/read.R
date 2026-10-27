@@ -103,7 +103,8 @@ arrow_read <- function(
   }
   zar_check_flag(lazy, "lazy", call)
   zar_check_flag(copy, "copy", call)
-  if (lazy && (!is.null(to) || lossy != "error" || !copy)) {
+  converting <- !is.null(to) || lossy != "error" || !copy
+  if (lazy && converting) {
     zar_abort(
       "type",
       paste(
@@ -114,16 +115,12 @@ arrow_read <- function(
     )
   }
   source <- zar_read_source(x, limits, call)
+  bounds <- limits[c("max_message", "max_depth", "max_batch_rows", "max_bytes")]
   stream <- zar_check(
     .Call(
       zar_c_reader_open,
       source,
-      as.double(unlist(limits[c(
-        "max_message",
-        "max_depth",
-        "max_batch_rows",
-        "max_bytes"
-      )])),
+      as.double(unlist(bounds)),
       # A raw vector is read in place only when this call consumes the
       # stream; a lazy handle may leave R, so it reads a copy.
       !lazy

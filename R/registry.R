@@ -286,16 +286,22 @@ zar_handler_for <- function(format, extension) {
   }
   if (nzchar(extension)) {
     for (e in entries) {
-      if (e$kind == "extension" && identical(e$key, extension)) return(e)
+      if (e$kind == "extension" && identical(e$key, extension)) {
+        return(e)
+      }
     }
   }
   for (e in entries) {
-    if (e$kind == "format" && identical(e$key, format)) return(e)
+    if (e$kind == "format" && identical(e$key, format)) {
+      return(e)
+    }
   }
   patterns <- Filter(function(e) e$kind == "pattern", entries)
   patterns <- patterns[order(vapply(patterns, `[[`, 0L, "order"))]
   for (e in patterns) {
-    if (startsWith(format, e$prefix)) return(e)
+    if (startsWith(format, e$prefix)) {
+      return(e)
+    }
   }
   NULL
 }
@@ -306,12 +312,14 @@ zar_handler_for_class <- function(x) {
     return(NULL)
   }
   for (e in zar_registry$entries) {
-    if (!is.null(e$from) && inherits(x, e$class)) return(e)
+    if (!is.null(e$from) && inherits(x, e$class)) {
+      return(e)
+    }
   }
   NULL
 }
 
 zar_extension_name <- function(spec) {
   value <- spec$metadata[["ARROW:extension:name"]]
-  if (is.null(value)) "" else rawToChar(value)
+  rawToChar(value %||% raw())
 }
