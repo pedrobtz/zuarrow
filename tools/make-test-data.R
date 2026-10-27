@@ -3,7 +3,14 @@
 # package, so the reader's tests run on every leg, the one without
 # suggested packages included. Run from the package root after changing
 # them; the files are committed.
+#
+# The committed basic* and two-batches files are arrow 25.0.1's output
+# (libarrow 25.0.1): this script reproduced them byte for byte with that
+# version on 2026-10-27. Update the version here when regenerating them.
+# The crash-* files are not written here: they are inputs the fuzz target
+# found, and tests/testthat/crash-expected.csv records what each pins.
 stopifnot(requireNamespace("arrow", quietly = TRUE))
+message("writing with arrow ", utils::packageVersion("arrow"))
 out <- "tests/testthat/data"
 dir.create(out, showWarnings = FALSE)
 df <- data.frame(

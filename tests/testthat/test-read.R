@@ -180,8 +180,22 @@ test_that("flipped bytes never crash the reader", {
     mutated <- bytes
     at <- sample(length(bytes), 3)
     mutated[at] <- as.raw(sample(0:255, 3, TRUE))
-    result <- tryCatch(arrow_read(mutated), zuarrow_error = function(e) e)
-    expect_true(is.data.frame(result) || inherits(result, "zuarrow_error"))
+    # Any error at all is caught, so the check below is the real one: the
+    # input reads, or the error has one of the classes hostile bytes may
+    # raise, never a bare zuarrow_error or an R error.
+    result <- tryCatch(arrow_read(mutated), error = function(e) e)
+    outcome <- if (is.data.frame(result)) "data.frame" else class(result)[[1]]
+    expect_true(
+      outcome %in%
+        c(
+          "data.frame",
+          "zuarrow_format_error",
+          "zuarrow_limit_error",
+          "zuarrow_codec_error",
+          "zuarrow_lossy_error"
+        ),
+      info = paste(k, outcome)
+    )
   }
 })
 
