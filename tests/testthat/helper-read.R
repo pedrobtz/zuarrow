@@ -29,6 +29,21 @@ md5_of <- function(bytes) {
   unname(tools::md5sum(path))
 }
 
+# The positions where the run `pattern` starts in `bytes`.
+bytes_at <- function(bytes, pattern) {
+  if (is.character(pattern)) {
+    pattern <- charToRaw(pattern)
+  }
+  n <- length(pattern)
+  starts <- which(bytes == pattern[[1]])
+  starts <- starts[starts <= length(bytes) - n + 1L]
+  starts[vapply(
+    starts,
+    function(i) identical(bytes[i:(i + n - 1L)], pattern),
+    logical(1)
+  )]
+}
+
 # `bytes` with the first run equal to `from` replaced by `to`, of the same
 # length, so a test can corrupt one field of a valid IPC message.
 patch_bytes <- function(bytes, from, to) {
@@ -36,13 +51,8 @@ patch_bytes <- function(bytes, from, to) {
     from <- charToRaw(from)
   }
   stopifnot(length(from) == length(to))
-  n <- length(from)
-  at <- which(vapply(
-    seq_len(length(bytes) - n + 1L),
-    function(i) identical(bytes[i:(i + n - 1L)], from),
-    logical(1)
-  ))
+  at <- bytes_at(bytes, from)
   stopifnot(length(at) >= 1L)
-  bytes[at[[1]]:(at[[1]] + n - 1L)] <- to
+  bytes[at[[1]]:(at[[1]] + length(from) - 1L)] <- to
   bytes
 }

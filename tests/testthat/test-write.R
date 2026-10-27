@@ -145,9 +145,17 @@ test_that("an unknown null count is computed before it is written", {
 
 test_that("an incompressible buffer is written as it is", {
   withr::local_seed(1)
-  df <- data.frame(x = stats::runif(1000))
-  out <- arrow_write(df, NULL, compression = "lz4")
-  expect_identical(without_metadata(arrow_read(out)), df)
+  df <- data.frame(x = sample.int(.Machine$integer.max, 2000))
+  values <- writeBin(df$x, raw(), endian = "little")
+  for (compression in c("lz4", "zstd")) {
+    out <- arrow_write(df, NULL, compression = compression)
+    expect_identical(without_metadata(arrow_read(out)), df)
+    # The -1 length prefix, then the values as they are.
+    expect_length(
+      bytes_at(out, c(as.raw(rep(0xff, 8)), values)),
+      1L
+    )
+  }
 })
 
 test_that("compression levels are passed to the codec", {
@@ -156,6 +164,7 @@ test_that("compression levels are passed to the codec", {
   best <- arrow_write(df, NULL, compression = "zstd", level = 19)
   expect_identical(without_metadata(arrow_read(fast)), df)
   expect_identical(without_metadata(arrow_read(best)), df)
+  expect_lt(length(best), length(fast))
 })
 
 test_that("a level outside the codec's range is a codec error", {
