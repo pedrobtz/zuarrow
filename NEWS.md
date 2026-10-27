@@ -110,3 +110,6 @@
   `arrow_keys_sorted` attribute is written as `map`, and a map schema
   accepts a list of key/value data frames. A null key is a
   `zuarrow_type_error` (#41).
+* `arrow_equal()` compares arrays value by value, as the design says: the
+  bytes under a null slot and the array offset no longer count, and a
+  dictionary or run-end encoded array compares by its decoded values (#64).
