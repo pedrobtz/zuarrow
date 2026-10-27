@@ -239,19 +239,23 @@ zar_takes <- function(f, n) {
   "..." %in% args || length(args) >= n
 }
 
+# Whether a key covers a format whose built-in conversion is exact.
 zar_covers_exact <- function(kind, prefix) {
   if (kind == "extension") {
     return(identical(prefix, "arrow.bool8"))
   }
+  nested <- c("+s", "+l", "+L", "+vl", "+vL", "+m")
   if (kind == "format") {
     return(
       prefix %in%
-        zar_exact_formats ||
-        startsWith(prefix, "w:") ||
-        prefix %in% c("+s", "+l", "+L", "+m")
+        c(zar_exact_formats, nested) ||
+        any(startsWith(prefix, c("w:", "+w:", "tss:", "tsm:")))
     )
   }
-  any(startsWith(c(zar_exact_formats, "w:1", "+s"), prefix))
+  any(startsWith(
+    c(zar_exact_formats, nested, "w:1", "+w:1", "tss:", "tsm:"),
+    prefix
+  ))
 }
 
 zar_unregister_package <- function(package) {

@@ -128,3 +128,6 @@
 * Registered `to` handlers apply to the fields of nested data frames at
   any depth, as documented, and a handled field under a null struct row is
   `NA`. Before, only top-level columns used them (#42).
+* An inexact registration may not replace the exact conversion of
+  second and millisecond timestamps, `fixed_size_list` or the list views
+  (#78).
