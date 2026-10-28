@@ -13,8 +13,9 @@ arrow_types()
 
 ## Value
 
-A data frame with columns `arrow`, `format`, `r`, `exact`, `lossy_r` and
-`exact_with`.
+A data frame of character columns: `arrow`, `format`, `r`, `exact`,
+`lossy_r` and `exact_with`. `exact` describes when the R form is exact,
+as text such as `"yes"`, `"no"` or `"within +/-2^53"`, not as a logical.
 
 ## Examples
 

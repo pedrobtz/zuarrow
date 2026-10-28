@@ -37,7 +37,7 @@ batches of at most batch rows each."></head><body>
   <main id="main" class="col-md-9"><div class="page-header">
 
       <h1>Build an Arrow array or stream from R</h1>
-      <small class="dont-index">Source: <a href="https://github.com/pedrobtz/zuarrow/blob/main/R/convert.R" class="external-link"><code>R/convert.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/pedrobtz/zuarrow/blob/main/R/from-r.R" class="external-link"><code>R/from-r.R</code></a></small>
       <div class="d-none name"><code>arrow_array.Rd</code></div>
     </div>
 
@@ -82,10 +82,12 @@ stream handle.</p>
 <code>utf8</code> (<code>large_utf8</code> past 2^31 - 1 bytes), <code>factor</code> to
 <code>dictionary&lt;int32, utf8&gt;</code>, <code>Date</code> to <code>date32</code>, <code>POSIXct</code> to
 <code>timestamp[us]</code> in its time zone or UTC, <code>difftime</code> to <code>duration[us]</code>,
-a list of raw vectors to <code>binary</code>, any other list to <code>list&lt;T&gt;</code> with <code>T</code>
-from its elements, and a data frame to a <code>struct</code>. A class registered
-with <code><a href="arrow_register.html">arrow_register()</a></code> goes through its <code>from</code> handler, and a matrix is
-written as a <code>fixed_size_list</code> with <code>schema = arrow_matrix()</code>. The
+a list of raw vectors to <code>binary</code>, a list with the <code>arrow_keys_sorted</code>
+attribute that <code><a href="arrow_to_r.html">arrow_to_r()</a></code> gives a map to <code>map</code>, any other list to
+<code>list&lt;T&gt;</code> with <code>T</code> from its elements, and a data frame to a <code>struct</code>. A
+class registered with <code><a href="arrow_register.html">arrow_register()</a></code> goes through its <code>from</code>
+handler, and a matrix is written as a <code>fixed_size_list</code> with
+<code>schema = arrow_matrix()</code>. The
 attributes <code>arrow_extension</code>, <code>arrow_extension_metadata</code> and
 <code>arrow_field_metadata</code> become field metadata. Any other class is a
 <code>zuarrow_type_error</code>.</p>

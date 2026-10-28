@@ -37,7 +37,7 @@ carries no zuarrow class: it is a plain base R object."></head><body>
   <main id="main" class="col-md-9"><div class="page-header">
 
       <h1>Convert Arrow data to R</h1>
-      <small class="dont-index">Source: <a href="https://github.com/pedrobtz/zuarrow/blob/main/R/convert.R" class="external-link"><code>R/convert.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/pedrobtz/zuarrow/blob/main/R/to-r.R" class="external-link"><code>R/to-r.R</code></a></small>
       <div class="d-none name"><code>arrow_to_r.Rd</code></div>
     </div>
 
@@ -51,7 +51,32 @@ carries no zuarrow class: it is a plain base R object.</p>
     <h2 id="ref-usage">Usage<a class="anchor" aria-label="anchor" href="#ref-usage"></a></h2>
     <div class="sourceCode"><pre class="sourceCode r"><code><span><span class="fu">arrow_to_r</span><span class="op">(</span><span class="va">x</span>, to <span class="op">=</span> <span class="cn">NULL</span>, lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>, copy <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
 <span></span>
-<span><span class="fu">arrow_next</span><span class="op">(</span><span class="va">stream</span>, to <span class="op">=</span> <span class="cn">NULL</span>, lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>, copy <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span></code></pre></div>
+<span><span class="fu">arrow_next</span><span class="op">(</span><span class="va">stream</span>, to <span class="op">=</span> <span class="cn">NULL</span>, lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>, copy <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># S3 method for class 'zuarrow_array_stream'</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span></span>
+<span>  <span class="va">x</span>,</span>
+<span>  row.names <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  optional <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  <span class="va">...</span>,</span>
+<span>  to <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>,</span>
+<span>  copy <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># S3 method for class 'zuarrow_array'</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame</a></span><span class="op">(</span></span>
+<span>  <span class="va">x</span>,</span>
+<span>  row.names <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  optional <span class="op">=</span> <span class="cn">FALSE</span>,</span>
+<span>  <span class="va">...</span>,</span>
+<span>  to <span class="op">=</span> <span class="cn">NULL</span>,</span>
+<span>  lossy <span class="op">=</span> <span class="va">zar_lossy_policies</span>,</span>
+<span>  copy <span class="op">=</span> <span class="cn">TRUE</span></span>
+<span><span class="op">)</span></span>
+<span></span>
+<span><span class="co"># S3 method for class 'zuarrow_array'</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector</a></span><span class="op">(</span><span class="va">x</span>, mode <span class="op">=</span> <span class="st">"any"</span><span class="op">)</span></span></code></pre></div>
     </div>
 
     <div class="section level2">
@@ -88,6 +113,24 @@ types, and strings read through a dictionary, a run-end encoding or a
 <dt id="arg-stream">stream<a class="anchor" aria-label="anchor" href="#arg-stream"></a></dt>
 <dd><p>A stream handle.</p></dd>
 
+
+<dt id="arg-row-names">row.names<a class="anchor" aria-label="anchor" href="#arg-row-names"></a></dt>
+<dd><p>Must be <code>NULL</code>: the rows of a converted data frame have
+no names.</p></dd>
+
+
+<dt id="arg-optional">optional<a class="anchor" aria-label="anchor" href="#arg-optional"></a></dt>
+<dd><p>Ignored. Column names always come from the schema.</p></dd>
+
+
+<dt id="arg--">...<a class="anchor" aria-label="anchor" href="#arg--"></a></dt>
+<dd><p>Unused.</p></dd>
+
+
+<dt id="arg-mode">mode<a class="anchor" aria-label="anchor" href="#arg-mode"></a></dt>
+<dd><p>Must be <code>"any"</code>: the array converts to its own R form, as
+<code>arrow_to_r()</code> gives it, with the default <code>lossy = "error"</code>.</p></dd>
+
 </dl></div>
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
@@ -95,6 +138,8 @@ types, and strings read through a dictionary, a run-end encoding or a
 <p><code>arrow_next()</code> returns the next batch as a data frame (or a
 vector, for a stream that is not of <code>struct</code>), or <code>NULL</code> once the
 stream has ended.</p>
+<p>The <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> methods return a data frame. An array or
+stream that is not of <code>struct</code> is a <code>zuarrow_type_error</code>.</p>
     </div>
     <div class="section level2">
     <h2 id="details">Details<a class="anchor" aria-label="anchor" href="#details"></a></h2>
@@ -119,7 +164,8 @@ fallback.</p>
 <p>Nested types follow the table too. A <code>struct</code> becomes a data frame
 column; <code>list</code>, <code>large_list</code> and the list views become list columns,
 <code>NULL</code> for a null list; a <code>map</code> becomes a list of data frames with
-columns <code>key</code> and <code>value</code>. A dictionary of strings becomes a factor,
+columns <code>key</code> and <code>value</code>, and an <code>arrow_keys_sorted</code> attribute that
+writes it back as a map. A dictionary of strings becomes a factor,
 ordered when the dictionary is, with the union of every batch's levels;
 a dictionary of other values, and a run-end encoded array, decode to
 their values' R form. An extension type converts as its storage and
@@ -143,7 +189,7 @@ table.</p></div>
 <span class="r-in"><span><span class="va">big</span> <span class="op">&lt;-</span> <span class="fu"><a href="arrow_array.html">arrow_array</a></span><span class="op">(</span><span class="fl">2</span><span class="op">^</span><span class="fl">53</span> <span class="op">+</span> <span class="fl">2</span>, schema <span class="op">=</span> <span class="st">"l"</span><span class="op">)</span></span></span>
 <span class="r-in"><span><span class="kw"><a href="https://rdrr.io/r/base/try.html" class="external-link">try</a></span><span class="op">(</span><span class="fu">arrow_to_r</span><span class="op">(</span><span class="va">big</span><span class="op">)</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> Error in arrow_to_r(big) : </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>   Column 1 (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740994. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>   Column 1 (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740994. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span>
 <span class="r-in"><span><span class="fu">arrow_to_r</span><span class="op">(</span><span class="va">big</span>, lossy <span class="op">=</span> <span class="st">"character"</span><span class="op">)</span></span></span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> [1] "9007199254740994"</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> attr(,"arrow_type")</span>

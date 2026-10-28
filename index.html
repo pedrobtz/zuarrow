@@ -98,7 +98,7 @@
 <code class="sourceCode R"><span><span class="va">big</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/arrow_array.html">arrow_array</a></span><span class="op">(</span><span class="fu"><a href="https://rdrr.io/r/base/c.html" class="external-link">c</a></span><span class="op">(</span><span class="st">"9007199254740993"</span>, <span class="st">"1"</span><span class="op">)</span>, schema <span class="op">=</span> <span class="st">"l"</span><span class="op">)</span></span>
 <span><span class="fu"><a href="reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">big</span><span class="op">)</span></span>
 <span><span class="co">#&gt; Error in `arrow_to_r()`:</span></span>
-<span><span class="co">#&gt; ! Column 1 (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span></span></code></pre></div>
+<span><span class="co">#&gt; ! Column 1 (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span></span></code></pre></div>
 <p><code>lossy = "character"</code> gives the exact text, which writes back to the same type.</p>
 <div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="va">text</span> <span class="op">&lt;-</span> <span class="fu"><a href="reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">big</span>, lossy <span class="op">=</span> <span class="st">"character"</span><span class="op">)</span></span>

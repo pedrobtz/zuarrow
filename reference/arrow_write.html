@@ -82,7 +82,8 @@ other path, and <code>x = NULL</code>, to the file format.</p>
 
 
 <dt id="arg-level">level<a class="anchor" aria-label="anchor" href="#arg-level"></a></dt>
-<dd><p><code>NULL</code> for the codec's default, or a level on its scale.</p></dd>
+<dd><p><code>NULL</code> for the codec's default, or a level on its scale. A
+level outside the codec's range is a <code>zuarrow_codec_error</code>.</p></dd>
 
 
 <dt id="arg-batch">batch<a class="anchor" aria-label="anchor" href="#arg-batch"></a></dt>

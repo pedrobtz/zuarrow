@@ -71,7 +71,7 @@ A 64-bit integer that a double cannot hold is an error, not a rounding.
 big <- arrow_array(c("9007199254740993", "1"), schema = "l")
 arrow_to_r(big)
 #> Error in `arrow_to_r()`:
-#> ! Column 1 (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
+#> ! Column 1 (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
 ```
 
 `lossy = "character"` gives the exact text, which writes back to the
@@ -144,6 +144,9 @@ Exact conversion to R vectors and data frames, or an error.
 
 - [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
   [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  [`as.data.frame(`*`<zuarrow_array_stream>`*`)`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  [`as.data.frame(`*`<zuarrow_array>`*`)`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  [`as.vector(`*`<zuarrow_array>`*`)`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
   : Convert Arrow data to R
 - [`arrow_matrix()`](https://pedrobtz.github.io/zuarrow/reference/arrow_matrix.md)
   : Matrices as fixed-size lists
@@ -162,7 +165,7 @@ The Arrow file and stream formats, plain or compressed.
 ## Validation, comparison and metadata
 
 - [`arrow_validate()`](https://pedrobtz.github.io/zuarrow/reference/arrow_validate.md)
-  : Validate an array or stream
+  : Validate a handle
 - [`arrow_equal()`](https://pedrobtz.github.io/zuarrow/reference/arrow_equal.md)
   : Compare two schemas, arrays or streams
 - [`arrow_metadata()`](https://pedrobtz.github.io/zuarrow/reference/arrow_metadata.md)

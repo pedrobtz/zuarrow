@@ -75,7 +75,9 @@ top-level columns to read. Only those are decoded.</p></dd>
 
 <dt id="arg-lazy">lazy<a class="anchor" aria-label="anchor" href="#arg-lazy"></a></dt>
 <dd><p><code>FALSE</code> to read every batch into one data frame; <code>TRUE</code> to
-return a stream handle whose batches are decoded by <code><a href="arrow_to_r.html">arrow_next()</a></code>.</p></dd>
+return a stream handle whose batches are decoded by <code><a href="arrow_to_r.html">arrow_next()</a></code>.
+With <code>lazy = TRUE</code>, <code>to</code>, <code>lossy</code> and <code>copy</code> belong to that later
+conversion, and setting one here is a <code>zuarrow_type_error</code>.</p></dd>
 
 
 <dt id="arg-to">to<a class="anchor" aria-label="anchor" href="#arg-to"></a></dt>
@@ -114,13 +116,20 @@ types, and strings read through a dictionary, a run-end encoding or a
     <p>The input is checked before it is used: every message is verified,
 every buffer must lie inside its message, and every limit of
 <code><a href="arrow_limits.html">arrow_limits()</a></code> binds, so malformed or hostile bytes are a
-<code>zuarrow_format_error</code> or a <code>zuarrow_limit_error</code>, never a crash. Each
-batch then passes the full validation of <code><a href="arrow_validate.html">arrow_validate()</a></code> before it is
-converted. Bodies compressed with LZ4 or zstd are decompressed through
-'zukomp'. Big-endian input is a <code>zuarrow_format_error</code>.</p>
+<code>zuarrow_format_error</code> or a <code>zuarrow_limit_error</code>, never a crash. A file
+whose footer repeats the schema differently is a <code>zuarrow_format_error</code>
+too. Each batch then passes the full validation of <code><a href="arrow_validate.html">arrow_validate()</a></code>
+before it is converted. Bodies compressed with LZ4 or zstd are
+decompressed through 'zukomp'. Big-endian input is a
+<code>zuarrow_format_error</code>.</p>
 <p>Dictionary batches, and the deltas a stream may send between record
 batches, are applied as the format says; a file that replaces a
-dictionary is an error, as the format forbids it.</p>
+dictionary is an error, as the format forbids it. A delta that extends a
+dictionary already holding values is not supported yet and is a
+<code>zuarrow_format_error</code>.</p>
+<p>A raw vector is read where it is. With <code>lazy = TRUE</code> the handle holds a
+copy instead, because a handle can be passed to another consumer that
+outlives the vector.</p>
     </div>
     <div class="section level2">
     <h2 id="see-also">See also<a class="anchor" aria-label="anchor" href="#see-also"></a></h2>

@@ -74,7 +74,8 @@ handle.</p></dd>
 <code>int32</code> or <code>"tsu:UTC"</code> for a microsecond timestamp in UTC. Any other R
 object gives the schema it would be written with: a data frame gives a
 <code>struct</code> with one field per column. On a handle, <code>arrow_schema()</code> never
-raises on the content: it copies the schema, or asks a stream for it.</p>
+raises on the content: it returns a zuarrow schema handle as it is,
+copies any other schema, or asks a stream for it.</p>
 <p><code><a href="https://rdrr.io/r/base/format.html" class="external-link">format()</a></code> gives the type notation Arrow's own tools print, such as
 <code>int64</code> or <code>struct&lt;x: int32&gt;</code>, and <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> shows it.</p>
     </div>

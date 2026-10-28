@@ -10,6 +10,31 @@ carries no zuarrow class: it is a plain base R object.
 arrow_to_r(x, to = NULL, lossy = zar_lossy_policies, copy = TRUE)
 
 arrow_next(stream, to = NULL, lossy = zar_lossy_policies, copy = TRUE)
+
+# S3 method for class 'zuarrow_array_stream'
+as.data.frame(
+  x,
+  row.names = NULL,
+  optional = FALSE,
+  ...,
+  to = NULL,
+  lossy = zar_lossy_policies,
+  copy = TRUE
+)
+
+# S3 method for class 'zuarrow_array'
+as.data.frame(
+  x,
+  row.names = NULL,
+  optional = FALSE,
+  ...,
+  to = NULL,
+  lossy = zar_lossy_policies,
+  copy = TRUE
+)
+
+# S3 method for class 'zuarrow_array'
+as.vector(x, mode = "any")
 ```
 
 ## Arguments
@@ -46,12 +71,33 @@ arrow_next(stream, to = NULL, lossy = zar_lossy_policies, copy = TRUE)
 
   A stream handle.
 
+- row.names:
+
+  Must be `NULL`: the rows of a converted data frame have no names.
+
+- optional:
+
+  Ignored. Column names always come from the schema.
+
+- ...:
+
+  Unused.
+
+- mode:
+
+  Must be `"any"`: the array converts to its own R form, as
+  `arrow_to_r()` gives it, with the default `lossy = "error"`.
+
 ## Value
 
 An R vector, or a data frame.
 
 `arrow_next()` returns the next batch as a data frame (or a vector, for
 a stream that is not of `struct`), or `NULL` once the stream has ended.
+
+The [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html)
+methods return a data frame. An array or stream that is not of `struct`
+is a `zuarrow_type_error`.
 
 ## Details
 
@@ -87,7 +133,8 @@ for a `fixed_size_list`. A target that cannot take the column is a
 Nested types follow the table too. A `struct` becomes a data frame
 column; `list`, `large_list` and the list views become list columns,
 `NULL` for a null list; a `map` becomes a list of data frames with
-columns `key` and `value`. A dictionary of strings becomes a factor,
+columns `key` and `value`, and an `arrow_keys_sorted` attribute that
+writes it back as a map. A dictionary of strings becomes a factor,
 ordered when the dictionary is, with the union of every batch's levels;
 a dictionary of other values, and a run-end encoded array, decode to
 their values' R form. An extension type converts as its storage and
@@ -114,7 +161,7 @@ arrow_to_r(arrow_array(1:3))
 big <- arrow_array(2^53 + 2, schema = "l")
 try(arrow_to_r(big))
 #> Error in arrow_to_r(big) : 
-#>   Column 1 (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740994. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
+#>   Column 1 (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740994. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
 arrow_to_r(big, lossy = "character")
 #> [1] "9007199254740994"
 #> attr(,"arrow_type")

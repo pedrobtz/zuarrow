@@ -113,7 +113,7 @@ the row and the ways to receive it exactly.</p>
 <span><span class="op">)</span></span>
 <span><span class="fu"><a href="../reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">stream</span><span class="op">)</span></span>
 <span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;"> in `arrow_to_r()`:</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Column `key` (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Column `key` (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span></span>
 <span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbClearResult.html" class="external-link">dbClearResult</a></span><span class="op">(</span><span class="va">res</span><span class="op">)</span></span></code></pre></div>
 <p>With <code>lossy = "character"</code> the key arrives as its exact
 text, and <code><a href="../reference/arrow_array.html">arrow_array()</a></code> turns that text back into the same

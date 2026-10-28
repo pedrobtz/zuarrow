@@ -65,7 +65,7 @@ stream <- nanoarrow::as_nanoarrow_array_stream(
 )
 arrow_to_r(stream)
 #> Error in `arrow_to_r()`:
-#> ! Column `key` (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
+#> ! Column `key` (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
 DBI::dbClearResult(res)
 ```
 

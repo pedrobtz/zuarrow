@@ -34,6 +34,8 @@ arrow_read(
   `FALSE` to read every batch into one data frame; `TRUE` to return a
   stream handle whose batches are decoded by
   [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md).
+  With `lazy = TRUE`, `to`, `lossy` and `copy` belong to that later
+  conversion, and setting one here is a `zuarrow_type_error`.
 
 - to:
 
@@ -75,8 +77,9 @@ The input is checked before it is used: every message is verified, every
 buffer must lie inside its message, and every limit of
 [`arrow_limits()`](https://pedrobtz.github.io/zuarrow/reference/arrow_limits.md)
 binds, so malformed or hostile bytes are a `zuarrow_format_error` or a
-`zuarrow_limit_error`, never a crash. Each batch then passes the full
-validation of
+`zuarrow_limit_error`, never a crash. A file whose footer repeats the
+schema differently is a `zuarrow_format_error` too. Each batch then
+passes the full validation of
 [`arrow_validate()`](https://pedrobtz.github.io/zuarrow/reference/arrow_validate.md)
 before it is converted. Bodies compressed with LZ4 or zstd are
 decompressed through 'zukomp'. Big-endian input is a
@@ -84,7 +87,13 @@ decompressed through 'zukomp'. Big-endian input is a
 
 Dictionary batches, and the deltas a stream may send between record
 batches, are applied as the format says; a file that replaces a
-dictionary is an error, as the format forbids it.
+dictionary is an error, as the format forbids it. A delta that extends a
+dictionary already holding values is not supported yet and is a
+`zuarrow_format_error`.
+
+A raw vector is read where it is. With `lazy = TRUE` the handle holds a
+copy instead, because a handle can be passed to another consumer that
+outlives the vector.
 
 ## See also
 

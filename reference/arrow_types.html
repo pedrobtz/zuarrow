@@ -39,7 +39,7 @@ exactly.'></head><body>
   <main id="main" class="col-md-9"><div class="page-header">
 
       <h1>The built-in type table</h1>
-      <small class="dont-index">Source: <a href="https://github.com/pedrobtz/zuarrow/blob/main/R/convert.R" class="external-link"><code>R/convert.R</code></a></small>
+      <small class="dont-index">Source: <a href="https://github.com/pedrobtz/zuarrow/blob/main/R/types.R" class="external-link"><code>R/types.R</code></a></small>
       <div class="d-none name"><code>arrow_types.Rd</code></div>
     </div>
 
@@ -57,8 +57,10 @@ exactly.</p>
 
     <div class="section level2">
     <h2 id="value">Value<a class="anchor" aria-label="anchor" href="#value"></a></h2>
-    <p>A data frame with columns <code>arrow</code>, <code>format</code>, <code>r</code>, <code>exact</code>,
-<code>lossy_r</code> and <code>exact_with</code>.</p>
+    <p>A data frame of character columns: <code>arrow</code>, <code>format</code>, <code>r</code>,
+<code>exact</code>, <code>lossy_r</code> and <code>exact_with</code>. <code>exact</code> describes when the R form
+is exact, as text such as <code>"yes"</code>, <code>"no"</code> or <code>"within +/-2^53"</code>, not
+as a logical.</p>
     </div>
 
     <div class="section level2">

@@ -122,7 +122,8 @@ only under <code>lossy = "warn"</code> or <code>"allow"</code>, and may not repl
 whose built-in conversion is exact. Registering a key again replaces the
 earlier registration, with a message naming both packages.</p>
 <p>Registered handlers apply to the top-level columns of a data frame and
-to the fields of nested data frames, not to the items of a list column.</p>
+to the fields of nested data frames, at any depth, not to the items of a
+list column. A field under a null row of its data frame is <code>NA</code>.</p>
     </div>
 
     <div class="section level2">

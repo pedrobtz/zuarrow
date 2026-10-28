@@ -71,7 +71,7 @@ A 64-bit integer that a double cannot hold is an error, not a rounding.
 big <- arrow_array(c("9007199254740993", "1"), schema = "l")
 arrow_to_r(big)
 #> Error in `arrow_to_r()`:
-#> ! Column 1 (Arrow format `l`) cannot be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
+#> ! Column 1 (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
 ```
 
 `lossy = "character"` gives the exact text, which writes back to the

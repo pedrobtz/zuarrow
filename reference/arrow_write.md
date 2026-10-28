@@ -40,7 +40,8 @@ arrow_write(
 
 - level:
 
-  `NULL` for the codec's default, or a level on its scale.
+  `NULL` for the codec's default, or a level on its scale. A level
+  outside the codec's range is a `zuarrow_codec_error`.
 
 - batch:
 
