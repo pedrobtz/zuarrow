@@ -107,3 +107,83 @@ test_that("nanoarrow's dictionaries read as factors", {
   f <- factor(c("x", "y", "x"))
   expect_identical(arrow_to_r(nanoarrow::as_nanoarrow_array(f)), f)
 })
+
+test_that("a level with an embedded NUL is cut there under warn and allow", {
+  schema <- arrow_schema(factor("a"))
+  array <- test_array(
+    schema,
+    3,
+    list(NULL, le_int(c(0, 1, 2), 4L)),
+    dictionary = test_array_spec(
+      3,
+      list(
+        NULL,
+        le_int(c(0, 1, 4, 5), 4L),
+        c(charToRaw("a"), as.raw(c(0x61, 0x00, 0x62)), charToRaw("c"))
+      )
+    )
+  )
+  err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
+  expect_identical(err$arrow_type, "i")
+  expect_snapshot(arrow_to_r(array), error = TRUE)
+  expect_identical(
+    arrow_to_r(array, lossy = "allow"),
+    factor(c("a", "a", "c"), levels = c("a", "c"))
+  )
+  expect_warning(
+    out <- arrow_to_r(array, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+  expect_identical(out, factor(c("a", "a", "c"), levels = c("a", "c")))
+})
+
+test_that("a non-string dictionary index out of range is a format error", {
+  schema <- test_schema(list(
+    format = "i",
+    name = "",
+    flags = 2L,
+    metadata = NULL,
+    children = list(),
+    dictionary = zspec("g")
+  ))
+  array <- test_array(
+    schema,
+    2,
+    list(NULL, le_int(c(0, 100000), 4L)),
+    dictionary = test_array_spec(
+      1,
+      list(NULL, writeBin(1.5, raw(), endian = "little"))
+    )
+  )
+  expect_error(arrow_to_r(array), class = "zuarrow_format_error")
+  negative <- test_array(
+    schema,
+    1,
+    list(NULL, le_int(-1, 4L)),
+    dictionary = test_array_spec(
+      1,
+      list(NULL, writeBin(1.5, raw(), endian = "little"))
+    )
+  )
+  expect_error(arrow_to_r(negative), class = "zuarrow_format_error")
+})
+
+test_that("invalid UTF-8 in a dictionary value is a format error", {
+  # The only check a foreign handle's dictionary gets before conversion.
+  schema <- arrow_schema(factor("a"))
+  bad <- test_array(
+    schema,
+    1,
+    list(NULL, le_int(0, 4L)),
+    dictionary = test_array_spec(
+      1,
+      list(NULL, le_int(c(0, 2), 4L), as.raw(c(0xc3, 0x28)))
+    )
+  )
+  for (lossy in c("error", "allow")) {
+    expect_error(
+      arrow_to_r(bad, lossy = lossy),
+      class = "zuarrow_format_error"
+    )
+  }
+})

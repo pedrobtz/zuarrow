@@ -17,7 +17,7 @@ determinism_df <- function() {
   data.frame(
     i = c(1L, NA, 3L, -4L),
     d = c(1.5, NA, -2, 2^1000),
-    s = c("a", NA, "café", ""),
+    s = c("a", NA, "caf\u00e9", ""),
     f = factor(c("x", "y", NA, "x")),
     dt = as.Date("2026-10-21") + c(0L, NA, 2L, 3L)
   )
@@ -27,4 +27,32 @@ md5_of <- function(bytes) {
   path <- withr::local_tempfile()
   writeBin(bytes, path)
   unname(tools::md5sum(path))
+}
+
+# The positions where the run `pattern` starts in `bytes`.
+bytes_at <- function(bytes, pattern) {
+  if (is.character(pattern)) {
+    pattern <- charToRaw(pattern)
+  }
+  n <- length(pattern)
+  starts <- which(bytes == pattern[[1]])
+  starts <- starts[starts <= length(bytes) - n + 1L]
+  starts[vapply(
+    starts,
+    function(i) identical(bytes[i:(i + n - 1L)], pattern),
+    logical(1)
+  )]
+}
+
+# `bytes` with the first run equal to `from` replaced by `to`, of the same
+# length, so a test can corrupt one field of a valid IPC message.
+patch_bytes <- function(bytes, from, to) {
+  if (is.character(from)) {
+    from <- charToRaw(from)
+  }
+  stopifnot(length(from) == length(to))
+  at <- bytes_at(bytes, from)
+  stopifnot(length(at) >= 1L)
+  bytes[at[[1]]:(at[[1]] + length(from) - 1L)] <- to
+  bytes
 }

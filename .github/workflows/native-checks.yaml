@@ -23,6 +23,8 @@ jobs:
         ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
 
+  # valgrind.yml takes no env input, so the oracle tests skip here; the
+  # crash corpus runs under ASan in sanitizers and under gctorture.
   valgrind:
     uses: pedrobtz/r-actions/.github/workflows/valgrind.yml@v1
     with:
@@ -36,6 +38,8 @@ jobs:
   gctorture:
     uses: pedrobtz/r-actions/.github/workflows/gctorture.yml@v1
     with:
+      env: |
+        ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
 
   rchk:

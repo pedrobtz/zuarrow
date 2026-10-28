@@ -295,10 +295,8 @@ static int zar_build_bool(struct ArrowArray *array, SEXP x, R_xlen_t start,
 
 /* ---- strings and bytes ------------------------------------------------- */
 
-/* The UTF-8 bytes of a string. translateCharUTF8() returns the CHARSXP's
-   own bytes when no translation is needed, and then its length is known
-   without a strlen(). */
-static const char *zar_utf8(SEXP s, size_t *len) {
+/* The UTF-8 bytes of a string zar_char_utf8() has already accepted. */
+static const char *zar_utf8_checked(SEXP s, size_t *len) {
   const char *u = Rf_translateCharUTF8(s);
   *len = u == CHAR(s) ? (size_t)LENGTH(s) : strlen(u);
   return u;
@@ -316,7 +314,11 @@ static int zar_build_strings(struct ArrowArray *array, enum ArrowType t,
     SEXP s = STRING_ELT(x, start + (R_xlen_t)i);
     size_t len;
     if (s != NA_STRING) {
-      zar_utf8(s, &len);
+      if (zar_char_utf8(s, &len) == NULL) {
+        ArrowErrorSet(&b->error, "row %" PRId64 " is not valid UTF-8",
+                      (int64_t)start + i + 1);
+        return zar_build_fail(b, "type", (double)start + i + 1);
+      }
       total += (int64_t)len;
     }
   }
@@ -333,7 +335,7 @@ static int zar_build_strings(struct ArrowArray *array, enum ArrowType t,
     SEXP s = STRING_ELT(x, start + (R_xlen_t)i);
     if (s != NA_STRING) {
       size_t len;
-      const char *u = zar_utf8(s, &len);
+      const char *u = zar_utf8_checked(s, &len);
       if (len > 0) memcpy(data + at, u, len);
       at += (int64_t)len;
     }
@@ -463,7 +465,12 @@ static int zar_build_text(struct ArrowArray *array,
     R_xlen_t k = start + (R_xlen_t)i;
     SEXP chr = STRING_ELT(x, k);
     if (chr == NA_STRING) continue;
-    const char *text = Rf_translateCharUTF8(chr);
+    size_t text_len;
+    const char *text = zar_char_utf8(chr, &text_len);
+    if (text == NULL) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " is not valid UTF-8", (int64_t)k + 1);
+      return zar_build_fail(b, "type", (double)k + 1);
+    }
     int code;
     int64_t v = 0;
     if (decimal) {
@@ -567,6 +574,23 @@ static SEXP zar_prep_get(SEXP prep, const char *name) {
   return R_NilValue;
 }
 
+/* The number of rows an R object holds as a list column's values: a data
+   frame's rows, a prepared list's elements, a vector's length. -1 when it
+   cannot be told, as for a registered column. */
+static int64_t zar_value_rows(SEXP x) {
+  if (x == R_NilValue) return 0;
+  if (Rf_inherits(x, "data.frame")) {
+    SEXP rn = Rf_getAttrib(x, R_RowNamesSymbol);
+    return (int64_t)Rf_xlength(rn);
+  }
+  if (Rf_inherits(x, "zar_list_prep")) {
+    SEXP offsets = zar_prep_get(x, "offsets");
+    return TYPEOF(offsets) == REALSXP ? (int64_t)Rf_xlength(offsets) - 1 : -1;
+  }
+  if (Rf_inherits(x, "zar_registered")) return -1;
+  return (int64_t)Rf_xlength(x);
+}
+
 /* A list column R has flattened: list(offsets, null, values), offsets the
    cumulative element lengths (n + 1 doubles), null a logical per element,
    values every element's values concatenated (section 6.4). */
@@ -582,10 +606,17 @@ static int zar_build_list(struct ArrowArray *array,
     ArrowErrorSet(&b->error, "a malformed list column");
     return zar_build_fail(b, NULL, NA_REAL);
   }
+  const double *off = REAL(offsets);
+  int64_t rows = zar_value_rows(values);
+  double last = off[Rf_xlength(offsets) - 1];
+  if (rows >= 0 && (double)rows != last) {
+    ArrowErrorSet(&b->error, "the list's values hold %" PRId64 " rows where its offsets end at %.0f",
+                  rows, last);
+    return zar_build_fail(b, "type", NA_REAL);
+  }
   if (zar_set_validity(array, nulls, start, n, zar_na_lgl_true, b) != NANOARROW_OK) {
     return EINVAL;
   }
-  const double *off = REAL(offsets);
   int64_t first = (int64_t)off[start];
   int64_t total = (int64_t)off[start + n] - first;
   enum ArrowType t = sv->type;
@@ -615,8 +646,36 @@ static int zar_build_list(struct ArrowArray *array,
       }
     }
   }
-  return zar_build_array(array->children[0], schema->children[0], values,
-                         (R_xlen_t)first, total, b);
+  int code = zar_build_array(array->children[0], schema->children[0], values,
+                             (R_xlen_t)first, total, b);
+  if (code == NANOARROW_OK && t == NANOARROW_TYPE_MAP &&
+      array->children[0]->n_children == 2 &&
+      array->children[0]->children[0]->null_count != 0) {
+    ArrowErrorSet(&b->error, "a map key is null");
+    return zar_build_fail(b, "type", NA_REAL);
+  }
+  return code;
+}
+
+/* Checks a factor's levels are strings and rows [start, start + n) of its
+   codes are NA or name a level. */
+static int zar_check_factor(SEXP x, SEXP levels, R_xlen_t start, int64_t n,
+                            struct zar_build *b) {
+  if (TYPEOF(levels) != STRSXP) {
+    ArrowErrorSet(&b->error, "a factor without character levels");
+    return zar_build_fail(b, "type", NA_REAL);
+  }
+  R_xlen_t n_levels = Rf_xlength(levels);
+  const int *codes = INTEGER(x) + start;
+  for (int64_t i = 0; i < n; i++) {
+    int code = codes[i];
+    if (code != NA_INTEGER && (code < 1 || code > n_levels)) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " holds code %d, outside the factor's %ld levels",
+                    (int64_t)start + i + 1, code, (long)n_levels);
+      return zar_build_fail(b, "type", (double)start + i + 1);
+    }
+  }
+  return NANOARROW_OK;
 }
 
 /* A factor as dictionary<index, utf8>: the codes as indices, the levels as
@@ -631,6 +690,8 @@ static int zar_build_dictionary(struct ArrowArray *array,
   if (ArrowSchemaViewInit(&index_view, &index_schema, &b->error) != NANOARROW_OK) {
     return zar_build_fail(b, "format", NA_REAL);
   }
+  SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
+  if (zar_check_factor(x, levels, start, n, b) != NANOARROW_OK) return EINVAL;
   SEXP codes = PROTECT(Rf_allocVector(INTSXP, (R_xlen_t)n));
   const int *src = INTEGER(x) + start;
   int *dst = INTEGER(codes);
@@ -638,11 +699,6 @@ static int zar_build_dictionary(struct ArrowArray *array,
   int status = zar_build_numeric(array, index_view.type, codes, 0, n, 1.0, 0, b);
   UNPROTECT(1);
   if (status != NANOARROW_OK) return status;
-  SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
-  if (TYPEOF(levels) != STRSXP) {
-    ArrowErrorSet(&b->error, "a factor without character levels");
-    return zar_build_fail(b, "type", NA_REAL);
-  }
   return zar_build_array(array->dictionary, schema->dictionary, levels, 0,
                          (int64_t)Rf_xlength(levels), b);
 }
@@ -769,7 +825,7 @@ static int zar_build_array(struct ArrowArray *array,
   }
   if (Rf_inherits(x, "zar_list_prep")) {
     if (t == NANOARROW_TYPE_LIST || t == NANOARROW_TYPE_LARGE_LIST ||
-        t == NANOARROW_TYPE_FIXED_SIZE_LIST) {
+        t == NANOARROW_TYPE_FIXED_SIZE_LIST || t == NANOARROW_TYPE_MAP) {
       return zar_build_list(array, schema, &sv, x, start, n, b);
     }
     goto unsupported;
@@ -782,6 +838,9 @@ static int zar_build_array(struct ArrowArray *array,
     if (t == NANOARROW_TYPE_STRING || t == NANOARROW_TYPE_LARGE_STRING) {
       /* dictionary = FALSE: the factor's labels as strings. */
       SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
+      if (zar_check_factor(x, levels, start, n, b) != NANOARROW_OK) {
+        return EINVAL;
+      }
       SEXP labels = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)n));
       const int *codes = INTEGER(x) + start;
       for (int64_t i = 0; i < n; i++) {
@@ -885,25 +944,35 @@ unsupported:
   return zar_build_fail(b, "type", NA_REAL);
 }
 
-static int64_t zar_utf8_bytes(SEXP x) {
-  int64_t total = 0;
-  for (R_xlen_t i = 0; i < Rf_xlength(x); i++) {
+/* Whether a character vector holds more than `limit` bytes as UTF-8, so
+   that schema inference writes it as large_utf8 (section 6.2). A string
+   is at most three times as long in UTF-8 as in its own encoding, so the
+   exact count is only needed near the limit. */
+SEXP zar_c_utf8_over(SEXP x, SEXP r_limit) {
+  double limit = Rf_asReal(r_limit);
+  if (TYPEOF(x) != STRSXP) return Rf_ScalarLogical(FALSE);
+  R_xlen_t n = Rf_xlength(x);
+  double native = 0;
+  for (R_xlen_t i = 0; i < n; i++) {
+    SEXP s = STRING_ELT(x, i);
+    if (s != NA_STRING) native += (double)LENGTH(s);
+  }
+  if (native * 3 <= limit) return Rf_ScalarLogical(FALSE);
+  double total = 0;
+  for (R_xlen_t i = 0; i < n && total <= limit; i++) {
     SEXP s = STRING_ELT(x, i);
     size_t len;
-    if (s != NA_STRING) {
-      zar_utf8(s, &len);
-      total += (int64_t)len;
-    }
+    if (s == NA_STRING) continue;
+    /* A string that cannot be written counts its own bytes; the build
+       refuses it. */
+    if (zar_char_utf8(s, &len) == NULL) len = (size_t)LENGTH(s);
+    total += (double)len;
   }
-  return total;
+  return Rf_ScalarLogical(total > limit);
 }
 
-/* Builds rows [start, start + n) of `x` as an array of `schema_xptr`.
-   `utf8_limit` is NA when the schema was given; otherwise a character
-   vector holding more bytes than it is written as large_utf8 (section
-   6.2). R passes 2^31 - 1, the most utf8's offsets address. */
-SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n,
-                  SEXP utf8_limit) {
+/* Builds rows [start, start + n) of `x` as an array of `schema_xptr`. */
+SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
   struct zar_build b;
   b.error.message[0] = '\0';
   b.kind = NULL;
@@ -919,15 +988,6 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n,
   }
   struct ArrowSchema *schema =
       (struct ArrowSchema *)R_ExternalPtrAddr(schema_copy);
-  double limit = Rf_asReal(utf8_limit);
-  if (!ISNAN(limit) && TYPEOF(x) == STRSXP &&
-      strcmp(schema->format, "u") == 0 && (double)zar_utf8_bytes(x) > limit) {
-    if (ArrowSchemaSetFormat(schema, "U") != NANOARROW_OK) {
-      UNPROTECT(1);
-      return zar_failure(NULL, "cannot allocate a format string");
-    }
-  }
-
   SEXP out = PROTECT(zar_array_owning_xptr(schema_copy));
   struct ArrowArray *array = (struct ArrowArray *)R_ExternalPtrAddr(out);
   int code = ArrowArrayInitFromSchema(array, schema, &b.error);

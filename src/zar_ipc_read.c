@@ -4,6 +4,10 @@
    each decoded batch passes nanoarrow's full validation and zuarrow's UTF-8
    check before R sees it. The reader is an ArrowArrayStream, so arrow_read()
    with lazy = TRUE hands it out as a stream handle. */
+/* 64-bit file offsets on 32-bit POSIX systems, for fseeko() and ftello(). */
+#if !defined(_WIN32) && !defined(_FILE_OFFSET_BITS)
+#define _FILE_OFFSET_BITS 64
+#endif
 #include <errno.h>
 #include <inttypes.h>
 #include <stdio.h>
@@ -30,10 +34,12 @@ struct zar_reader {
   struct ArrowIpcDictionaries dictionaries;
   struct ArrowSchema schema;     /* the input's schema */
   struct ArrowSchema out_schema; /* the selected columns */
+  struct ArrowSchema footer_schema; /* a file footer's copy of the schema */
   int dictionaries_ready;
   int encodings_ready;
 
   uint8_t *data;
+  int owns_data; /* 0 when `data` is an R raw vector read in place */
   int64_t size;
   int64_t pos;      /* the stream cursor */
   int64_t next_pos; /* where the message just read ends */
@@ -108,7 +114,8 @@ static void zar_reader_free(struct zar_reader *r) {
   if (r->encodings_ready) ArrowIpcDictionaryEncodingsReset(&r->encodings);
   if (r->schema.release != NULL) r->schema.release(&r->schema);
   if (r->out_schema.release != NULL) r->out_schema.release(&r->out_schema);
-  free(r->data);
+  if (r->footer_schema.release != NULL) r->footer_schema.release(&r->footer_schema);
+  if (r->owns_data) free(r->data);
   free(r->blocks);
   free(r->dict_blocks);
   free(r->seen_ids);
@@ -151,6 +158,32 @@ static int zar_same_type(const struct ArrowSchema *a, const struct ArrowSchema *
   return zar_same_type(a->dictionary, b->dictionary);
 }
 
+static int zar_same_text(const char *a, const char *b) {
+  if (a == NULL || b == NULL) return a == b;
+  return strcmp(a, b) == 0;
+}
+
+static int zar_same_metadata(const char *a, const char *b) {
+  int64_t na = a == NULL ? 0 : ArrowMetadataSizeOf(a);
+  int64_t nb = b == NULL ? 0 : ArrowMetadataSizeOf(b);
+  return na == nb && (na == 0 || memcmp(a, b, (size_t)na) == 0);
+}
+
+/* Whether two schemas are the same: types, names, flags and metadata,
+   recursively. */
+static int zar_same_schema(const struct ArrowSchema *a, const struct ArrowSchema *b) {
+  if (a == NULL || b == NULL) return a == b;
+  if (strcmp(a->format, b->format) != 0 || a->n_children != b->n_children ||
+      !zar_same_text(a->name, b->name) || a->flags != b->flags ||
+      !zar_same_metadata(a->metadata, b->metadata)) {
+    return 0;
+  }
+  for (int64_t i = 0; i < a->n_children; i++) {
+    if (!zar_same_schema(a->children[i], b->children[i])) return 0;
+  }
+  return zar_same_schema(a->dictionary, b->dictionary);
+}
+
 /* Fields may share a dictionary id, but a dictionary batch is decoded with
    one value type, so every field that shares it must have that type. */
 static int zar_check_shared_dictionaries(struct zar_reader *r) {
@@ -170,9 +203,26 @@ static int zar_check_shared_dictionaries(struct zar_reader *r) {
   return NANOARROW_OK;
 }
 
-/* After the schema: the depth limit, little-endian only (D13), the
-   decoder set up for batches and the dictionaries for their values. */
-static int zar_reader_set_schema(struct zar_reader *r) {
+/* Whether a field's name, or any of its children's, holds a NUL. The
+   decoder copies names as C strings, so a NUL would cut a name silently. */
+static int zar_field_names_have_nul(ns(Field_vec_t) fields) {
+  size_t n = ns(Field_vec_len(fields));
+  for (size_t i = 0; i < n; i++) {
+    ns(Field_table_t) field = ns(Field_vec_at(fields, i));
+    if (ns(Field_name_is_present(field))) {
+      flatbuffers_string_t name = ns(Field_name_get(field));
+      if (strlen(name) != flatbuffers_string_len(name)) return 1;
+    }
+    if (zar_field_names_have_nul(ns(Field_children(field)))) return 1;
+  }
+  return 0;
+}
+
+/* After the schema: the depth limit, names and metadata keys that can
+   become R strings, little-endian only (D13), the decoder set up for
+   batches and the dictionaries for their values. `header` is the schema
+   message. */
+static int zar_reader_set_schema(struct zar_reader *r, struct ArrowBufferView header) {
   if (r->decoder.endianness == NANOARROW_IPC_ENDIANNESS_BIG) {
     ArrowErrorSet(&r->error, "the input is big-endian; zuarrow reads little-endian only");
     return zar_reader_fail(r, "format", EINVAL);
@@ -181,6 +231,15 @@ static int zar_reader_set_schema(struct zar_reader *r) {
     ArrowErrorSet(&r->error, "the schema nests deeper than max_depth (%d)",
                   r->limits.max_depth);
     return zar_reader_fail(r, "limit", EINVAL);
+  }
+  ns(Message_table_t) message = ns(Message_as_root(header.data.data));
+  ns(Schema_table_t) fb_schema = (ns(Schema_table_t))ns(Message_header(message));
+  if (fb_schema != NULL && zar_field_names_have_nul(ns(Schema_fields(fb_schema)))) {
+    ArrowErrorSet(&r->error, "a field name holds a NUL");
+    return zar_reader_fail(r, "format", EINVAL);
+  }
+  if (zar_schema_check_text(&r->schema, &r->error) != NANOARROW_OK) {
+    return zar_reader_fail(r, "format", EINVAL);
   }
   if (zar_check_shared_dictionaries(r) != NANOARROW_OK) return EINVAL;
   int code = ArrowIpcDecoderSetSchemaWithDictionaries(&r->decoder, &r->schema,
@@ -501,7 +560,7 @@ static int zar_open_stream(struct zar_reader *r) {
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   r->encodings_ready = 1;
   r->pos = r->next_pos;
-  return zar_reader_set_schema(r);
+  return zar_reader_set_schema(r, header);
 }
 
 static int zar_open_file(struct zar_reader *r) {
@@ -537,6 +596,12 @@ static int zar_open_file(struct zar_reader *r) {
   code = ArrowIpcDecoderDecodeFooter(&r->decoder, all, &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   struct ArrowIpcFooter *footer = r->decoder.footer;
+  /* Reading a message resets the decoder's footer, so its schema is kept
+     for the comparison with the schema message. */
+  if (ArrowSchemaDeepCopy(&footer->schema, &r->footer_schema) != NANOARROW_OK) {
+    ArrowErrorSet(&r->error, "cannot allocate the footer's schema");
+    return zar_reader_fail(r, NULL, ENOMEM);
+  }
   r->n_blocks = footer->record_batch_blocks.size_bytes / (int64_t)sizeof(struct ArrowIpcFileBlock);
   r->n_dict_blocks = footer->dictionary_blocks.size_bytes / (int64_t)sizeof(struct ArrowIpcFileBlock);
   r->blocks = (struct ArrowIpcFileBlock *)malloc(
@@ -567,8 +632,14 @@ static int zar_open_file(struct zar_reader *r) {
                                                      &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   r->encodings_ready = 1;
-  code = zar_reader_set_schema(r);
+  code = zar_reader_set_schema(r, header);
   if (code != NANOARROW_OK) return code;
+  /* The footer repeats the schema; a file whose two copies disagree has no
+     one reading, so it is refused rather than read by either. */
+  if (!zar_same_schema(&r->footer_schema, &r->schema)) {
+    ArrowErrorSet(&r->error, "the footer's schema differs from the file's schema message");
+    return zar_reader_fail(r, "format", EINVAL);
+  }
 
   /* Every dictionary in the footer, before the first batch. */
   for (int64_t k = 0; k < r->n_dict_blocks; k++) {
@@ -666,15 +737,24 @@ const char *zar_reader_kind(const struct ArrowArrayStream *stream) {
   return r->kind == NULL ? "format" : r->kind;
 }
 
+/* The kind the reader recorded for its last failure, NULL included, for
+   the fuzz target to check that every failure names one. */
+const char *zar_reader_recorded_kind(const struct ArrowArrayStream *stream) {
+  if (stream->get_next != &zar_stream_get_next) return NULL;
+  return ((const struct zar_reader *)stream->private_data)->kind;
+}
+
 /* ---- opening ---------------------------------------------------------- */
 
-/* Opens a reader over `data`, which it takes ownership of, into `out`. */
-static int zar_reader_open_owned(uint8_t *data, int64_t size, const double *limits,
-                                 const void *codecs, struct ArrowArrayStream *out,
-                                 struct ArrowError *error, const char **kind) {
+/* Opens a reader over `data` into `out`. With `owns` set the reader takes
+   ownership of `data` and frees it; otherwise the caller keeps `data`
+   alive and unchanged until the stream is released. */
+static int zar_reader_open_over(uint8_t *data, int owns, int64_t size, const double *limits,
+                                const void *codecs, struct ArrowArrayStream *out,
+                                struct ArrowError *error, const char **kind) {
   struct zar_reader *r = (struct zar_reader *)calloc(1, sizeof(struct zar_reader));
   if (r == NULL) {
-    free(data);
+    if (owns) free(data);
     ArrowErrorSet(error, "cannot allocate the reader");
     *kind = NULL;
     return ENOMEM;
@@ -684,6 +764,7 @@ static int zar_reader_open_owned(uint8_t *data, int64_t size, const double *limi
   r->n_select = -1;
   r->codecs = codecs;
   r->data = data;
+  r->owns_data = owns;
   r->size = size;
   r->limits.max_message = limits[0];
   r->limits.max_depth = (int)limits[1];
@@ -736,7 +817,7 @@ int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limit
     return ENOMEM;
   }
   if (size > 0) memcpy(copy, data, (size_t)size);
-  return zar_reader_open_owned(copy, size, limits, zar_codecs_api(), out, error, kind);
+  return zar_reader_open_over(copy, 1, size, limits, zar_codecs_api(), out, error, kind);
 }
 
 #ifndef ZAR_STANDALONE
@@ -751,9 +832,16 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
     *kind = "io";
     return EIO;
   }
-  long n = -1;
-  if (fseek(f, 0, SEEK_END) == 0) n = ftell(f);
-  if (n < 0 || fseek(f, 0, SEEK_SET) != 0) {
+  /* 64-bit offsets: long is 32 bits on Windows, so ftell() stops at 2 GiB. */
+  int64_t n = -1;
+#ifdef _WIN32
+  if (_fseeki64(f, 0, SEEK_END) == 0) n = (int64_t)_ftelli64(f);
+  int rewound = n >= 0 && _fseeki64(f, 0, SEEK_SET) == 0;
+#else
+  if (fseeko(f, 0, SEEK_END) == 0) n = (int64_t)ftello(f);
+  int rewound = n >= 0 && fseeko(f, 0, SEEK_SET) == 0;
+#endif
+  if (!rewound) {
     fclose(f);
     ArrowErrorSet(error, "cannot find the size of '%s'", path);
     *kind = "io";
@@ -762,6 +850,12 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
   if ((double)n > max_bytes) {
     fclose(f);
     ArrowErrorSet(error, "'%s' is larger than max_bytes", path);
+    *kind = "limit";
+    return EINVAL;
+  }
+  if ((uint64_t)n > (uint64_t)SIZE_MAX) {
+    fclose(f);
+    ArrowErrorSet(error, "'%s' is too large to hold in memory", path);
     *kind = "limit";
     return EINVAL;
   }
@@ -774,7 +868,7 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
   }
   size_t got = n > 0 ? fread(buf, 1, (size_t)n, f) : 0;
   fclose(f);
-  if ((long)got != n) {
+  if ((int64_t)got != n) {
     free(buf);
     ArrowErrorSet(error, "cannot read '%s'", path);
     *kind = "io";
@@ -787,15 +881,28 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
 
 /* Opens a reader over a path (a string) or bytes (a raw vector) and returns
    it as a stream handle. `limits` is c(max_message, max_depth,
-   max_batch_rows, max_bytes). */
-SEXP zar_c_reader_open(SEXP source, SEXP limits) {
+   max_batch_rows, max_bytes).
+
+   With `in_place` TRUE a raw vector is read where it is (design section
+   6.7), held in the handle's protected field so it outlives the reader.
+   That is only safe while the handle stays in R: a consumer that moves the
+   stream out of the handle (nanoarrow, arrow, ADBC) can keep reading after
+   R has collected the vector, and may release the stream on a thread that
+   cannot call R. arrow_read() therefore reads in place only when it
+   consumes the stream itself (lazy = FALSE), and copies for lazy = TRUE.
+   Decoding copies every buffer, so no batch refers to the input. */
+SEXP zar_c_reader_open(SEXP source, SEXP limits, SEXP in_place) {
   struct ArrowError error;
   error.message[0] = '\0';
   const char *kind = NULL;
   SEXP out = PROTECT(zar_stream_owning_xptr());
   struct ArrowArrayStream *stream = (struct ArrowArrayStream *)R_ExternalPtrAddr(out);
   int code;
-  if (TYPEOF(source) == RAWSXP) {
+  if (TYPEOF(source) == RAWSXP && Rf_asLogical(in_place) == TRUE) {
+    code = zar_reader_open_over(RAW(source), 0, (int64_t)Rf_xlength(source), REAL(limits),
+                                zar_codecs_api(), stream, &error, &kind);
+    if (code == NANOARROW_OK) R_SetExternalPtrProtected(out, source);
+  } else if (TYPEOF(source) == RAWSXP) {
     code = zar_reader_open_bytes(RAW(source), (int64_t)Rf_xlength(source), REAL(limits),
                                  stream, &error, &kind);
   } else {
@@ -804,8 +911,8 @@ SEXP zar_c_reader_open(SEXP source, SEXP limits) {
     int64_t size = 0;
     code = zar_read_path(path, &data, &size, REAL(limits)[3], &error, &kind);
     if (code == NANOARROW_OK) {
-      code = zar_reader_open_owned(data, size, REAL(limits), zar_codecs_api(), stream,
-                                   &error, &kind);
+      code = zar_reader_open_over(data, 1, size, REAL(limits), zar_codecs_api(), stream,
+                                  &error, &kind);
     }
   }
   UNPROTECT(1);

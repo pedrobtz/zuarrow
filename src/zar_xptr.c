@@ -2,6 +2,7 @@
    section 6.1), the failure objects C returns to R, and the schema tools
    that need nothing beyond a schema: copy, printing and the spec round
    trip the R layer builds schemas through. */
+#include <errno.h>
 #include <stdlib.h>
 #include <string.h>
 
@@ -36,6 +37,25 @@ SEXP zar_failure(const char *kind, const char *message) {
 
 SEXP zar_failure_from_error(const char *kind, const struct ArrowError *error) {
   return zar_failure(kind, error->message);
+}
+
+/* translateCharUTF8() returns the CHARSXP's own bytes when no translation
+   is needed; then its length is known without a strlen(), and nothing has
+   checked the bytes. A translation from another encoding is valid by
+   construction. A "bytes" string is refused before translateCharUTF8()
+   can raise on it. */
+const char *zar_char_utf8(SEXP s, size_t *len) {
+  if (Rf_getCharCE(s) == CE_BYTES) return NULL;
+  const char *u = Rf_translateCharUTF8(s);
+  if (u == CHAR(s)) {
+    *len = (size_t)LENGTH(s);
+    if (zar_utf8_invalid_at((const uint8_t *)u, (int64_t)*len) >= 0) {
+      return NULL;
+    }
+  } else {
+    *len = strlen(u);
+  }
+  return u;
 }
 
 /* ---- owning handles ----------------------------------------------------- */
@@ -293,21 +313,34 @@ static int zar_metadata_from_list(SEXP metadata, struct ArrowBuffer *out,
     ArrowErrorSet(error, "metadata must be a named list of raw vectors");
     return EINVAL;
   }
+  // Translate every key before the builder owns memory: a translation that
+  // longjmps then leaves nothing to free (R_alloc is reclaimed by R).
+  struct ArrowStringView *keys =
+      n > 0 ? (struct ArrowStringView *)R_alloc((size_t)n, sizeof(*keys))
+            : NULL;
+  for (R_xlen_t i = 0; i < n; i++) {
+    if (TYPEOF(VECTOR_ELT(metadata, i)) != RAWSXP) {
+      ArrowErrorSet(error, "metadata values must be raw vectors");
+      return EINVAL;
+    }
+    size_t key_len;
+    const char *key = zar_char_utf8(STRING_ELT(names, i), &key_len);
+    if (key == NULL) {
+      ArrowErrorSet(error, "a metadata key is not valid UTF-8");
+      return EILSEQ;
+    }
+    keys[i].data = key;
+    keys[i].size_bytes = (int64_t)key_len;
+  }
   if (ArrowMetadataBuilderInit(out, NULL) != NANOARROW_OK) {
     ArrowErrorSet(error, "cannot allocate metadata");
     return ENOMEM;
   }
   for (R_xlen_t i = 0; i < n; i++) {
     SEXP value = VECTOR_ELT(metadata, i);
-    if (TYPEOF(value) != RAWSXP) {
-      ArrowErrorSet(error, "metadata values must be raw vectors");
-      return EINVAL;
-    }
-    const char *key = Rf_translateCharUTF8(STRING_ELT(names, i));
-    struct ArrowStringView k = {key, (int64_t)strlen(key)};
     struct ArrowStringView v = {(const char *)RAW(value),
                                 (int64_t)Rf_xlength(value)};
-    if (ArrowMetadataBuilderAppend(out, k, v) != NANOARROW_OK) {
+    if (ArrowMetadataBuilderAppend(out, keys[i], v) != NANOARROW_OK) {
       ArrowErrorSet(error, "cannot allocate metadata");
       return ENOMEM;
     }
@@ -324,8 +357,13 @@ static int zar_schema_build(struct ArrowSchema *out, SEXP spec,
     ArrowErrorSet(error, "a schema spec needs a format string");
     return EINVAL;
   }
-  if (ArrowSchemaSetFormat(out, Rf_translateCharUTF8(STRING_ELT(format, 0))) !=
-      NANOARROW_OK) {
+  size_t text_len;
+  const char *text = zar_char_utf8(STRING_ELT(format, 0), &text_len);
+  if (text == NULL) {
+    ArrowErrorSet(error, "a format string is not valid UTF-8");
+    return EILSEQ;
+  }
+  if (ArrowSchemaSetFormat(out, text) != NANOARROW_OK) {
     ArrowErrorSet(error, "cannot allocate a format string");
     return ENOMEM;
   }
@@ -333,8 +371,12 @@ static int zar_schema_build(struct ArrowSchema *out, SEXP spec,
   SEXP name = zar_list_get(spec, "name");
   if (TYPEOF(name) == STRSXP && Rf_xlength(name) == 1 &&
       STRING_ELT(name, 0) != NA_STRING) {
-    if (ArrowSchemaSetName(out, Rf_translateCharUTF8(STRING_ELT(name, 0))) !=
-        NANOARROW_OK) {
+    text = zar_char_utf8(STRING_ELT(name, 0), &text_len);
+    if (text == NULL) {
+      ArrowErrorSet(error, "a field name is not valid UTF-8");
+      return EILSEQ;
+    }
+    if (ArrowSchemaSetName(out, text) != NANOARROW_OK) {
       ArrowErrorSet(error, "cannot allocate a field name");
       return ENOMEM;
     }
@@ -347,6 +389,7 @@ static int zar_schema_build(struct ArrowSchema *out, SEXP spec,
   SEXP metadata = zar_list_get(spec, "metadata");
   if (metadata != R_NilValue && Rf_xlength(metadata) > 0) {
     struct ArrowBuffer buffer;
+    ArrowBufferInit(&buffer);
     int code = zar_metadata_from_list(metadata, &buffer, error);
     if (code == NANOARROW_OK &&
         ArrowSchemaSetMetadata(out, (const char *)buffer.data) !=
@@ -425,10 +468,15 @@ SEXP zar_c_schema_from_spec(SEXP spec) {
     }
   }
   UNPROTECT(1);
-  if (code != NANOARROW_OK) return zar_failure_from_error(NULL, &error);
+  if (code != NANOARROW_OK) {
+    return zar_failure_from_error(code == EILSEQ ? "type" : NULL, &error);
+  }
   return out;
 }
 
+/* Metadata as a named list of raw values. Its keys must have passed
+   zar_metadata_check_keys(): a key with a NUL cannot become an R string,
+   so each entry point that reaches here refuses one first. */
 static SEXP zar_metadata_to_list(const char *metadata) {
   struct ArrowMetadataReader reader;
   if (metadata == NULL ||
@@ -485,6 +533,9 @@ SEXP zar_c_schema_to_spec(SEXP x) {
   struct ArrowError error;
   struct ArrowSchema *schema = zar_schema_from_xptr(x, &error);
   if (schema == NULL) return zar_failure_from_error("handle", &error);
+  if (zar_schema_check_text(schema, &error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &error);
+  }
   return zar_schema_spec(schema);
 }
 
@@ -494,6 +545,9 @@ SEXP zar_c_schema_metadata(SEXP x) {
   struct ArrowError error;
   struct ArrowSchema *schema = zar_schema_from_xptr(x, &error);
   if (schema == NULL) return zar_failure_from_error("handle", &error);
+  if (zar_metadata_check_keys(schema->metadata, &error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &error);
+  }
   return zar_metadata_to_list(schema->metadata);
 }
 
@@ -503,6 +557,10 @@ SEXP zar_c_schema_with_metadata(SEXP x, SEXP metadata) {
   struct ArrowSchema *schema = zar_schema_from_xptr(x, &error);
   if (schema == NULL) return zar_failure_from_error("handle", &error);
 
+  /* Make the owning pointer and translate the keys before `buffer` holds
+     memory, so no R allocation can longjmp over it. */
+  SEXP out = PROTECT(zar_schema_owning_xptr());
+  struct ArrowSchema *dst = (struct ArrowSchema *)R_ExternalPtrAddr(out);
   struct ArrowBuffer buffer;
   ArrowBufferInit(&buffer);
   int code = NANOARROW_OK;
@@ -510,14 +568,11 @@ SEXP zar_c_schema_with_metadata(SEXP x, SEXP metadata) {
     code = zar_metadata_from_list(metadata, &buffer, &error);
     if (code != NANOARROW_OK) {
       ArrowBufferReset(&buffer);
-      return zar_failure_from_error(NULL, &error);
+      UNPROTECT(1);
+      return zar_failure_from_error(code == ENOMEM ? NULL : "type", &error);
     }
   }
 
-  /* No R allocation between here and the return that could longjmp over
-     `buffer`: the owning pointer is made first. */
-  SEXP out = PROTECT(zar_schema_owning_xptr());
-  struct ArrowSchema *dst = (struct ArrowSchema *)R_ExternalPtrAddr(out);
   code = ArrowSchemaDeepCopy(schema, dst);
   if (code == NANOARROW_OK) {
     code = ArrowSchemaSetMetadata(
@@ -605,6 +660,52 @@ SEXP zar_c_stream_next(SEXP x) {
    belong to the parent the handle keeps alive. */
 static void zar_release_borrowed(struct ArrowArray *array) {
   array->release = NULL;
+}
+
+/* An array handle over the same buffers as `x`, for a consumer that moves
+   the array it is given, such as a stream. Releasing it leaves `x` alone;
+   its protected field holds `x`, so the buffers outlive it. */
+SEXP zar_c_array_borrow(SEXP x) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  SEXP tag = zar_array_schema_xptr(x, &error);
+  if (tag == NULL) return zar_failure_from_error("handle", &error);
+  SEXP out = PROTECT(zar_array_owning_xptr(tag));
+  struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
+  *dst = *array;
+  dst->private_data = NULL;
+  dst->release = &zar_release_borrowed;
+  R_SetExternalPtrProtected(out, x);
+  UNPROTECT(1);
+  return out;
+}
+
+/* Which rows of an array are null by its own validity bitmap, as a
+   logical vector; NULL when it has no bitmap. Registered handlers get a
+   struct's fields through zar_c_array_child(), which leaves the struct's
+   null rows to R. */
+SEXP zar_c_array_nulls(SEXP x) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  if (array->n_buffers == 0 || array->buffers[0] == NULL ||
+      array->null_count == 0) {
+    return R_NilValue;
+  }
+  if (array->length > R_XLEN_T_MAX) {
+    return zar_failure("limit", "the array holds more rows than R allows");
+  }
+  const uint8_t *bits = (const uint8_t *)array->buffers[0];
+  SEXP out = PROTECT(Rf_allocVector(LGLSXP, (R_xlen_t)array->length));
+  int *dst = LOGICAL(out);
+  for (int64_t i = 0; i < array->length; i++) {
+    dst[i] = !ArrowBitGet(bits, array->offset + i);
+  }
+  UNPROTECT(1);
+  return out;
 }
 
 /* Field k of a struct array as its own array handle (section 6.10). The

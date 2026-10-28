@@ -20,8 +20,13 @@
 #' arrow_metadata(schema) <- c(origin = "zuarrow")
 #' arrow_metadata(schema)
 arrow_metadata <- function(x) {
+  call <- sys.call()
   if (!zar_is_handle(x)) {
-    zar_abort("handle", "`x` must be a schema, array or stream handle.")
+    zar_abort(
+      "handle",
+      "`x` must be a schema, array or stream handle.",
+      call = call
+    )
   }
   raw <- zar_check(.Call(zar_c_schema_metadata, arrow_schema(x)))
   zar_metadata_values(raw)
@@ -45,7 +50,6 @@ zar_metadata_values <- function(raw) {
       },
       ""
     )
-    names(out) <- names(raw)
     return(out)
   }
   out <- raw
@@ -60,10 +64,16 @@ zar_metadata_values <- function(raw) {
 #' @rdname arrow_metadata
 #' @export
 `arrow_metadata<-` <- function(x, value) {
+  call <- sys.call()
   if (!zar_is_schema(x)) {
-    zar_abort("handle", "Metadata can only be replaced on a schema handle.")
+    zar_abort(
+      "handle",
+      "Metadata can only be replaced on a schema handle.",
+      call = call
+    )
   }
-  zar_check(.Call(zar_c_schema_with_metadata, x, zar_metadata_raw(value)))
+  raw <- zar_metadata_raw(value, call = call)
+  zar_check(.Call(zar_c_schema_with_metadata, x, raw))
 }
 
 zar_metadata_raw <- function(value, call = sys.call(-1)) {
@@ -71,20 +81,23 @@ zar_metadata_raw <- function(value, call = sys.call(-1)) {
     return(NULL)
   }
   keys <- names(value)
-  ok_values <- is.character(value) &&
-    !anyNA(value) ||
-    is.list(value) &&
-      all(vapply(
-        value,
-        function(v) {
-          is.raw(v) || is.character(v) && length(v) == 1L && !is.na(v)
-        },
-        NA
-      ))
+  ok_chr <- is.character(value) && !anyNA(value)
+  ok_list <- is.list(value) &&
+    all(vapply(
+      value,
+      function(v) {
+        is.raw(v) || (is.character(v) && length(v) == 1L && !is.na(v))
+      },
+      NA
+    ))
+  ok_values <- ok_chr || ok_list
   if (!ok_values || is.null(keys) || anyNA(keys) || any(!nzchar(keys))) {
     zar_abort(
       "type",
-      "Metadata must be a named character vector or a named list of strings and raw vectors.",
+      paste(
+        "Metadata must be a named character vector",
+        "or a named list of strings and raw vectors."
+      ),
       call = call
     )
   }

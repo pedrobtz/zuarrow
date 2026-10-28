@@ -15,18 +15,29 @@ abi_dll_path <- function() {
   getLoadedDLLs()[["zuarrow"]][["path"]]
 }
 
+# A symbol table that can't be read ends the test. On CI, where the guards
+# must run, that is a failure; elsewhere, such as a machine without
+# binutils, it is a skip. The tests skip_on_cran() themselves.
+abi_unavailable <- function(reason) {
+  if (nzchar(Sys.getenv("CI"))) {
+    testthat::fail(paste0(reason, ", so the ABI guard can't run on CI"))
+  }
+  testthat::skip(reason)
+}
+
 abi_tool <- function(name) {
   path <- Sys.which(name)
-  testthat::skip_if(!nzchar(path), paste(name, "is not on the PATH"))
+  if (!nzchar(path)) {
+    abi_unavailable(paste(name, "is not on the PATH"))
+  }
   path
 }
 
 abi_run <- function(tool, args) {
   out <- suppressWarnings(system2(tool, args, stdout = TRUE, stderr = FALSE))
-  testthat::skip_if(
-    !is.null(attr(out, "status")),
-    paste(basename(tool), "failed")
-  )
+  if (!is.null(attr(out, "status"))) {
+    abi_unavailable(paste(basename(tool), "failed"))
+  }
   out
 }
 
@@ -46,7 +57,9 @@ abi_exports <- function() {
   if (.Platform$OS.type == "windows") {
     out <- abi_objdump()
     start <- grep("[Ordinal/Name Pointer] Table", out, fixed = TRUE)
-    testthat::skip_if(length(start) != 1L, "no export table found")
+    if (length(start) != 1L) {
+      abi_unavailable("objdump printed no export table")
+    }
     rows <- out[-seq_len(start)]
     rows <- rows[grepl("^\\s*\\[\\s*[0-9]+\\]", rows)]
     return(sub("^.*\\s", "", trimws(rows)))

@@ -80,15 +80,18 @@ struct zar_plan {
 
 /* ---- scratch: the views, owned by an external pointer ------------------ */
 
-/* The array views live in malloc()ed memory owned by an external pointer
-   whose finalizer resets them, so an R allocation that longjmps during
-   the fill cannot leak them. Everything else is R_alloc()ed. */
+/* The array views and the text buffer live in malloc()ed memory owned by
+   an external pointer whose finalizer resets them, so an R allocation
+   that longjmps during the fill cannot leak them. Everything else is
+   R_alloc()ed. */
 struct zar_scratch {
   int64_t n;
   struct ArrowArrayView *views;
+  struct ArrowBuffer text; /* the canonical text of one value at a time */
 };
 
 static void zar_scratch_free(struct zar_scratch *s) {
+  ArrowBufferReset(&s->text);
   if (s->views != NULL) {
     for (int64_t i = 0; i < s->n; i++) ArrowArrayViewReset(&s->views[i]);
     free(s->views);
@@ -109,9 +112,9 @@ static void zar_scratch_finalize(SEXP xptr) {
 
 static SEXP zar_column_failure(const char *kind, const char *message,
                                int column, double row, const char *format,
-                               const char *name) {
-  const char *names[] = {"kind", "message", "column", "row", "format", "name",
-                         ""};
+                               const char *name, int no_text) {
+  const char *names[] = {"kind",   "message", "column", "row",
+                         "format", "name",    "text",   ""};
   SEXP out = PROTECT(Rf_mkNamed(VECSXP, names));
   SET_VECTOR_ELT(out, 0, Rf_mkString(kind));
   SET_VECTOR_ELT(out, 1, zar_scalar_utf8(message));
@@ -119,6 +122,7 @@ static SEXP zar_column_failure(const char *kind, const char *message,
   SET_VECTOR_ELT(out, 3, Rf_ScalarReal(row));
   SET_VECTOR_ELT(out, 4, zar_scalar_utf8(format == NULL ? "" : format));
   SET_VECTOR_ELT(out, 5, zar_scalar_utf8(name == NULL ? "" : name));
+  SET_VECTOR_ELT(out, 6, Rf_ScalarLogical(!no_text));
   SEXP cls = PROTECT(Rf_mkString("zar_failure"));
   Rf_setAttrib(out, R_ClassSymbol, cls);
   UNPROTECT(2);
@@ -133,6 +137,8 @@ struct zar_err {
   int64_t row; /* 0-based top-level row, or -1 */
   const char *format;
   int copy;    /* FALSE: string columns may be deferred (zar_altrep.c) */
+  int in_list; /* building a list element, which is never deferred */
+  int no_text; /* a lossy failure that lossy = "character" cannot fix */
   SEXP arrays; /* the batches' array handles, which deferred strings keep */
 };
 
@@ -335,18 +341,29 @@ static void zar_list_range(const struct ArrowArrayView *v, int64_t j,
 }
 
 /* A slice through a dictionary: element i of `s` is the dictionary value
-   its index names. */
-static struct zar_slice zar_dictionary_slice(const struct zar_slice *s) {
+/* its index names, in `out`. An index outside the dictionary is a format
+   failure: foreign arrays get default validation, which does not check
+   dictionary indices. */
+static int zar_dictionary_slice(const struct zar_slice *s, struct zar_slice *out,
+                                const char *format, struct zar_err *e) {
   int64_t *map =
       (int64_t *)R_alloc((size_t)(s->length > 0 ? s->length : 1), sizeof(int64_t));
+  int64_t n_dict = s->view->dictionary->length;
   for (int64_t i = 0; i < s->length; i++) {
     int64_t j = zar_j(s, i);
-    map[i] = (j < 0 || ArrowArrayViewIsNull(s->view, j))
-                 ? -1
-                 : ArrowArrayViewGetIntUnsafe(s->view, j);
+    if (j < 0 || ArrowArrayViewIsNull(s->view, j)) {
+      map[i] = -1;
+      continue;
+    }
+    int64_t idx = ArrowArrayViewGetIntUnsafe(s->view, j);
+    if (idx < 0 || idx >= n_dict) {
+      ArrowErrorSet(&e->error, "dictionary index %ld is out of range", (long)idx);
+      return zar_fail(e, "format", -1, format);
+    }
+    map[i] = idx;
   }
-  struct zar_slice out = {s->view->dictionary, 0, s->length, map, s->up};
-  return out;
+  *out = (struct zar_slice){s->view->dictionary, 0, s->length, map, s->up};
+  return NANOARROW_OK;
 }
 
 /* A slice through a run-end encoding: element i is the value of the run
@@ -891,7 +908,12 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
         }
         int code = zar_resolve(child, cs, n_slices, lossy,
                                p->target == ZAR_T_STRUCT && top, warned, e);
-        if (code != NANOARROW_OK) return code;
+        if (code != NANOARROW_OK) {
+          /* A dictionary's values are part of the column: name its format,
+             not the values' format. */
+          if (child == p->dict) e->format = p->schema->format;
+          return code;
+        }
       }
       if (p->target == ZAR_T_FACTOR && p->dict->target != ZAR_T_CHR) {
         p->target = ZAR_T_DECODE;
@@ -946,6 +968,7 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
     if (lossy == ZAR_LOSSY_WARN) *warned = 1;
     return NANOARROW_OK;
   }
+  e->no_text = !text_ok;
   if (bad_row >= 0 && top) {
     ArrowErrorSet(&e->error, "row %ld holds %s", (long)(bad_row + 1), value);
     return zar_fail(e, "lossy", bad_row, p->schema->format);
@@ -1090,7 +1113,12 @@ static int zar_text(const struct zar_plan *p, const struct ArrowArrayView *v,
           ArrowBufferAppendInt8(scratch, 0) != NANOARROW_OK) {
         return ENOMEM;
       }
-      *out = (const char *)scratch->data;
+      char *text = (char *)scratch->data;
+      /* nanoarrow writes zero at a negative scale as "000": write "0". */
+      if (p->sv.decimal_scale < 0 && text[strspn(text, "0")] == '\0') {
+        text[1] = '\0';
+      }
+      *out = text;
       return NANOARROW_OK;
     }
     default:
@@ -1600,7 +1628,9 @@ static SEXP zar_build_list(struct zar_plan *p, struct zar_slice *slices,
         return R_NilValue;
       }
       struct zar_slice cs = {child, begin, end - begin, NULL, NULL};
+      e->in_list++;
       SEXP value = zar_build(item, &cs, 1, end - begin, text, e);
+      e->in_list--;
       if (e->kind != NULL) {
         UNPROTECT(1);
         return R_NilValue;
@@ -1692,7 +1722,19 @@ static SEXP zar_build_factor(struct zar_plan *p, struct zar_slice *slices,
         zar_fail(e, "format", -1, p->schema->format);
         return R_NilValue;
       }
-      remap[k] = zar_levels_add(&levels, v.data.as_char, v.size_bytes);
+      /* Cut at the first NUL, as zar_string_bytes() cuts a plain string.
+         Under error the scan has already refused a NUL. */
+      int64_t len = v.size_bytes;
+      const char *nul = len > 0 ? memchr(v.data.data, 0, (size_t)len) : NULL;
+      if (nul != NULL) len = nul - v.data.as_char;
+      if (len > INT_MAX) {
+        ArrowErrorSet(&e->error, "dictionary value %ld is longer than R's string limit",
+                      (long)k + 1);
+        UNPROTECT(1);
+        zar_fail(e, "limit", -1, p->schema->format);
+        return R_NilValue;
+      }
+      remap[k] = zar_levels_add(&levels, v.data.as_char, len);
     }
     for (int64_t i = 0; i < s->length; i++, at++) {
       if (zar_is_null(s, i)) {
@@ -1736,11 +1778,13 @@ static SEXP zar_build_factor(struct zar_plan *p, struct zar_slice *slices,
 
 /* Whether a string column can be deferred: copy = FALSE, plain string or
    large_string storage read directly (not through a dictionary or a
-   run-end encoding), and no enclosing struct with nulls. Anything else is
+   run-end encoding), not an element of a list column (D8 defers columns,
+   not list items), and no enclosing struct with nulls. Anything else is
    copied as before. */
 static int zar_deferrable(const struct zar_plan *p, const struct zar_slice *slices,
                           int64_t n_slices, const struct zar_err *e) {
-  if (e->copy || p->target != ZAR_T_CHR || e->arrays == NULL || e->arrays == R_NilValue) {
+  if (e->copy || e->in_list > 0 || p->target != ZAR_T_CHR || e->arrays == NULL ||
+      e->arrays == R_NilValue) {
     return 0;
   }
   for (int64_t b = 0; b < n_slices; b++) {
@@ -1840,8 +1884,12 @@ static SEXP zar_build(struct zar_plan *p, struct zar_slice *slices,
       struct zar_slice *ms = (struct zar_slice *)R_alloc(
           (size_t)(n_slices > 0 ? n_slices : 1), sizeof(struct zar_slice));
       for (int64_t b = 0; b < n_slices; b++) {
-        ms[b] = p->target == ZAR_T_DECODE ? zar_dictionary_slice(&slices[b])
-                                          : zar_ree_slice(&slices[b]);
+        if (p->target == ZAR_T_REE) {
+          ms[b] = zar_ree_slice(&slices[b]);
+        } else if (zar_dictionary_slice(&slices[b], &ms[b], p->schema->format, e) !=
+                   NANOARROW_OK) {
+          return R_NilValue;
+        }
       }
       struct zar_plan *values = p->target == ZAR_T_DECODE ? p->dict : &p->children[0];
       out = zar_build(values, ms, n_slices, rows, text, e);
@@ -1905,6 +1953,9 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     }
   }
 
+  if (zar_schema_check_text(schema, &e.error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &e.error);
+  }
   struct ArrowSchemaView top;
   if (ArrowSchemaViewInit(&top, schema, &e.error) != NANOARROW_OK) {
     return zar_failure_from_error("format", &e.error);
@@ -1914,7 +1965,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   }
   int64_t n_cols = frame ? schema->n_children : 1;
 
-  /* The scratch owns the views from here on. */
+  /* The scratch owns the views and the text buffer from here on. */
   SEXP scratch_xptr = PROTECT(R_MakeExternalPtr(NULL, R_NilValue, R_NilValue));
   R_RegisterCFinalizer(scratch_xptr, &zar_scratch_finalize);
   struct zar_scratch *sc =
@@ -1923,6 +1974,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     UNPROTECT(1);
     return zar_failure(NULL, "cannot allocate conversion scratch");
   }
+  ArrowBufferInit(&sc->text);
   R_SetExternalPtrAddr(scratch_xptr, sc);
   sc->views = (struct ArrowArrayView *)calloc(
       n_batches > 0 ? (size_t)n_batches : 1, sizeof(struct ArrowArrayView));
@@ -1990,29 +2042,26 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       UNPROTECT(1);
       return zar_column_failure(e.kind == NULL ? "type" : e.kind, e.error.message,
                                 (int)c + 1, e.row >= 0 ? (double)(e.row + 1) : NA_REAL,
-                                e.format == NULL ? cs->format : e.format, cs->name);
+                                e.format == NULL ? cs->format : e.format, cs->name,
+                                e.no_text);
     }
   }
 
   SEXP columns = PROTECT(Rf_allocVector(VECSXP, (R_xlen_t)n_cols));
   SEXP names = PROTECT(Rf_allocVector(STRSXP, (R_xlen_t)n_cols));
-  struct ArrowBuffer text;
-  ArrowBufferInit(&text);
   for (int64_t c = 0; c < n_cols; c++) {
     struct zar_plan *p = &plans[c];
     SET_STRING_ELT(names, (R_xlen_t)c,
                    Rf_mkCharCE(p->schema->name == NULL ? "" : p->schema->name, CE_UTF8));
-    SEXP col = zar_build(p, col_slices[c], n_batches, rows, &text, &e);
+    SEXP col = zar_build(p, col_slices[c], n_batches, rows, &sc->text, &e);
     if (e.kind != NULL) {
-      ArrowBufferReset(&text);
       UNPROTECT(3);
       return zar_column_failure(e.kind, e.error.message, (int)c + 1, NA_REAL,
                                 e.format == NULL ? p->schema->format : e.format,
-                                p->schema->name);
+                                p->schema->name, e.no_text);
     }
     SET_VECTOR_ELT(columns, (R_xlen_t)c, col);
   }
-  ArrowBufferReset(&text);
 
   int n_warned = 0;
   for (int64_t c = 0; c < n_cols; c++) n_warned += warned[c];

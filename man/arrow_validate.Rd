@@ -2,35 +2,38 @@
 % Please edit documentation in R/validate.R
 \name{arrow_validate}
 \alias{arrow_validate}
-\title{Validate an array or stream}
+\title{Validate a handle}
 \usage{
 arrow_validate(x, level = c("full", "default", "minimal"))
 }
 \arguments{
-\item{x}{An array or stream handle.}
+\item{x}{A schema, array or stream handle.}
 
 \item{level}{The validation level.}
 }
 \value{
 \code{TRUE}, invisibly. An invalid array raises
 \code{zuarrow_format_error}, with the path to the offending child in the
-message.
+message. A released handle raises \code{zuarrow_handle_error}.
 }
 \description{
 Runs the 'nanoarrow' C library's validation on an array, or on every
-batch of a stream. \code{"minimal"} checks buffer sizes, \code{"default"} also
-checks offsets and lengths, and \code{"full"} also reads buffer contents:
-offsets that only increase and dictionary indices in range, plus a check
-zuarrow adds that every non-null string is valid UTF-8. \code{"full"} is what
-zuarrow applies to every IPC input.
+batch of a stream. A schema is only checked to be live.
 }
 \details{
+\code{"minimal"} checks buffer sizes, \code{"default"} also checks offsets and
+lengths, and \code{"full"} also reads buffer contents: offsets that only
+increase and dictionary indices in range, plus a check zuarrow adds that
+every non-null string is valid UTF-8. \code{"full"} is what zuarrow applies
+to every IPC input.
+
 The C data interface records no buffer sizes, so no level can tell that
 a buffer is shorter than its array's length implies.
 
 Validating a stream reads it to the end, so the stream is consumed.
 }
 \examples{
-schema <- arrow_schema(data.frame(x = 1:3))
-arrow_validate(schema)
+arrow_validate(arrow_array(c("a", "b", NA)))
+arrow_validate(arrow_stream(data.frame(x = 1:3)), level = "minimal")
+arrow_validate(arrow_schema("i"))
 }

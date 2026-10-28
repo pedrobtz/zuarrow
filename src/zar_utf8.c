@@ -138,3 +138,46 @@ int zar_view_validate_utf8(const struct ArrowArrayView *view, const char *path,
   }
   return NANOARROW_OK;
 }
+
+/* ---- names and metadata keys ------------------------------------------ */
+
+static int zar_text_ok(const char *s, int64_t n) {
+  return (n == 0 || memchr(s, 0, (size_t)n) == NULL) &&
+         zar_utf8_invalid_at((const uint8_t *)s, n) < 0;
+}
+
+int zar_metadata_check_keys(const char *metadata, struct ArrowError *error) {
+  if (metadata == NULL) return NANOARROW_OK;
+  struct ArrowMetadataReader reader;
+  if (ArrowMetadataReaderInit(&reader, metadata) != NANOARROW_OK) {
+    ArrowErrorSet(error, "the metadata is malformed");
+    return EINVAL;
+  }
+  struct ArrowStringView key, value;
+  while (reader.remaining_keys > 0) {
+    if (ArrowMetadataReaderRead(&reader, &key, &value) != NANOARROW_OK) {
+      ArrowErrorSet(error, "the metadata is malformed");
+      return EINVAL;
+    }
+    if (!zar_text_ok(key.data, key.size_bytes)) {
+      ArrowErrorSet(error, "a metadata key holds a NUL or is not valid UTF-8");
+      return EINVAL;
+    }
+  }
+  return NANOARROW_OK;
+}
+
+int zar_schema_check_text(const struct ArrowSchema *schema, struct ArrowError *error) {
+  if (schema->name != NULL && !zar_text_ok(schema->name, (int64_t)strlen(schema->name))) {
+    ArrowErrorSet(error, "a field name is not valid UTF-8");
+    return EINVAL;
+  }
+  int code = zar_metadata_check_keys(schema->metadata, error);
+  if (code != NANOARROW_OK) return code;
+  for (int64_t i = 0; i < schema->n_children; i++) {
+    code = zar_schema_check_text(schema->children[i], error);
+    if (code != NANOARROW_OK) return code;
+  }
+  if (schema->dictionary != NULL) return zar_schema_check_text(schema->dictionary, error);
+  return NANOARROW_OK;
+}

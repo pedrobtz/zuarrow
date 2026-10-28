@@ -21,7 +21,9 @@ arrow_read(
 top-level columns to read. Only those are decoded.}
 
 \item{lazy}{\code{FALSE} to read every batch into one data frame; \code{TRUE} to
-return a stream handle whose batches are decoded by \code{\link[=arrow_next]{arrow_next()}}.}
+return a stream handle whose batches are decoded by \code{\link[=arrow_next]{arrow_next()}}.
+With \code{lazy = TRUE}, \code{to}, \code{lossy} and \code{copy} belong to that later
+conversion, and setting one here is a \code{zuarrow_type_error}.}
 
 \item{to}{\code{NULL}, or a named list of prototypes, one per column. For an
 array that is not a \code{struct}, a single prototype.}
@@ -54,14 +56,22 @@ found from the first bytes, whatever the source is called.
 The input is checked before it is used: every message is verified,
 every buffer must lie inside its message, and every limit of
 \code{\link[=arrow_limits]{arrow_limits()}} binds, so malformed or hostile bytes are a
-\code{zuarrow_format_error} or a \code{zuarrow_limit_error}, never a crash. Each
-batch then passes the full validation of \code{\link[=arrow_validate]{arrow_validate()}} before it is
-converted. Bodies compressed with LZ4 or zstd are decompressed through
-'zukomp'. Big-endian input is a \code{zuarrow_format_error}.
+\code{zuarrow_format_error} or a \code{zuarrow_limit_error}, never a crash. A file
+whose footer repeats the schema differently is a \code{zuarrow_format_error}
+too. Each batch then passes the full validation of \code{\link[=arrow_validate]{arrow_validate()}}
+before it is converted. Bodies compressed with LZ4 or zstd are
+decompressed through 'zukomp'. Big-endian input is a
+\code{zuarrow_format_error}.
 
 Dictionary batches, and the deltas a stream may send between record
 batches, are applied as the format says; a file that replaces a
-dictionary is an error, as the format forbids it.
+dictionary is an error, as the format forbids it. A delta that extends a
+dictionary already holding values is not supported yet and is a
+\code{zuarrow_format_error}.
+
+A raw vector is read where it is. With \code{lazy = TRUE} the handle holds a
+copy instead, because a handle can be passed to another consumer that
+outlives the vector.
 }
 \examples{
 path <- tempfile(fileext = ".arrows")

@@ -24,7 +24,8 @@ A single string is read as an Arrow format string, such as \code{"i"} for
 \code{int32} or \code{"tsu:UTC"} for a microsecond timestamp in UTC. Any other R
 object gives the schema it would be written with: a data frame gives a
 \code{struct} with one field per column. On a handle, \code{arrow_schema()} never
-raises on the content: it copies the schema, or asks a stream for it.
+raises on the content: it returns a zuarrow schema handle as it is,
+copies any other schema, or asks a stream for it.
 
 \code{format()} gives the type notation Arrow's own tools print, such as
 \code{int64} or \verb{struct<x: int32>}, and \code{print()} shows it.

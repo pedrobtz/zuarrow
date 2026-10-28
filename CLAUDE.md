@@ -29,11 +29,10 @@ overturn, and its §15 open questions are still open.
 
 ## Current state
 
-Scaffolded 2026-10-21 with `create-pkg.sh`; no functionality yet.
-`DESCRIPTION` still carries the scaffold's placeholder title, description
-and author, `src/zuarrow.c` holds only the R headers, and the test suite is
-the placeholder test. The roadmap in `.agents/roadmap.md` is the stub
-`pkg-roadmap` fills; it takes the package to v0.1.0.
+Stages 0 to 8 of `.agents/roadmap.md` are merged. Stage 9 (the DuckDB
+helper and the typed-package contract), Stage 10 (v0.1.0 readiness) and
+Stage 11 (Review) remain. The first critical review (2026-10-27, issues
+labelled `review`) has been fixed on one branch.
 
 ## Stage tracking
 
@@ -133,7 +132,7 @@ Design §4 names five layers. What exists so far:
   picks the R form from the type and the lossy policy, a value scan
   settles the columns whose exactness depends on their values (`int64`
   past 2^53, `int32` `INT_MIN`, a NUL in a string), and each column is
-  then allocated once and filled from every batch. `R/convert.R` builds
+  then allocated once and filled from every batch. `R/to-r.R` builds
   the data frame and raises the lossy conditions, naming the family
   package from `zar_exact_target()`.
 
@@ -226,13 +225,14 @@ test or CI leg will catch late. Add more as stages establish them.
   definition of done.
 - **Borrow a conformance suite before writing one.** Mainstream
   implementations in Python, Java, Go or Node usually ship a test corpus.
-  Use it as an oracle rather than inventing cases by hand. None wired yet.
+  Use it as an oracle rather than inventing cases by hand.
   The design (§9) names four oracles: `apache/arrow-testing`'s IPC golden
   files and crash corpus, fetched at a pinned commit into
   `tests/testthat/fixtures/`, plus `nanoarrow` and `arrow` for interchange.
   The golden files do not cover big-endian reading or the codecs' own
   correctness.
-- **Helpers live in `tests/testthat/helper-*.R`.** None yet.
+- **Helpers live in `tests/testthat/helper-*.R`.** `tests/testthat/README.md`
+  records the C error branches no test can reach, and why.
 - **Keep the suite inside the CRAN time budget.** No runtime recorded yet.
 
 ## Definition of done

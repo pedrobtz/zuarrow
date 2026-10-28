@@ -232,3 +232,30 @@ SEXP zar_c_deferred_info(SEXP x) {
   UNPROTECT(1);
   return out;
 }
+
+/* For tests only: reaches the methods that no R function calls on a
+   deferred vector. `op` 1 copies every element through STRING_PTR_RO(),
+   2 says whether the Dataptr_or_null method has a pointer, 3 sets element
+   `i` (1-based) to `value` in place, 4 is the No_NA method. The two
+   methods are called directly: R's entry points to them are not API. NULL
+   for a vector that is not deferred. */
+SEXP zar_c_deferred_probe(SEXP x, SEXP op, SEXP i, SEXP value) {
+  if (!R_altrep_inherits(x, zar_deferred_class)) return R_NilValue;
+  switch (Rf_asInteger(op)) {
+    case 1: {
+      R_xlen_t n = Rf_xlength(x);
+      const SEXP *ptr = STRING_PTR_RO(x);
+      SEXP out = PROTECT(Rf_allocVector(STRSXP, n));
+      for (R_xlen_t k = 0; k < n; k++) SET_STRING_ELT(out, k, ptr[k]);
+      UNPROTECT(1);
+      return out;
+    }
+    case 2:
+      return Rf_ScalarLogical(zar_deferred_dataptr_or_null(x) != NULL);
+    case 3:
+      SET_STRING_ELT(x, (R_xlen_t)Rf_asInteger(i) - 1, STRING_ELT(value, 0));
+      return R_NilValue;
+    default:
+      return Rf_ScalarLogical(zar_deferred_no_na(x));
+  }
+}

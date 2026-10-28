@@ -1,5 +1,5 @@
 /* arrow_validate() and arrow_equal() (design section 6.11): nanoarrow's
-   validation levels and array comparison, reached from R. */
+   validation levels, and a value-by-value array comparison. */
 #include <string.h>
 
 #include "zar.h"
@@ -191,7 +191,200 @@ SEXP zar_c_schema_equal(SEXP x, SEXP y, SEXP metadata) {
   return zar_equal_result(equal, reason.message);
 }
 
-/* Compares two arrays of equal schemas buffer by buffer. Returns 1 or 0,
+/* Compares `n` logical elements of `x` from `xi` with `n` of `y` from `yi`,
+   value by value: a null equals a null whatever bytes lie under it, and a
+   dictionary or run-end encoded array compares by the values it decodes
+   to. Returns 1 or 0 with `reason` set, or -1 with `error` set when an
+   index points outside its array. Both views share one schema. */
+static int zar_values_equal(const struct ArrowArrayView *x, int64_t xi,
+                            const struct ArrowArrayView *y, int64_t yi,
+                            int64_t n, struct ArrowError *reason,
+                            struct ArrowError *error);
+
+/* The physical index of logical element `i` of a run-end encoded view, or
+   -1 when its run ends do not reach that far. */
+static int64_t zar_ree_physical(const struct ArrowArrayView *view, int64_t i) {
+  const struct ArrowArrayView *ends = view->children[0];
+  int64_t logical = view->offset + i;
+  int64_t lo = 0, hi = ends->length;
+  while (lo < hi) {
+    int64_t mid = lo + (hi - lo) / 2;
+    if (ArrowArrayViewGetIntUnsafe(ends, mid) > logical) {
+      hi = mid;
+    } else {
+      lo = mid + 1;
+    }
+  }
+  return lo < ends->length ? lo : -1;
+}
+
+/* The child range of list element `i` (logical, before the view's offset)
+   in `start` and `size`. */
+static void zar_list_range(const struct ArrowArrayView *view, int64_t i,
+                           int64_t *start, int64_t *size) {
+  int64_t k = view->offset + i;
+  switch (view->storage_type) {
+    case NANOARROW_TYPE_LIST:
+    case NANOARROW_TYPE_MAP:
+      *start = view->buffer_views[1].data.as_int32[k];
+      *size = view->buffer_views[1].data.as_int32[k + 1] - *start;
+      return;
+    case NANOARROW_TYPE_LARGE_LIST:
+      *start = view->buffer_views[1].data.as_int64[k];
+      *size = view->buffer_views[1].data.as_int64[k + 1] - *start;
+      return;
+    case NANOARROW_TYPE_LIST_VIEW:
+      *start = view->buffer_views[1].data.as_int32[k];
+      *size = view->buffer_views[2].data.as_int32[k];
+      return;
+    case NANOARROW_TYPE_LARGE_LIST_VIEW:
+      *start = view->buffer_views[1].data.as_int64[k];
+      *size = view->buffer_views[2].data.as_int64[k];
+      return;
+    default: {
+      int64_t width = view->layout.child_size_elements;
+      *start = k * width;
+      *size = width;
+      return;
+    }
+  }
+}
+
+static int zar_value_equal(const struct ArrowArrayView *x, int64_t i,
+                           const struct ArrowArrayView *y, int64_t j,
+                           struct ArrowError *reason,
+                           struct ArrowError *error) {
+  switch (x->storage_type) {
+    case NANOARROW_TYPE_NA:
+      return 1;
+    case NANOARROW_TYPE_RUN_END_ENCODED: {
+      int64_t pi = zar_ree_physical(x, i), pj = zar_ree_physical(y, j);
+      if (pi < 0 || pj < 0) {
+        ArrowErrorSet(error, "a run-end encoded array's run ends stop short");
+        return -1;
+      }
+      return zar_values_equal(x->children[1], pi, y->children[1], pj, 1,
+                              reason, error);
+    }
+    case NANOARROW_TYPE_SPARSE_UNION:
+    case NANOARROW_TYPE_DENSE_UNION: {
+      if (ArrowArrayViewUnionTypeId(x, i) != ArrowArrayViewUnionTypeId(y, j)) {
+        ArrowErrorSet(reason, "type ids differ");
+        return 0;
+      }
+      int8_t c = ArrowArrayViewUnionChildIndex(x, i);
+      if (c < 0 || c >= x->n_children) {
+        ArrowErrorSet(error, "a union type id names no child");
+        return -1;
+      }
+      return zar_values_equal(x->children[c], ArrowArrayViewUnionChildOffset(x, i),
+                              y->children[c], ArrowArrayViewUnionChildOffset(y, j),
+                              1, reason, error);
+    }
+    default:
+      break;
+  }
+
+  int8_t nx = ArrowArrayViewIsNull(x, i), ny = ArrowArrayViewIsNull(y, j);
+  if (nx != ny) {
+    ArrowErrorSet(reason, "only one side is null");
+    return 0;
+  }
+  if (nx) return 1;
+
+  if (x->dictionary != NULL) {
+    int64_t a = ArrowArrayViewGetIntUnsafe(x, i);
+    int64_t b = ArrowArrayViewGetIntUnsafe(y, j);
+    if (a < 0 || a >= x->dictionary->length || b < 0 ||
+        b >= y->dictionary->length) {
+      ArrowErrorSet(error, "a dictionary index is out of range");
+      return -1;
+    }
+    return zar_values_equal(x->dictionary, a, y->dictionary, b, 1, reason,
+                            error);
+  }
+
+  switch (x->storage_type) {
+    case NANOARROW_TYPE_BOOL: {
+      int8_t a = ArrowBitGet(x->buffer_views[1].data.as_uint8, x->offset + i);
+      int8_t b = ArrowBitGet(y->buffer_views[1].data.as_uint8, y->offset + j);
+      if (a != b) ArrowErrorSet(reason, "values differ");
+      return a == b;
+    }
+    case NANOARROW_TYPE_STRING:
+    case NANOARROW_TYPE_LARGE_STRING:
+    case NANOARROW_TYPE_BINARY:
+    case NANOARROW_TYPE_LARGE_BINARY:
+    case NANOARROW_TYPE_FIXED_SIZE_BINARY:
+    case NANOARROW_TYPE_STRING_VIEW:
+    case NANOARROW_TYPE_BINARY_VIEW: {
+      struct ArrowBufferView a = ArrowArrayViewGetBytesUnsafe(x, i);
+      struct ArrowBufferView b = ArrowArrayViewGetBytesUnsafe(y, j);
+      int same = a.size_bytes == b.size_bytes &&
+                 (a.size_bytes == 0 ||
+                  memcmp(a.data.data, b.data.data, (size_t)a.size_bytes) == 0);
+      if (!same) ArrowErrorSet(reason, "values differ");
+      return same;
+    }
+    case NANOARROW_TYPE_STRUCT:
+      for (int64_t c = 0; c < x->n_children; c++) {
+        int eq = zar_values_equal(x->children[c], x->offset + i,
+                                  y->children[c], y->offset + j, 1, reason,
+                                  error);
+        if (eq != 1) return eq;
+      }
+      return 1;
+    case NANOARROW_TYPE_LIST:
+    case NANOARROW_TYPE_LARGE_LIST:
+    case NANOARROW_TYPE_LIST_VIEW:
+    case NANOARROW_TYPE_LARGE_LIST_VIEW:
+    case NANOARROW_TYPE_FIXED_SIZE_LIST:
+    case NANOARROW_TYPE_MAP: {
+      int64_t sa, na, sb, nb;
+      zar_list_range(x, i, &sa, &na);
+      zar_list_range(y, j, &sb, &nb);
+      if (na != nb) {
+        ArrowErrorSet(reason, "list lengths %ld and %ld differ", (long)na,
+                      (long)nb);
+        return 0;
+      }
+      return zar_values_equal(x->children[0], sa, y->children[0], sb, na,
+                              reason, error);
+    }
+    default: {
+      int64_t width = x->layout.element_size_bits[1] / 8;
+      const uint8_t *a = x->buffer_views[1].data.as_uint8 + (x->offset + i) * width;
+      const uint8_t *b = y->buffer_views[1].data.as_uint8 + (y->offset + j) * width;
+      int same = width == 0 || memcmp(a, b, (size_t)width) == 0;
+      if (!same) ArrowErrorSet(reason, "values differ");
+      return same;
+    }
+  }
+}
+
+static int zar_values_equal(const struct ArrowArrayView *x, int64_t xi,
+                            const struct ArrowArrayView *y, int64_t yi,
+                            int64_t n, struct ArrowError *reason,
+                            struct ArrowError *error) {
+  if (xi < 0 || yi < 0 || xi + n > x->length || yi + n > y->length) {
+    ArrowErrorSet(error, "a child range lies outside its array");
+    return -1;
+  }
+  for (int64_t k = 0; k < n; k++) {
+    int eq = zar_value_equal(x, xi + k, y, yi + k, reason, error);
+    if (eq != 1) {
+      if (eq == 0) {
+        char inner[sizeof(reason->message)];
+        memcpy(inner, reason->message, sizeof(inner));
+        ArrowErrorSet(reason, "element %ld: %s", (long)(xi + k), inner);
+      }
+      return eq;
+    }
+  }
+  return 1;
+}
+
+/* Compares two arrays of equal schemas value by value. Returns 1 or 0,
    or -1 with `error` set when either array is malformed. */
 static int zar_arrays_equal(const struct ArrowSchema *schema,
                             const struct ArrowArray *x,
@@ -208,10 +401,14 @@ static int zar_arrays_equal(const struct ArrowSchema *schema,
   }
   int equal = -1;
   if (ArrowArrayViewSetArray(&vx, x, error) == NANOARROW_OK &&
-      ArrowArrayViewSetArray(&vy, y, error) == NANOARROW_OK &&
-      ArrowArrayViewCompare(&vx, &vy, NANOARROW_COMPARE_IDENTICAL, &equal,
-                            reason) != NANOARROW_OK) {
-    equal = -1;
+      ArrowArrayViewSetArray(&vy, y, error) == NANOARROW_OK) {
+    if (vx.length != vy.length) {
+      ArrowErrorSet(reason, "length %ld differs from %ld", (long)vx.length,
+                    (long)vy.length);
+      equal = 0;
+    } else {
+      equal = zar_values_equal(&vx, 0, &vy, 0, vx.length, reason, error);
+    }
   }
   ArrowArrayViewReset(&vx);
   ArrowArrayViewReset(&vy);
@@ -243,7 +440,7 @@ SEXP zar_c_array_equal(SEXP x, SEXP y, SEXP metadata) {
 }
 
 /* Compares two streams batch by batch: equal schemas, the same number of
-   batches, and each pair of batches identical. Both are consumed. */
+   batches, and each pair of batches equal. Both are consumed. */
 SEXP zar_c_stream_equal(SEXP x, SEXP y, SEXP metadata) {
   struct ArrowError error;
   error.message[0] = '\0';

@@ -42,6 +42,26 @@ test_that("as.data.frame() takes the same lossy default", {
 
 test_that("as.vector() converts an array", {
   expect_identical(as.vector(arrow_array(c(1L, NA))), c(1L, NA))
+  expect_identical(as.vector(arrow_array(1:2), mode = "any"), 1:2)
+})
+
+test_that("arguments the methods cannot honour are type errors", {
+  array <- arrow_array(1:2)
+  expect_error(
+    as.vector(array, mode = "character"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(as.vector(array, mode = "list"), class = "zuarrow_type_error")
+  df <- data.frame(x = 1:2)
+  expect_error(
+    as.data.frame(arrow_stream(df), row.names = c("a", "b")),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    as.data.frame(arrow_array(df), row.names = c("a", "b")),
+    class = "zuarrow_type_error"
+  )
+  expect_identical(as.data.frame(arrow_array(df), optional = TRUE), df)
 })
 
 test_that("a stream that is not of struct reads as one vector", {
@@ -75,5 +95,24 @@ test_that("nanoarrow reads what arrow_stream() writes", {
   expect_identical(
     as.data.frame(nanoarrow::convert_array_stream(arrow_stream(df))),
     df
+  )
+})
+
+test_that("a stream whose next batch fails raises a classed error", {
+  # A lazy reader over a stream cut short fails in get_next(), as a foreign
+  # producer can: every consumer of a stream reaches that branch.
+  bytes <- arrow_write(data.frame(a = 1:4), NULL, format = "stream", batch = 2L)
+  cut <- bytes[seq_len(length(bytes) - 40L)]
+  stream <- function() arrow_read(cut, lazy = TRUE)
+
+  s <- stream()
+  expect_identical(arrow_next(s), data.frame(a = 1:2))
+  expect_error(arrow_next(s), class = "zuarrow_format_error")
+  expect_error(arrow_to_r(stream()), class = "zuarrow_format_error")
+  expect_error(arrow_write(stream(), NULL), class = "zuarrow_format_error")
+  expect_error(arrow_validate(stream()), class = "zuarrow_handle_error")
+  expect_error(
+    arrow_equal(stream(), arrow_read(bytes, lazy = TRUE)),
+    class = "zuarrow_handle_error"
   )
 })

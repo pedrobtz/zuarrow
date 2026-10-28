@@ -9,6 +9,8 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
   cancel-in-progress: true
 
+# coverage.yml takes no env input, so ZUARROW_FETCH_FIXTURES cannot be
+# set and the oracle tests skip: the coverage figure leaves out their paths.
 jobs:
   coverage:
     # Pinned to a commit because this call holds a write token; bump it

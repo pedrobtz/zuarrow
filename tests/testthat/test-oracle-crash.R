@@ -1,7 +1,8 @@
 # Oracle 2 (design section 9): ClusterFuzz test cases that crashed earlier
-# readers. Each must be refused cleanly, never crash.
+# readers. Each must be refused cleanly, never crash, with the outcome
+# crash-expected.csv pins for it.
 
-test_that("every crash case is a format or limit error, or reads", {
+test_that("every crash case has its expected outcome", {
   dir <- fixtures_dir()
   files <- c(
     list.files(file.path(dir, "arrow-ipc-file"), full.names = TRUE),
@@ -9,21 +10,34 @@ test_that("every crash case is a format or limit error, or reads", {
   )
   files <- files[!dir.exists(files)]
   expect_gt(length(files), 100)
-  for (f in files) {
-    result <- tryCatch(
-      arrow_read(f, lossy = "allow"),
-      zuarrow_error = function(e) e
+  expected <- crash_expected()
+  expected <- expected[!startsWith(expected$file, "data/"), ]
+  relative <- substring(files, nchar(dir) + 2L)
+  expect_setequal(relative, expected$file)
+  for (k in seq_len(nrow(expected))) {
+    path <- file.path(dir, expected$file[[k]])
+    expect_identical(
+      crash_outcome(path),
+      expected$expect[[k]],
+      info = basename(path)
     )
-    ok <- is.data.frame(result) ||
-      inherits(
-        result,
-        c(
-          "zuarrow_format_error",
-          "zuarrow_limit_error",
-          "zuarrow_codec_error",
-          "zuarrow_lossy_error"
-        )
-      )
-    expect_true(ok, info = basename(f))
   }
+})
+
+test_that("a file whose footer and schema message disagree is refused", {
+  # A ClusterFuzz case that libarrow reads through its footer's schema; the
+  # schema message names one field differently.
+  path <- file.path(
+    fixtures_dir(),
+    "arrow-ipc-file",
+    "clusterfuzz-testcase-minimized-arrow-ipc-file-fuzz-6088759971217408"
+  )
+  expect_error(arrow_read(path), class = "zuarrow_format_error")
+  # The same rule on a file zuarrow wrote: rename the field in one copy.
+  bytes <- arrow_write(data.frame(xQx = 1L), NULL)
+  at <- bytes_at(bytes, "xQx")
+  expect_length(at, 2L)
+  bytes[at[[2]] + 1L] <- charToRaw("R")
+  expect_error(arrow_read(bytes), class = "zuarrow_format_error")
+  expect_identical(arrow_read(arrow_write(data.frame(xQx = 1L), NULL))$xQx, 1L)
 })

@@ -128,6 +128,19 @@ test_that("a registration may not make an exact type lossy", {
     arrow_register("arrow.bool8", to = function(a, s) 1, exact = FALSE),
     class = "zuarrow_registry_error"
   )
+  exact <- c("tss:", "tsm:UTC", "+w:4", "+vl", "+vL", "tss:*", "tsm*", "+v*")
+  for (key in exact) {
+    expect_error(
+      arrow_register(key, to = function(a, s) 1, exact = FALSE),
+      class = "zuarrow_registry_error",
+      info = key
+    )
+  }
+  # Lossy defaults may still take an inexact registration.
+  for (key in c("tsn:UTC", "tsu:*", "tdm")) {
+    local_registration(key, to = function(a, s) 1, exact = FALSE)
+    expect_true(key %in% arrow_registry()$key, info = key)
+  }
 })
 
 test_that("malformed registrations are registry errors", {
@@ -163,11 +176,10 @@ test_that("a missing package is a dependency error", {
 })
 
 test_that("a later registration replaces the earlier one with a message", {
-  local_registration("l", to = as_text_int64)
-  expect_message(
-    arrow_register("l", to = as_text_int64, package = "stats"),
-    "stats"
-  )
+  local_unload_hooks(c("stats", "utils"))
+  local_registration("l", to = as_text_int64, package = "utils")
+  # The message names both packages.
+  expect_snapshot(arrow_register("l", to = as_text_int64, package = "stats"))
   expect_identical(
     arrow_registry()$package[arrow_registry()$key == "l"],
     "stats"
@@ -192,12 +204,19 @@ test_that("arrow_registry() lists key, kind, class, package and exact", {
 })
 
 test_that("a package's registrations are removed when it unloads", {
+  local_unload_hooks("stats")
+  event <- packageEvent("stats", "onUnload")
+  # Clear zuarrow's record so the hook is added afresh, and run only it.
+  registry <- zuarrow:::zar_registry
+  registry$hooked <- character()
+  before <- length(getHook(event))
   arrow_register("l", to = as_text_int64, package = "stats")
   withr::defer(arrow_unregister("l"))
   expect_true("l" %in% arrow_registry()$key)
-  for (hook in getHook(packageEvent("stats", "onUnload"))) {
-    hook("stats")
-  }
+  hooks <- getHook(event)
+  added <- hooks[seq_along(hooks) > before]
+  expect_length(added, 1L)
+  added[[1L]]("stats")
   expect_false("l" %in% arrow_registry()$key)
 })
 
@@ -207,4 +226,155 @@ test_that("a handler that returns the wrong length is a registry error", {
     arrow_to_r(test_fixed("l", 1, 8L)),
     class = "zuarrow_registry_error"
   )
+})
+
+test_that("handlers convert the fields of nested data frames", {
+  local_registration("l", to = as_text_int64)
+  inner <- zspec("+s", "s", children = list(zspec("l", "b"), zspec("i", "c")))
+  outer <- zspec("+s", "t", children = list(zspec("l", "d")))
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("l", "a"), inner, zspec("+s", "u", list(outer)))
+  ))
+  make <- function() {
+    test_array(
+      schema,
+      2,
+      list(NULL),
+      children = list(
+        test_array_spec(2, list(NULL, le_int(c(1, 2), 8L))),
+        test_array_spec(
+          2,
+          list(as.raw(0x01)),
+          null_count = 1,
+          children = list(
+            test_array_spec(2, list(NULL, le_int(c(3, 4), 8L))),
+            test_array_spec(2, list(NULL, le_int(c(5, 6), 4L)))
+          )
+        ),
+        test_array_spec(
+          2,
+          list(as.raw(0x01)),
+          null_count = 1,
+          children = list(test_array_spec(
+            2,
+            list(NULL),
+            children = list(test_array_spec(2, list(NULL, le_int(c(7, 8), 8L))))
+          ))
+        )
+      )
+    )
+  }
+  out <- arrow_to_r(make())
+  expect_s3_class(out$a, "fake_int64")
+  expect_s3_class(out$s$b, "fake_int64")
+  # Row 2 of `s` is null, so its fields are NA.
+  expect_identical(unclass(out$s$b), c("3", NA))
+  expect_identical(out$s$c, c(5L, NA))
+  expect_s3_class(out$u$t$d, "fake_int64")
+  # Row 2 of `u` is null, so the fields of `t` within it are NA too.
+  expect_identical(unclass(out$u$t$d), c("7", NA))
+
+  stream <- test_stream(schema, list(make(), make()))
+  out <- arrow_to_r(stream)
+  expect_identical(unclass(out$s$b), c("3", NA, "3", NA))
+})
+
+test_that("handlers do not apply to the items of a list column", {
+  local_registration("l", to = as_text_int64)
+  df <- data.frame(i = 1:2)
+  df$l <- list(c(1, 2), 3)
+  array <- arrow_array(
+    df,
+    schema = test_schema(zspec(
+      "+s",
+      children = list(
+        zspec("i", "i"),
+        zspec("+l", "l", list(zspec("l", "item")))
+      )
+    ))
+  )
+  out <- arrow_to_r(array)
+  expect_identical(out$l, list(c(1, 2), 3))
+})
+
+test_that("a nested data frame converted for a handler matches the built-in", {
+  df <- data.frame(id = 1:3)
+  df$s <- data.frame(x = c(1.5, NA, 3), y = c("a", "b", NA))
+  df$s$t <- data.frame(z = 4:6)
+  expected <- arrow_to_r(arrow_stream(df, batch = 2L))
+  local_registration("i", to = function(array, schema) arrow_to_r(array))
+  expect_identical(arrow_to_r(arrow_stream(df, batch = 2L)), expected)
+})
+
+test_that("conditions from a handled nested field name its path", {
+  df <- data.frame(id = 1L)
+  df$s <- data.frame(c = 1L, b = 2^53 + 2)
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(
+      zspec("i", "id"),
+      zspec("+s", "s", children = list(zspec("i", "c"), zspec("l", "b")))
+    )
+  ))
+  array <- arrow_array(df, schema = schema)
+
+  # An exact handler on `c` converts `s` in R, field by field.
+  local_registration("i", to = function(array, schema) arrow_to_r(array))
+  err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
+  expect_identical(err$column, "s$b")
+  expect_snapshot(arrow_to_r(array), error = TRUE)
+  w <- expect_warning(
+    arrow_to_r(array, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+  expect_identical(w$column, "s$b")
+
+  # An inexact handler on `b` itself warns under its path too.
+  local_registration("l", to = as_text_int64, exact = FALSE)
+  w <- expect_warning(
+    arrow_to_r(array, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+  expect_identical(w$column, "s$b")
+})
+
+test_that("a from handler's array must match the schema's type and length", {
+  x <- structure(1:2, class = "fake_int")
+  local_registration(
+    "i",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_int"
+  )
+  expect_error(arrow_array(x, schema = "l"), class = "zuarrow_registry_error")
+  arrow_unregister("i")
+  local_registration(
+    "i",
+    from = function(x) arrow_array(1:5),
+    class = "fake_int"
+  )
+  expect_error(arrow_array(x, schema = "i"), class = "zuarrow_registry_error")
+  expect_error(
+    arrow_array(data.frame(v = 1, w = I(x))),
+    class = "zuarrow_registry_error"
+  )
+})
+
+test_that("more than 256 registered columns is a limit error", {
+  local_registration(
+    "i",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_int"
+  )
+  column <- structure(1L, class = "fake_int")
+  fits <- as.data.frame(
+    rep(list(I(column)), 256L),
+    col.names = paste0("c", 1:256)
+  )
+  expect_s3_class(arrow_array(fits), "zuarrow_array")
+  past <- as.data.frame(
+    rep(list(I(column)), 257L),
+    col.names = paste0("c", 1:257)
+  )
+  expect_error(arrow_array(past), class = "zuarrow_limit_error")
 })

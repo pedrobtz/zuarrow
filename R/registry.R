@@ -68,7 +68,8 @@ zar_format_pattern <- paste0(
 #' earlier registration, with a message naming both packages.
 #'
 #' Registered handlers apply to the top-level columns of a data frame and
-#' to the fields of nested data frames, not to the items of a list column.
+#' to the fields of nested data frames, at any depth, not to the items of a
+#' list column. A field under a null row of its data frame is `NA`.
 #'
 #' @param key A format string, a prefix pattern or an extension name.
 #' @param to `NULL`, or a function of `(array, schema)` returning an R
@@ -115,7 +116,7 @@ arrow_register <- function(
   if (is.null(to) && is.null(from)) {
     zar_abort(
       "registry",
-      "A registration needs `to`, `from` or both.",
+      "A registration must have `to`, `from` or both.",
       call = call
     )
   }
@@ -123,10 +124,18 @@ arrow_register <- function(
     !is.null(from) &&
       (!is.character(class) || length(class) == 0L || anyNA(class))
   ) {
-    zar_abort("registry", "`from` needs the R `class` it handles.", call = call)
+    zar_abort(
+      "registry",
+      "`class` must name the R classes `from` handles.",
+      call = call
+    )
   }
   if (is.null(from) && !is.null(class)) {
-    zar_abort("registry", "`class` needs a `from` handler.", call = call)
+    zar_abort(
+      "registry",
+      "`class` must be `NULL` without a `from` handler.",
+      call = call
+    )
   }
   if (!is.logical(exact) || length(exact) != 1L || is.na(exact)) {
     zar_abort("registry", "`exact` must be `TRUE` or `FALSE`.", call = call)
@@ -157,7 +166,7 @@ arrow_register <- function(
     zar_abort(
       "registry",
       sprintf(
-        "`%s` converts exactly already, so a registration for it must be exact.",
+        "A registration for `%s` must be exact, as its built-in conversion is.",
         key
       ),
       call = call
@@ -198,8 +207,9 @@ arrow_register <- function(
 #' @rdname arrow_register
 #' @export
 arrow_unregister <- function(key) {
+  call <- sys.call()
   if (!is.character(key) || length(key) != 1L || is.na(key)) {
-    zar_abort("registry", "`key` must be one string.")
+    zar_abort("registry", "`key` must be one string.", call = call)
   }
   zar_registry$entries[[key]] <- NULL
   invisible(key)
@@ -238,19 +248,21 @@ zar_takes <- function(f, n) {
   "..." %in% args || length(args) >= n
 }
 
+# Whether a key covers a format whose built-in conversion is exact.
 zar_covers_exact <- function(kind, prefix) {
   if (kind == "extension") {
     return(identical(prefix, "arrow.bool8"))
   }
+  nested <- c("+s", "+l", "+L", "+vl", "+vL", "+m")
   if (kind == "format") {
-    return(
-      prefix %in%
-        zar_exact_formats ||
-        startsWith(prefix, "w:") ||
-        prefix %in% c("+s", "+l", "+L", "+m")
-    )
+    listed <- prefix %in% c(zar_exact_formats, nested)
+    parameterised <- any(startsWith(prefix, c("w:", "+w:", "tss:", "tsm:")))
+    return(listed || parameterised)
   }
-  any(startsWith(c(zar_exact_formats, "w:1", "+s"), prefix))
+  any(startsWith(
+    c(zar_exact_formats, nested, "w:1", "+w:1", "tss:", "tsm:"),
+    prefix
+  ))
 }
 
 zar_unregister_package <- function(package) {
@@ -274,16 +286,22 @@ zar_handler_for <- function(format, extension) {
   }
   if (nzchar(extension)) {
     for (e in entries) {
-      if (e$kind == "extension" && identical(e$key, extension)) return(e)
+      if (e$kind == "extension" && identical(e$key, extension)) {
+        return(e)
+      }
     }
   }
   for (e in entries) {
-    if (e$kind == "format" && identical(e$key, format)) return(e)
+    if (e$kind == "format" && identical(e$key, format)) {
+      return(e)
+    }
   }
   patterns <- Filter(function(e) e$kind == "pattern", entries)
   patterns <- patterns[order(vapply(patterns, `[[`, 0L, "order"))]
   for (e in patterns) {
-    if (startsWith(format, e$prefix)) return(e)
+    if (startsWith(format, e$prefix)) {
+      return(e)
+    }
   }
   NULL
 }
@@ -294,12 +312,14 @@ zar_handler_for_class <- function(x) {
     return(NULL)
   }
   for (e in zar_registry$entries) {
-    if (!is.null(e$from) && inherits(x, e$class)) return(e)
+    if (!is.null(e$from) && inherits(x, e$class)) {
+      return(e)
+    }
   }
   NULL
 }
 
 zar_extension_name <- function(spec) {
   value <- spec$metadata[["ARROW:extension:name"]]
-  if (is.null(value)) "" else rawToChar(value)
+  rawToChar(value %||% raw())
 }

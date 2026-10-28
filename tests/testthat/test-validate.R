@@ -75,6 +75,8 @@ test_that("invalid UTF-8 in a child or a dictionary is found", {
     arrow_validate(bad_child, "full"),
     class = "zuarrow_format_error"
   )
+  # The message names the path to the failing child.
+  expect_snapshot(arrow_validate(bad_child, "full"), error = TRUE)
 })
 
 test_that("a dictionary index out of range fails at the full level", {
@@ -125,6 +127,10 @@ test_that("a schema handle validates when it is live", {
   expect_true(arrow_validate(arrow_schema("i")))
 })
 
-test_that("an unknown level is an error", {
-  expect_error(arrow_validate(test_int32(1L), "strict"))
+test_that("an unknown level is a type error", {
+  expect_error(
+    arrow_validate(test_int32(1L), "strict"),
+    class = "zuarrow_type_error"
+  )
+  expect_true(arrow_validate(test_int32(1L), "minimal"))
 })

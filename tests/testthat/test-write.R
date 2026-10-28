@@ -51,6 +51,21 @@ test_that("a connection is written to", {
   expect_identical(without_metadata(arrow_read(path)), basic_df())
 })
 
+test_that("a write that fails to open or write is an io error", {
+  missing <- file.path(withr::local_tempdir(), "no", "dir.arrow")
+  expect_error(arrow_write(basic_df(), missing), class = "zuarrow_io_error")
+  # A connection that cannot be opened for writing.
+  con <- file(missing)
+  withr::defer(try(close(con), silent = TRUE))
+  expect_error(arrow_write(basic_df(), con), class = "zuarrow_io_error")
+  # A connection already open, but only for reading.
+  path <- withr::local_tempfile()
+  writeBin(as.raw(1:4), path)
+  con <- file(path, "rb")
+  withr::defer(close(con))
+  expect_error(arrow_write(basic_df(), con), class = "zuarrow_io_error")
+})
+
 test_that("batch splits a data frame into record batches", {
   stream <- arrow_read(arrow_write(basic_df(), NULL, batch = 1), lazy = TRUE)
   n <- 0L
@@ -97,6 +112,24 @@ test_that("arrays and streams are written as they are", {
   )
 })
 
+test_that("writing an array leaves it usable", {
+  df <- data.frame(x = 1:3, s = c("a", "b", NA))
+  array <- arrow_array(df)
+  deferred <- arrow_to_r(array, copy = FALSE)
+  first <- arrow_write(array, NULL)
+  expect_identical(arrow_write(array, NULL), first)
+  expect_identical(arrow_to_r(array), df)
+  expect_identical(deferred, df)
+  gc()
+  expect_identical(without_metadata(arrow_read(first)), df)
+})
+
+test_that("writing a released array is a handle error", {
+  array <- arrow_array(data.frame(x = 1:3))
+  stream <- .Call(zar_c_stream_from_arrays, arrow_schema(array), list(array))
+  expect_error(arrow_write(array, NULL), class = "zuarrow_handle_error")
+})
+
 test_that("nested and list columns are written", {
   df <- data.frame(id = 1:3)
   df$pos <- data.frame(x = c(1, 2, 3))
@@ -107,11 +140,37 @@ test_that("nested and list columns are written", {
   )
 })
 
+test_that("an unknown null count is computed before it is written", {
+  # The C Data Interface allows null_count = -1; a FieldNode does not.
+  batch <- test_array(
+    test_schema(zspec("+s", children = list(zspec("i", "x")))),
+    3,
+    list(NULL),
+    children = list(test_array_spec(
+      3,
+      list(as.raw(0x05), le_int(c(1, 2, 3), 4L)),
+      null_count = -1
+    ))
+  )
+  for (format in c("file", "stream")) {
+    out <- arrow_read(arrow_write(batch, NULL, format = format))
+    expect_identical(out$x, c(1L, NA, 3L), info = format)
+  }
+})
+
 test_that("an incompressible buffer is written as it is", {
   withr::local_seed(1)
-  df <- data.frame(x = stats::runif(1000))
-  out <- arrow_write(df, NULL, compression = "lz4")
-  expect_identical(without_metadata(arrow_read(out)), df)
+  df <- data.frame(x = sample.int(.Machine$integer.max, 2000))
+  values <- writeBin(df$x, raw(), endian = "little")
+  for (compression in c("lz4", "zstd")) {
+    out <- arrow_write(df, NULL, compression = compression)
+    expect_identical(without_metadata(arrow_read(out)), df)
+    # The -1 length prefix, then the values as they are.
+    expect_length(
+      bytes_at(out, c(as.raw(rep(0xff, 8)), values)),
+      1L
+    )
+  }
 })
 
 test_that("compression levels are passed to the codec", {
@@ -120,6 +179,29 @@ test_that("compression levels are passed to the codec", {
   best <- arrow_write(df, NULL, compression = "zstd", level = 19)
   expect_identical(without_metadata(arrow_read(fast)), df)
   expect_identical(without_metadata(arrow_read(best)), df)
+  expect_lt(length(best), length(fast))
+})
+
+test_that("a level outside the codec's range is a codec error", {
+  df <- data.frame(s = rep("abc", 100))
+  expect_error(
+    arrow_write(df, NULL, compression = "zstd", level = 1000L),
+    class = "zuarrow_codec_error"
+  )
+  expect_error(
+    arrow_write(df, NULL, compression = "lz4", level = 99L),
+    class = "zuarrow_codec_error"
+  )
+  # The codec's own refusal, past the R check, is a codec error too.
+  array <- arrow_array(df)
+  out <- .Call(
+    zuarrow:::zar_c_write,
+    list(array),
+    arrow_schema(array),
+    list(TRUE, 2L, 1000L)
+  )
+  expect_s3_class(out, "zar_failure")
+  expect_identical(out$kind, "codec")
 })
 
 test_that("the same input gives the same bytes", {
@@ -196,7 +278,14 @@ test_that("bad arguments are type errors", {
     arrow_write(basic_df(), NULL, dictionary = NA),
     class = "zuarrow_type_error"
   )
-  expect_error(arrow_write(basic_df(), NULL, compression = "gzip"))
+  expect_error(
+    arrow_write(basic_df(), NULL, compression = "gzip"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_write(basic_df(), NULL, format = "feather"),
+    class = "zuarrow_type_error"
+  )
   expect_error(
     arrow_write(basic_df(), file.path(tempfile(), "no", "dir.arrow")),
     class = "zuarrow_io_error"
@@ -214,19 +303,22 @@ test_that("arrow reads what arrow_write() writes", {
   df <- basic_df()
   for (compression in c("none", "lz4", "zstd")) {
     file <- arrow_write(df, NULL, compression = compression)
-    theirs <- as.data.frame(arrow::read_feather(file))
-    expect_identical(theirs$i, df$i)
-    expect_identical(theirs$s, df$s)
-    expect_identical(theirs$d, df$d)
-    expect_identical(as.character(theirs$f), as.character(df$f))
-    expect_identical(theirs$dt, df$dt)
+    expect_identical(
+      as.data.frame(arrow::read_feather(file)),
+      df,
+      info = compression
+    )
     stream <- arrow_write(
       df,
       NULL,
       format = "stream",
       compression = compression
     )
-    expect_identical(as.data.frame(arrow::read_ipc_stream(stream))$s, df$s)
+    expect_identical(
+      as.data.frame(arrow::read_ipc_stream(stream)),
+      df,
+      info = compression
+    )
   }
 })
 

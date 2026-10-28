@@ -87,3 +87,94 @@
   every reader opens the output.
 * The output is deterministic: the same input gives the same bytes, with
   no timestamps and every padding byte zeroed.
+
+## Fixes
+
+* `arrow_metadata<-` raises `zuarrow_type_error` for a key that is not
+  valid UTF-8 or a value that is not raw. Before, it raised a plain
+  `zuarrow_error`.
+
+* A list column of data frames keeps every row of every element; before,
+  its offsets counted columns, not rows, and rows were dropped (#31).
+* Writing a string that is not valid UTF-8, or that is marked as `"bytes"`,
+  is a `zuarrow_type_error` naming the row. Before, it built an invalid
+  array or raised an unclassed error. Column names are checked the same
+  way (#35).
+* Writing a factor whose code names no level, or whose levels are not
+  strings, is a `zuarrow_type_error` naming the row, with or without a
+  dictionary (#36).
+* `arrow_write()` leaves an array it writes usable. Before, it released
+  the caller's array, so it could not be read or written again (#40).
+* `arrow_array()` and `arrow_stream()` no longer set an attribute on the
+  schema handle they are given (#53).
+* Every character column switches to `large_utf8` past 2^31 - 1 bytes,
+  including data frame and list columns, and `arrow_schema()` reports the
+  switch (#52).
+* A map column converts back to a map. A list with the
+  `arrow_keys_sorted` attribute is written as `map`, and a map schema
+  accepts a list of key/value data frames. A null key is a
+  `zuarrow_type_error` (#41).
+* `arrow_equal()` compares arrays value by value, as the design says: the
+  bytes under a null slot and the array offset no longer count, and a
+  dictionary or run-end encoded array compares by its decoded values (#64).
+* A dictionary index outside its dictionary is a `zuarrow_format_error`
+  for every dictionary, not only for factors. Before, a dictionary of
+  numbers read past its end (#50).
+* A factor level with an embedded NUL is cut at the NUL under
+  `lossy = "warn"` or `"allow"`, as a plain string is, and the lossy error
+  names the dictionary column's format. Before, it raised an unclassed
+  error (#37).
+* With `copy = FALSE`, strings inside list elements are copied, as the
+  design says, rather than each element deferring and keeping every batch
+  alive (#55).
+* A decimal with a negative scale round-trips through its text form: the
+  text needs the scale's trailing zeros, and zero reads as `"0"` (#54).
+* Registered `to` handlers apply to the fields of nested data frames at
+  any depth, as documented, and a handled field under a null struct row is
+  `NA`. Before, only top-level columns used them (#42).
+* An inexact registration may not replace the exact conversion of
+  second and millisecond timestamps, `fixed_size_list` or the list views
+  (#78).
+* A list column with `NULL` elements writes to a `fixed_size_list`, whose
+  null rows still hold their width of child values. Before, it was a
+  `zuarrow_type_error`, so such a column read from Arrow could not be
+  written back (found by the #48 oracle).
+* `arrow_write()` computes a null count the producer left unknown (`-1`)
+  before it writes the batch. Before, the file it wrote could not be read
+  back (#34).
+* `arrow_read()` refuses a field name or metadata key that holds a NUL or
+  is not valid UTF-8 with a `zuarrow_format_error`, and so do
+  `arrow_metadata()` and `arrow_to_r()` for such a schema. Before, a NUL
+  raised an unclassed error, a NUL in a name cut it short, and invalid
+  bytes became a string marked UTF-8 (#38).
+* A compression `level` outside the codec's range, and any codec failure
+  while writing, is a `zuarrow_codec_error`. Before, it was an unclassed
+  `zuarrow_error` (#39).
+* `arrow_read()` finds the size of a file through 64-bit offsets, so a file
+  over 2 GiB opens on Windows (#51).
+* `arrow_read()` reads a raw vector in place rather than copying it, except
+  with `lazy = TRUE`, whose handle keeps its own copy (#57).
+* `arrow_read()` refuses a file whose footer's copy of the schema differs
+  from its schema message with a `zuarrow_format_error`. Before, it read
+  the message's copy, where libarrow reads the footer's (#33).
+* `arrow_read(lazy = TRUE)` with `to`, `lossy` or `copy` set is a
+  `zuarrow_type_error`. Before, it ignored them silently (#78).
+* An unknown `lossy`, `level`, `format` or `compression` is a
+  `zuarrow_type_error`, so it inherits from `zuarrow_error` like every
+  other error. Before, `match.arg()` raised an unclassed error. The value
+  must now match a choice exactly (#32).
+* `arrow_write()` raises `zuarrow_io_error` when it cannot open or write
+  to a path or a connection, and the message keeps the cause, as
+  `arrow_read()` does. Before, a connection raised unclassed errors and a
+  path lost the cause (#76).
+* `as.vector()` with a `mode` other than `"any"`, and `as.data.frame()`
+  with `row.names`, are a `zuarrow_type_error`. Before, both were ignored
+  silently. `optional` is documented as ignored (#77).
+* The lossy error and warning for a field of a nested data frame that is
+  converted for a registered handler name its path, such as `s$b`, in the
+  message and in `column`. Before, they named `b` alone (#42).
+* Error messages follow one style: "must" for a requirement and "can't"
+  for what is impossible, one idea per sentence (#80).
+* A list column of functions, environments or calls is a
+  `zuarrow_type_error`. Before, `arrow_schema(list(sum))` recursed until
+  the C stack overflowed (#82).

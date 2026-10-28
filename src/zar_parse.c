@@ -47,7 +47,8 @@ int zar_parse_uint64(const char *s, uint64_t *out) {
 }
 
 /* "[-]digits[.digits]" with at most `scale` fraction digits and at most
-   `precision` digits in all, into `decimal`. */
+   `precision` digits in all, into `decimal`. A negative scale needs
+   -scale trailing zeros, which the unscaled value drops. */
 int zar_parse_decimal(const char *s, struct ArrowDecimal *decimal) {
   char digits[96];
   size_t n = 0;
@@ -69,7 +70,23 @@ int zar_parse_decimal(const char *s, struct ArrowDecimal *decimal) {
     }
   }
   if (*s != '\0') return EINVAL;
-  if (frac > decimal->scale) return ERANGE;
+  if (decimal->scale < 0) {
+    /* A negative scale counts trailing zeros of the integer part: a zero
+       fraction is dropped, then exactly -scale zeros are, unless the value
+       is zero. */
+    for (; frac > 0; frac--) {
+      if (digits[--n] != '0') return ERANGE;
+    }
+    size_t zeros = 0;
+    while (zeros < n - first && digits[n - 1 - zeros] == '0') zeros++;
+    if (zeros == n - first) {
+      n = first + 1;
+    } else {
+      if (zeros < (size_t)-decimal->scale) return ERANGE;
+      n -= (size_t)-decimal->scale;
+    }
+  }
+  if (decimal->scale >= 0 && frac > decimal->scale) return ERANGE;
   for (int32_t k = frac; k < decimal->scale; k++) {
     if (n >= sizeof(digits) - 1) return ERANGE;
     digits[n++] = '0';

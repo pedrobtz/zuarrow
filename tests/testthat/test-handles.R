@@ -162,5 +162,26 @@ test_that("finalizers release handles without error", {
     stream <- test_stream("i", list(test_int32(1:10), test_int32(1:5)))
   }
   rm(stream)
+  # An error in a finalizer does not reach gc()'s caller, so this test fails
+  # only by crashing, as a double free or a bad release would.
   expect_no_error(gc())
+})
+
+test_that("a released stream is a handle error", {
+  skip_if_not_installed("nanoarrow")
+  stream <- arrow_stream(data.frame(a = 1:3))
+  nanoarrow::nanoarrow_pointer_release(stream)
+  expect_error(arrow_next(stream), class = "zuarrow_handle_error")
+  expect_error(arrow_to_r(stream), class = "zuarrow_handle_error")
+  expect_error(arrow_validate(stream), class = "zuarrow_handle_error")
+})
+
+test_that("an array whose schema was released is a handle error", {
+  skip_if_not_installed("nanoarrow")
+  array <- arrow_array(1:3)
+  # nanoarrow returns the array's own schema, the handle's tag, not a copy.
+  nanoarrow::nanoarrow_pointer_release(nanoarrow::infer_nanoarrow_schema(array))
+  expect_error(arrow_to_r(array), class = "zuarrow_handle_error")
+  expect_error(arrow_schema(array), class = "zuarrow_handle_error")
+  expect_error(arrow_validate(array), class = "zuarrow_handle_error")
 })

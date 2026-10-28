@@ -1,5 +1,5 @@
 # Every condition inherits from zuarrow_error (design section 8). C never
-# raises one: it returns a zar_failure and zar_call() turns it into the
+# raises one: it returns a zar_failure and zar_check() turns it into the
 # condition here, so C can free what it owns first.
 
 zar_abort <- function(kind, message, call = NULL, ..., .fields = list()) {
@@ -24,4 +24,26 @@ zar_check <- function(out, call = sys.call(-1)) {
     zar_abort(out$kind, out$message, call = call, .fields = fields)
   }
   out
+}
+
+zar_lossy_warn <- function(name, spec, frame, k, call) {
+  format <- if (frame) spec$children[[k]]$format else spec$format
+  warning(structure(
+    class = c(
+      "zuarrow_lossy_warning",
+      "zuarrow_warning",
+      "warning",
+      "condition"
+    ),
+    list(
+      message = sprintf(
+        "%s (Arrow format `%s`) was converted to R with loss.",
+        zar_column_label(name, k),
+        format
+      ),
+      call = call,
+      column = name,
+      arrow_type = format
+    )
+  ))
 }

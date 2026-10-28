@@ -30,14 +30,14 @@ BugReports: https://github.com/pedrobtz/zuarrow/issues
 Depends: 
     R (>= 4.1)
 Imports: 
-    zukomp
+    zukomp (>= 0.1.0.9000)
 Suggests: 
     arrow,
     nanoarrow,
     testthat (>= 3.0.0),
     withr
 LinkingTo: 
-    zukomp
+    zukomp (>= 0.1.0.9000)
 Remotes: 
     pedrobtz/zukomp
 Config/Needs/website: DBI, duckdb, knitr, rmarkdown

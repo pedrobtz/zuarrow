@@ -38,6 +38,37 @@ test_that("a raw vector and a connection read like the path", {
   expect_identical(without_metadata(arrow_read(gzfile(gz))), df)
 })
 
+test_that("a raw vector is read in place, and copied for a lazy handle", {
+  df <- basic_df()
+  for (name in c("basic.arrow", "basic-zstd.arrows")) {
+    bytes <- readBin(test_data(name), raw(), 1e6)
+    # Read in place: the deferred strings outlive the input vector.
+    out <- arrow_read(bytes, copy = FALSE)
+    rm(bytes)
+    gc()
+    expect_identical(without_metadata(out), df, info = name)
+    # A lazy handle keeps its own copy, so it reads after the input is
+    # collected.
+    bytes <- readBin(test_data(name), raw(), 1e6)
+    stream <- arrow_read(bytes, lazy = TRUE)
+    rm(bytes)
+    gc()
+    expect_identical(without_metadata(arrow_to_r(stream)), df, info = name)
+  }
+})
+
+test_that("a misaligned pre-0.15 raw vector reads like its path", {
+  path <- file.path(
+    fixtures_dir(),
+    "arrow-ipc-stream",
+    "integration",
+    "0.14.1",
+    "generated_primitive.stream"
+  )
+  bytes <- readBin(path, raw(), file.size(path))
+  expect_identical(arrow_read(bytes), arrow_read(path))
+})
+
 test_that("columns selects by name or position, in the order given", {
   df <- basic_df()
   out <- arrow_read(test_data("basic.arrow"), columns = c("s", "i"))
@@ -106,6 +137,14 @@ test_that("limits bind before the bytes are used", {
   )
 })
 
+test_that("a limit error names the limit", {
+  bytes <- arrow_write(data.frame(x = 1:3))
+  expect_snapshot(
+    arrow_read(bytes, limits = arrow_limits(max_bytes = 100)),
+    error = TRUE
+  )
+})
+
 test_that("a compressed buffer claiming too much is a limit error", {
   # Each compressed buffer's prefix is checked against max_message before
   # anything is allocated for it; the header fits, the claim does not.
@@ -149,9 +188,43 @@ test_that("flipped bytes never crash the reader", {
     mutated <- bytes
     at <- sample(length(bytes), 3)
     mutated[at] <- as.raw(sample(0:255, 3, TRUE))
-    result <- tryCatch(arrow_read(mutated), zuarrow_error = function(e) e)
-    expect_true(is.data.frame(result) || inherits(result, "zuarrow_error"))
+    # Any error at all is caught, so the check below is the real one: the
+    # input reads, or the error has one of the classes hostile bytes may
+    # raise, never a bare zuarrow_error or an R error.
+    result <- tryCatch(arrow_read(mutated), error = function(e) e)
+    outcome <- if (is.data.frame(result)) "data.frame" else class(result)[[1]]
+    expect_true(
+      outcome %in%
+        c(
+          "data.frame",
+          "zuarrow_format_error",
+          "zuarrow_limit_error",
+          "zuarrow_codec_error",
+          "zuarrow_lossy_error"
+        ),
+      info = paste(k, outcome)
+    )
   }
+})
+
+test_that("to, lossy and copy with lazy = TRUE are type errors", {
+  path <- test_data("basic.arrow")
+  expect_error(
+    arrow_read(path, lazy = TRUE, lossy = "allow"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_read(path, lazy = TRUE, to = list(i = double())),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_read(path, lazy = TRUE, copy = FALSE),
+    class = "zuarrow_type_error"
+  )
+  expect_s3_class(
+    arrow_read(path, lazy = TRUE, lossy = "error", copy = TRUE),
+    "zuarrow_array_stream"
+  )
 })
 
 test_that("a missing path is an io error", {
@@ -179,8 +252,7 @@ test_that("arrow reads what arrow wrote, the same way", {
   path <- test_data("basic-zstd.arrow")
   ours <- without_metadata(arrow_read(path))
   theirs <- as.data.frame(arrow::read_feather(path))
-  expect_identical(ours$s, theirs$s)
-  expect_identical(ours$d, theirs$d)
+  expect_identical(ours, theirs)
 })
 
 test_that("fields that share a dictionary must share its value type", {
@@ -194,26 +266,32 @@ test_that("fields that share a dictionary must share its value type", {
 
 test_that("inputs the fuzz target found are refused cleanly", {
   # Each crashed or tripped a sanitizer in zuarrow's reader or the vendored
-  # decoder before its fix (tools/patches/0005 to 0012, and the reader's own
-  # footer, field-node, alignment, view and shared-dictionary checks).
-  files <- list.files(test_path("data"), "^crash-", full.names = TRUE)
-  expect_gte(length(files), 10L)
-  for (f in files) {
-    result <- tryCatch(
-      arrow_read(f, lossy = "allow"),
-      zuarrow_error = function(e) e
+  # decoder before its fix; crash-expected.csv names the fix each pins.
+  files <- list.files(test_path("data"), "^crash-")
+  expected <- crash_expected()
+  expected <- expected[startsWith(expected$file, "data/"), ]
+  expect_setequal(paste0("data/", files), expected$file)
+  for (k in seq_len(nrow(expected))) {
+    expect_identical(
+      crash_outcome(test_path(expected$file[[k]])),
+      expected$expect[[k]],
+      info = expected$file[[k]]
     )
-    expect_true(
-      is.data.frame(result) ||
-        inherits(
-          result,
-          c(
-            "zuarrow_format_error",
-            "zuarrow_limit_error",
-            "zuarrow_codec_error"
-          )
-        ),
-      info = basename(f)
-    )
+    expect_true(nzchar(expected$note[[k]]), info = expected$file[[k]])
+  }
+})
+
+test_that("a field name or metadata key R cannot hold is a format error", {
+  df <- data.frame(xQx = 1L)
+  for (format in c("file", "stream")) {
+    bytes <- arrow_write(df, NULL, format = format, metadata = c(kQk = "v"))
+    nul_key <- patch_bytes(bytes, "kQk", as.raw(c(0x6b, 0x00, 0x6b)))
+    expect_error(arrow_read(nul_key), class = "zuarrow_format_error")
+    bad_key <- patch_bytes(bytes, "kQk", as.raw(c(0x6b, 0xff, 0x6b)))
+    expect_error(arrow_read(bad_key), class = "zuarrow_format_error")
+    nul_name <- patch_bytes(bytes, "xQx", as.raw(c(0x78, 0x00, 0x78)))
+    expect_error(arrow_read(nul_name), class = "zuarrow_format_error")
+    bad_name <- patch_bytes(bytes, "xQx", as.raw(c(0x78, 0xff, 0x78)))
+    expect_error(arrow_read(bad_name), class = "zuarrow_format_error")
   }
 })

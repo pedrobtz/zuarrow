@@ -24,7 +24,8 @@
 #' @param x `NULL` to return the bytes, a path, or a connection.
 #' @param format `"file"` or `"stream"`.
 #' @param compression `"none"`, `"lz4"` or `"zstd"`.
-#' @param level `NULL` for the codec's default, or a level on its scale.
+#' @param level `NULL` for the codec's default, or a level on its scale. A
+#'   level outside the codec's range is a `zuarrow_codec_error`.
 #' @param batch The most rows in one record batch, for a data frame.
 #' @param dictionary Whether factors are written as dictionaries.
 #' @param metadata `NULL`, or a named character vector of schema metadata.
@@ -57,9 +58,14 @@ arrow_write <- function(
       "file"
     }
   } else {
-    match.arg(format)
+    zar_arg_match(format, c("file", "stream"), "format", call)
   }
-  compression <- match.arg(compression)
+  compression <- zar_arg_match(
+    compression,
+    c("none", "lz4", "zstd"),
+    "compression",
+    call
+  )
   if (
     !is.null(level) &&
       (!is.numeric(level) ||
@@ -73,11 +79,8 @@ arrow_write <- function(
       call = call
     )
   }
-  if (
-    !is.logical(dictionary) || length(dictionary) != 1L || is.na(dictionary)
-  ) {
-    zar_abort("type", "`dictionary` must be `TRUE` or `FALSE`.", call = call)
-  }
+  zar_check_level(level, compression, call)
+  zar_check_flag(dictionary, "dictionary", call)
   if (
     !is.null(x) &&
       !inherits(x, "connection") &&
@@ -99,7 +102,7 @@ arrow_write <- function(
       list(
         format == "file",
         match(compression, c("none", "lz4", "zstd")) - 1L,
-        if (is.null(level)) NA_integer_ else as.integer(level)
+        as.integer(level %||% NA)
       )
     ),
     call = call
@@ -108,25 +111,18 @@ arrow_write <- function(
     return(bytes)
   }
   if (inherits(x, "connection")) {
-    opened <- !isOpen(x)
-    if (opened) {
-      open(x, "wb")
+    if (!isOpen(x)) {
+      zar_io(open(x, "wb"), "Can't open the connection", call)
       on.exit(close(x), add = TRUE)
     }
-    writeBin(bytes, x)
+    zar_io(writeBin(bytes, x), "Can't write to the connection", call)
     return(invisible(x))
   }
-  con <- tryCatch(file(x, "wb"), error = function(e) e, warning = function(w) w)
-  if (inherits(con, "condition")) {
-    zar_abort(
-      "io",
-      sprintf("Cannot open `%s` for writing.", x),
-      call = call,
-      path = x
-    )
-  }
+  what <- sprintf("Can't open `%s` for writing", x)
+  con <- zar_io(file(x, "wb"), what, call, path = x)
   on.exit(close(con), add = TRUE)
-  writeBin(bytes, con)
+  what <- sprintf("Can't write to `%s`", x)
+  zar_io(writeBin(bytes, con), what, call, path = x)
   invisible(x)
 }
 
@@ -134,7 +130,7 @@ arrow_write <- function(
 # as dictionaries or strings, an array as one batch, a stream read through.
 zar_write_source <- function(data, batch, dictionary, metadata, call) {
   if (is.data.frame(data)) {
-    spec <- .Call(zar_c_schema_to_spec, arrow_schema(data))
+    spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(data)))
     if (!dictionary) {
       spec <- zar_without_dictionaries(spec)
     }
@@ -144,7 +140,12 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
     schema <- zar_check(.Call(zar_c_schema_from_spec, spec), call = call)
     stream <- arrow_stream(data, batch = batch, schema = schema)
   } else if (zar_is_array(data)) {
-    stream <- .Call(zar_c_stream_from_arrays, arrow_schema(data), list(data))
+    # A borrowed array, so the stream does not consume the caller's.
+    borrowed <- zar_check(.Call(zar_c_array_borrow, data), call = call)
+    stream <- zar_check(
+      .Call(zar_c_stream_from_arrays, arrow_schema(data), list(borrowed)),
+      call = call
+    )
   } else if (zar_is_stream(data)) {
     stream <- data
   } else {
@@ -165,28 +166,39 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
   if (!is.data.frame(data) && !is.null(metadata)) {
     arrow_metadata(schema) <- metadata
   }
-  arrays <- list()
-  repeat {
-    next_batch <- zar_check(.Call(zar_c_stream_next, stream), call = call)
-    if (is.null(next_batch)) {
-      break
-    }
-    arrays[[length(arrays) + 1L]] <- next_batch
+  list(schema = schema, arrays = zar_stream_batches(stream, call))
+}
+
+# A level outside the codec's range, as zukomp reports it, is a codec error
+# before anything is encoded.
+zar_check_level <- function(level, compression, call) {
+  if (is.null(level) || compression == "none") {
+    return(invisible())
   }
-  list(schema = schema, arrays = arrays)
+  id <- if (compression == "lz4") "lz4-frame" else compression
+  codecs <- zukomp::komp_codecs()
+  row <- codecs[codecs$id == id, ]
+  if (nrow(row) == 1L && !is.na(row$level_min)) {
+    if (level < row$level_min || level > row$level_max) {
+      zar_abort(
+        "codec",
+        sprintf(
+          "`level` must be between %d and %d for %s, not %s.",
+          row$level_min,
+          row$level_max,
+          compression,
+          format(level)
+        ),
+        call = call
+      )
+    }
+  }
+  invisible()
 }
 
 zar_without_dictionaries <- function(spec) {
   if (!is.null(spec$dictionary)) {
-    spec <- spec$dictionary[c(
-      "format",
-      "name",
-      "flags",
-      "metadata",
-      "children",
-      "dictionary"
-    )]
-    spec$name <- spec$name
+    spec <- spec$dictionary[names(zar_spec(""))]
   }
   spec$children <- lapply(spec$children, function(child) {
     name <- child$name

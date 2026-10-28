@@ -24,7 +24,8 @@ arrow_write(
 
 \item{compression}{\code{"none"}, \code{"lz4"} or \code{"zstd"}.}
 
-\item{level}{\code{NULL} for the codec's default, or a level on its scale.}
+\item{level}{\code{NULL} for the codec's default, or a level on its scale. A
+level outside the codec's range is a \code{zuarrow_codec_error}.}
 
 \item{batch}{The most rows in one record batch, for a data frame.}
 

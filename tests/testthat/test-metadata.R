@@ -7,11 +7,12 @@ test_that("a schema without metadata reads as an empty named vector", {
 
 test_that("metadata round-trips, UTF-8 included", {
   schema <- arrow_schema("i")
-  arrow_metadata(schema) <- c(origin = "zuarrow", "café" = "crème")
-  expect_identical(
-    arrow_metadata(schema),
-    c(origin = "zuarrow", "café" = "crème")
-  )
+  # Names set from strings: a non-ASCII name in a call would be a symbol,
+  # which the parser can't translate in a C locale.
+  metadata <- c("zuarrow", "cr\u00e8me")
+  names(metadata) <- c("origin", "caf\u00e9")
+  arrow_metadata(schema) <- metadata
+  expect_identical(arrow_metadata(schema), metadata)
 })
 
 test_that("binary values are kept as raw", {
@@ -73,4 +74,19 @@ test_that("metadata is replaced on schemas only", {
     arrow_metadata(array) <- c(a = "1"),
     class = "zuarrow_handle_error"
   )
+})
+
+test_that("a metadata key that is not UTF-8 is a type error", {
+  schema <- arrow_schema("i")
+  key <- iconv("caf\u00e9", "UTF-8", "latin1")
+  Encoding(key) <- "bytes"
+  metadata <- list(raw(1))
+  names(metadata) <- key
+  expect_error(arrow_metadata(schema) <- metadata, class = "zuarrow_type_error")
+  expect_error(
+    arrow_metadata(schema) <- list(a = 1L),
+    class = "zuarrow_type_error"
+  )
+  arrow_metadata(schema) <- list(a = charToRaw("x"))
+  expect_identical(arrow_metadata(schema), c(a = "x"))
 })

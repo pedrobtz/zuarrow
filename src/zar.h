@@ -24,6 +24,11 @@ SEXP zar_scalar_utf8(const char *x);
 SEXP zar_failure(const char *kind, const char *message);
 SEXP zar_failure_from_error(const char *kind, const struct ArrowError *error);
 
+/* The UTF-8 bytes of a CHARSXP and their length, or NULL when it cannot be
+   written as Arrow text: its encoding is "bytes", or its bytes are not
+   valid UTF-8. Never raises. */
+const char *zar_char_utf8(SEXP s, size_t *len);
+
 /* Owning external pointers in the layout nanoarrow's r.h documents (D6): a
    malloc()ed struct whose NULL release means unset, a finalizer that calls
    release, an array's tag holding its schema handle. The class vector is
@@ -55,6 +60,14 @@ SEXP zar_schema_copy_of(SEXP x);
 /* The offset of the first byte that is not valid UTF-8, or -1. */
 int64_t zar_utf8_invalid_at(const uint8_t *s, int64_t n);
 
+/* Whether every metadata key could become an R string: no NUL, valid
+   UTF-8. Values are bytes and are not checked. */
+int zar_metadata_check_keys(const char *metadata, struct ArrowError *error);
+
+/* Checks every field name is valid UTF-8 and every metadata key passes
+   zar_metadata_check_keys(), in a schema and its children. */
+int zar_schema_check_text(const struct ArrowSchema *schema, struct ArrowError *error);
+
 /* Checks every binary-view and string-view struct in a view and its
    children names a range inside its buffers, which nanoarrow does not. */
 int zar_view_check_layout(const struct ArrowArrayView *view, const char *path,
@@ -78,6 +91,10 @@ int zar_parse_time(const char *s, int digits, int64_t *out);
 /* The condition kind of a reader stream's last failure, or NULL when the
    stream is not one arrow_read() made (src/zar_ipc_read.c). */
 const char *zar_reader_kind(const struct ArrowArrayStream *stream);
+
+/* The kind a reader stream recorded for its last failure, NULL when none
+   was recorded. R-free, for the fuzz target. */
+const char *zar_reader_recorded_kind(const struct ArrowArrayStream *stream);
 
 /* Opens a reader over a copy of `size` bytes into `out`, with the limits
    c(max_message, max_depth, max_batch_rows, max_bytes). On failure returns
@@ -118,6 +135,7 @@ SEXP zar_deferred_strings(SEXP arrays, const struct zar_deferred_chunk *chunks,
 /* Whether `x` is a deferred string vector, and how many of its elements
    have been created: for tests. */
 SEXP zar_c_deferred_info(SEXP x);
+SEXP zar_c_deferred_probe(SEXP x, SEXP op, SEXP i, SEXP value);
 #endif
 
 #endif /* ZAR_H */

@@ -35,6 +35,7 @@ struct zar_writer {
   const void *codecs;
   int codec;
   int level;
+  const char *kind; /* the condition kind of a failure inside the callback */
 };
 
 static void zar_writer_free(struct zar_writer *w) {
@@ -87,14 +88,18 @@ static ArrowErrorCode zar_encode_buffer(struct ArrowBufferView buffer, void *sta
     if (cap < 0) {
       ArrowErrorSet(error, "the codec cannot bound a buffer of %" PRId64 " bytes",
                     buffer.size_bytes);
+      w->kind = "codec";
       return EINVAL;
     }
     w->packed.size_bytes = 0;
     NANOARROW_RETURN_NOT_OK_WITH_ERROR(ArrowBufferReserve(&w->packed, cap), error);
     int64_t written = 0;
-    NANOARROW_RETURN_NOT_OK(zar_codec_compress(w->codecs, w->codec, w->level,
-                                               buffer.data.as_uint8, buffer.size_bytes,
-                                               w->packed.data, cap, &written, error));
+    int code = zar_codec_compress(w->codecs, w->codec, w->level, buffer.data.as_uint8,
+                                  buffer.size_bytes, w->packed.data, cap, &written, error);
+    if (code != NANOARROW_OK) {
+      w->kind = "codec";
+      return code;
+    }
     int64_t prefix;
     if (written < buffer.size_bytes) {
       prefix = buffer.size_bytes;
@@ -137,6 +142,15 @@ static int zar_emit(struct zar_writer *w, struct ArrowBuffer *blocks,
                                        error);
   }
   return NANOARROW_OK;
+}
+
+/* The C Data Interface allows an unknown null count (-1); a FieldNode
+   needs the count. Computes it for every node of a view, dictionaries
+   included, before the view is encoded. */
+static void zar_fill_null_counts(struct ArrowArrayView *view) {
+  if (view->null_count < 0) view->null_count = ArrowArrayViewComputeNullCount(view);
+  for (int64_t i = 0; i < view->n_children; i++) zar_fill_null_counts(view->children[i]);
+  if (view->dictionary != NULL) zar_fill_null_counts(view->dictionary);
 }
 
 /* ---- dictionaries ----------------------------------------------------- */
@@ -273,6 +287,7 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       kind = "format";
       break;
     }
+    zar_fill_null_counts(view);
 
     /* Dictionaries: written before the first batch, and again only when a
        stream's batch brings a different one. */
@@ -333,6 +348,7 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   for (R_xlen_t k = 0; k < n_views; k++) ArrowArrayViewReset(&views[k]);
   if (code != NANOARROW_OK) {
     if (error.message[0] == '\0') ArrowErrorSet(&error, "the IPC output could not be written");
+    if (kind == NULL) kind = w->kind;
     SEXP fail = PROTECT(zar_write_fail(kind, &error));
     UNPROTECT(2);
     return fail;

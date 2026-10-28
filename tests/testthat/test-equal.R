@@ -67,3 +67,105 @@ test_that("handles of different kinds are a handle error", {
   )
   expect_error(arrow_equal(1, 1), class = "zuarrow_handle_error")
 })
+
+test_that("arrays compare value by value, ignoring bytes under nulls", {
+  validity <- as.raw(0x05) # rows 1 and 3 valid, row 2 null
+  x <- test_array(
+    "i",
+    3,
+    list(validity, writeBin(c(1L, 7L, 3L), raw(), endian = "little")),
+    null_count = 1
+  )
+  y <- test_array(
+    "i",
+    3,
+    list(validity, writeBin(c(1L, 9L, 3L), raw(), endian = "little")),
+    null_count = 1
+  )
+  expect_true(arrow_equal(x, y))
+
+  # A null against a value is a difference.
+  z <- test_int32(c(1L, 7L, 3L))
+  expect_false(arrow_equal(x, z))
+})
+
+test_that("arrays with different offsets but equal values are equal", {
+  x <- test_array(
+    "i",
+    2,
+    list(NULL, writeBin(c(0L, 5L, 6L), raw(), endian = "little")),
+    offset = 1
+  )
+  expect_true(arrow_equal(x, test_int32(5:6)))
+  expect_false(arrow_equal(x, test_int32(c(5L, 7L))))
+})
+
+test_that("strings under a null slot do not count", {
+  validity <- as.raw(0x01)
+  x <- test_array(
+    "u",
+    2,
+    list(
+      validity,
+      writeBin(c(0L, 1L, 3L), raw(), endian = "little"),
+      charToRaw("abc")
+    ),
+    null_count = 1
+  )
+  y <- test_array(
+    "u",
+    2,
+    list(
+      validity,
+      writeBin(c(0L, 1L, 1L), raw(), endian = "little"),
+      charToRaw("a")
+    ),
+    null_count = 1
+  )
+  expect_true(arrow_equal(x, y))
+  expect_false(arrow_equal(x, test_utf8(c(0L, 1L, 3L), charToRaw("abc"))))
+})
+
+test_that("nested values under a null struct row do not count", {
+  schema <- test_schema(zspec("+s", children = list(zspec("i", "a"))))
+  make <- function(values, validity = as.raw(0x05), null_count = 1) {
+    test_array(
+      schema,
+      3,
+      list(validity),
+      null_count = null_count,
+      children = list(test_array_spec(
+        3,
+        list(NULL, writeBin(values, raw(), endian = "little"))
+      ))
+    )
+  }
+  expect_true(arrow_equal(make(c(1L, 2L, 3L)), make(c(1L, 9L, 3L))))
+  expect_false(arrow_equal(make(c(1L, 2L, 3L)), make(c(1L, 2L, 4L))))
+  expect_false(arrow_equal(
+    make(c(1L, 2L, 3L)),
+    make(c(1L, 2L, 3L), as.raw(0x07), 0)
+  ))
+  expect_true(arrow_equal(
+    arrow_array(list(1:2, NULL, 3L)),
+    arrow_array(list(1:2, NULL, 3L))
+  ))
+  expect_false(arrow_equal(
+    arrow_array(list(1:2, 3L)),
+    arrow_array(list(1L, 2:3))
+  ))
+  expect_true(arrow_equal(
+    arrow_array(factor(c("b", "a"))),
+    arrow_array(factor(c("b", "a")))
+  ))
+  expect_false(arrow_equal(
+    arrow_array(factor(c("b", "a"))),
+    arrow_array(factor(c("a", "b"), levels = c("b", "a")))
+  ))
+})
+
+test_that("a dictionary on one side only is a difference", {
+  out <- arrow_equal(arrow_array(factor("a")), arrow_array(0L))
+  expect_false(out)
+  expect_type(attr(out, "reason"), "character")
+})

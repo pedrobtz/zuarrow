@@ -30,6 +30,19 @@ test_that("a class with no Arrow type is a type error", {
   )
 })
 
+test_that("a list of functions, environments or calls is a type error", {
+  elements <- list(sum, function(x) x, new.env(), quote(f(x)), quote(x))
+  for (e in elements) {
+    expect_error(arrow_schema(list(e)), class = "zuarrow_type_error")
+    expect_error(arrow_array(list(e)), class = "zuarrow_type_error")
+    expect_error(arrow_array(list(list(e))), class = "zuarrow_type_error")
+  }
+  expect_error(
+    arrow_array(data.frame(x = I(list(sum)))),
+    class = "zuarrow_type_error"
+  )
+})
+
 test_that("a schema writes the values as its type, checked", {
   expect_identical(
     arrow_to_r(arrow_array(c(1L, -3L), schema = "c")),
@@ -47,6 +60,62 @@ test_that("a schema writes the values as its type, checked", {
   expect_error(arrow_array(0.1, schema = "f"), class = "zuarrow_lossy_error")
   expect_error(arrow_array("a", schema = "i"), class = "zuarrow_type_error")
   expect_error(arrow_array(TRUE, schema = "i"), class = "zuarrow_type_error")
+})
+
+test_that("a given schema handle is left as it was", {
+  withr::local_options(zuarrow.utf8_limit = 5)
+  s <- arrow_schema("u")
+  before <- attributes(s)
+  arrow_array(1L, schema = arrow_schema("i"))
+  arrow_array(c("abc", "def"), schema = s)
+  arrow_stream(data.frame(x = 1L), schema = arrow_schema(data.frame(x = 1L)))
+  expect_identical(attributes(s), before)
+  # A schema made without one still switches to large_utf8.
+  expect_identical(
+    format(arrow_schema(arrow_array(c("abc", "def")))),
+    "large_string"
+  )
+})
+
+test_that("export checks every integer width at its limits", {
+  limits <- list(
+    c = c(-2^7, 2^7 - 1),
+    s = c(-2^15, 2^15 - 1),
+    i = c(-2^31, 2^31 - 1),
+    C = c(0, 2^8 - 1),
+    S = c(0, 2^16 - 1),
+    I = c(0, 2^32 - 1)
+  )
+  for (format in names(limits)) {
+    range <- limits[[format]]
+    array <- arrow_array(range, schema = format)
+    expect_identical(
+      arrow_to_r(array, to = double()),
+      range,
+      info = format
+    )
+    if (range[[2]] < 2^31) {
+      ints <- arrow_array(as.integer(range[range > -2^31]), schema = format)
+      expect_true(arrow_validate(ints, "full"), info = format)
+    }
+    for (past in c(range[[1]] - 1, range[[2]] + 1)) {
+      expect_error(
+        arrow_array(c(0, past), schema = format),
+        class = "zuarrow_lossy_error",
+        info = format
+      )
+    }
+  }
+  expect_identical(arrow_to_r(arrow_array(2^53, schema = "L")), 2^53)
+  expect_error(arrow_array(2^64, schema = "L"), class = "zuarrow_lossy_error")
+  expect_error(arrow_array(-1, schema = "L"), class = "zuarrow_lossy_error")
+  expect_error(arrow_array(-1L, schema = "S"), class = "zuarrow_lossy_error")
+  expect_error(arrow_array(65536L, schema = "S"), class = "zuarrow_lossy_error")
+  expect_error(
+    arrow_array(-32769L, schema = "s"),
+    class = "zuarrow_lossy_error"
+  )
+  expect_error(arrow_array(32768L, schema = "s"), class = "zuarrow_lossy_error")
 })
 
 test_that("the lossy error from export names the row", {
@@ -88,13 +157,70 @@ test_that("Date exports to date32 and date64", {
 })
 
 test_that("strings are written as UTF-8 whatever their encoding", {
-  latin1 <- iconv("café", "UTF-8", "latin1")
+  latin1 <- iconv("caf\u00e9", "UTF-8", "latin1")
   expect_identical(Encoding(latin1), "latin1")
-  expect_identical(arrow_to_r(arrow_array(latin1)), "café")
+  expect_identical(arrow_to_r(arrow_array(latin1)), "caf\u00e9")
   expect_identical(
     arrow_to_r(arrow_array(c("a", NA), schema = "U")),
     c("a", NA)
   )
+})
+
+test_that("invalid UTF-8 and bytes-encoded strings are type errors", {
+  bad <- "a\xffb"
+  Encoding(bad) <- "UTF-8"
+  bytes <- "caf\xe9"
+  Encoding(bytes) <- "bytes"
+  messages <- character()
+  for (x in list(c("ok", bad), c("ok", bytes))) {
+    err <- expect_error(arrow_array(x), class = "zuarrow_type_error")
+    messages <- c(messages, conditionMessage(err))
+    expect_error(arrow_array(x, schema = "U"), class = "zuarrow_type_error")
+    expect_error(
+      arrow_write(data.frame(z = x), NULL),
+      class = "zuarrow_type_error"
+    )
+    f <- structure(1:2, levels = x, class = "factor")
+    expect_error(arrow_array(f, schema = "u"), class = "zuarrow_type_error")
+    expect_error(arrow_array(f), class = "zuarrow_type_error")
+  }
+  expect_error(
+    arrow_array(structure(bytes, arrow_type = "i")),
+    class = "zuarrow_type_error"
+  )
+  expect_snapshot(writeLines(messages))
+})
+
+test_that("a factor code outside its levels is a type error", {
+  messages <- character()
+  for (code in c(5L, 0L, -1L)) {
+    f <- structure(c(1L, code), levels = "a", class = "factor")
+    err <- expect_error(arrow_array(f), class = "zuarrow_type_error")
+    messages <- c(messages, conditionMessage(err))
+    expect_error(arrow_array(f, schema = "u"), class = "zuarrow_type_error")
+    expect_error(
+      arrow_write(data.frame(f = I(f)), NULL, dictionary = FALSE),
+      class = "zuarrow_type_error"
+    )
+  }
+  numeric_levels <- structure(1L, levels = 1L, class = "factor")
+  expect_error(arrow_array(numeric_levels), class = "zuarrow_type_error")
+  expect_error(
+    arrow_array(numeric_levels, schema = "u"),
+    class = "zuarrow_type_error"
+  )
+  expect_snapshot(writeLines(messages))
+})
+
+test_that("a column name that is not UTF-8 is a type error", {
+  for (enc in c("bytes", "UTF-8")) {
+    name <- "caf\xe9"
+    Encoding(name) <- enc
+    df <- data.frame(x = 1L)
+    names(df) <- name
+    expect_error(arrow_array(df), class = "zuarrow_type_error")
+    expect_error(arrow_schema(df), class = "zuarrow_type_error")
+  }
 })
 
 test_that("strings past utf8's offsets are written as large_utf8", {
@@ -108,6 +234,25 @@ test_that("strings past utf8's offsets are written as large_utf8", {
     format(arrow_schema(arrow_array(c("abc", "def"), schema = "u"))),
     "string"
   )
+})
+
+test_that("every inferred character column switches to large_utf8", {
+  withr::local_options(zuarrow.utf8_limit = 5)
+  df <- data.frame(big = c("abcdef", "gh"), small = c("a", "b"))
+  df$tags <- list("abc", "def")
+  expect_identical(
+    format(arrow_schema(df)),
+    "struct<big: large_string, small: string, tags: list<item: large_string>>"
+  )
+  array <- arrow_array(df)
+  expect_identical(format(arrow_schema(array)), format(arrow_schema(df)))
+  expect_identical(arrow_to_r(array), df)
+  stream <- arrow_stream(df, batch = 1)
+  expect_identical(format(arrow_schema(stream)), format(arrow_schema(df)))
+  expect_identical(as.data.frame(stream), df)
+  # Bytes are counted as UTF-8: "é" in latin1 is one byte, in UTF-8 two.
+  latin1 <- iconv("\u00e9\u00e9\u00e9", "UTF-8", "latin1")
+  expect_identical(format(arrow_schema(arrow_array(latin1))), "large_string")
 })
 
 test_that("binary checks its elements", {
@@ -137,7 +282,7 @@ test_that("every array zuarrow builds passes full validation", {
     c(TRUE, NA),
     c(1L, NA),
     c(1.5, NA, NaN),
-    c("a", NA, "é"),
+    c("a", NA, "\u00e9"),
     as.Date(c("2026-10-21", NA)),
     as.POSIXct(c("2026-10-21", NA), tz = "UTC"),
     as.difftime(c(1, NA), units = "secs"),
@@ -147,4 +292,13 @@ test_that("every array zuarrow builds passes full validation", {
   for (x in values) {
     expect_true(arrow_validate(arrow_array(x), "full"))
   }
+})
+
+test_that("a struct schema needs a data frame", {
+  schema <- arrow_schema(data.frame(a = 1L))
+  expect_error(arrow_array(1:3, schema = schema), class = "zuarrow_type_error")
+  expect_error(
+    arrow_array(list(1:3), schema = schema),
+    class = "zuarrow_type_error"
+  )
 })

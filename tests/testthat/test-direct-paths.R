@@ -54,7 +54,7 @@ test_that("every integer width and float converts with nulls", {
   expect_identical(arrow_to_r(floats), c(0.5, 1.5, NA, 3.5))
 })
 
-test_that("bool and arrow.bool8 convert with nulls", {
+test_that("bool converts with nulls", {
   bools <- test_array("b", 5, list(as.raw(0x1b), as.raw(0x15)), null_count = 1)
   expect_identical(arrow_to_r(bools), c(TRUE, FALSE, NA, FALSE, TRUE))
 })

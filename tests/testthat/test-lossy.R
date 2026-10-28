@@ -12,9 +12,28 @@ test_that("an int64 past 2^53 is a lossy error naming the row and zuint", {
   expect_identical(err$row, 3)
   expect_identical(err$target, "zuint")
   expect_identical(err$arrow_type, "l")
+  # An unnamed array has no column name; the message calls it column 1.
+  expect_identical(err$column, "")
+})
+
+test_that("the lossy error names the column, type, row and target", {
+  df <- data.frame(x = c(1, 2^53 + 2))
+  schema <- test_schema(zspec("+s", children = list(zspec("l", "x"))))
+  array <- arrow_array(df, schema = schema)
+  err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
+  expect_identical(err$column, "x")
+  expect_snapshot(arrow_to_r(array), error = TRUE)
+  # A string with a NUL has no family package; its message is snapshot in
+  # "an embedded NUL is lossy with no text form".
+  nul <- test_utf8(c(0L, 3L), as.raw(c(0x61, 0x00, 0x62)))
+  err <- expect_error(arrow_to_r(nul), class = "zuarrow_lossy_error")
+  expect_null(err$target)
+  expect_identical(err$column, "")
 })
 
 test_that("each row of the lossy table errors by default and converts under allow", {
+  # Under allow an int64 becomes integer64 when bit64 is loaded.
+  local_mocked_bindings(zar_bit64_loaded = function() FALSE)
   ns <- arrow_array(
     as.POSIXct("2026-10-21 10:00:00", tz = "UTC"),
     schema = "tsn:UTC"
@@ -34,13 +53,34 @@ test_that("each row of the lossy table errors by default and converts under allo
     time64 = test_fixed("ttn", 3723e9, 8L),
     duration = test_fixed("tDs", 90, 8L)
   )
+  utc <- function(x) .POSIXct(x, tz = "UTC")
+  secs <- function(x) as.difftime(x, units = "secs")
+  expected <- list(
+    # 2^53 + 1 rounds to the nearest double, 2^53.
+    int64 = 2^53,
+    uint64 = 2^53,
+    decimal32 = 123.45,
+    decimal64 = 123.45,
+    decimal128 = 123.45,
+    decimal256 = 123.45,
+    timestamp_us = utc(1792576800),
+    timestamp_ns = utc(1792576800),
+    date64 = utc(86400),
+    time32 = secs(3723),
+    time64 = secs(3723),
+    duration = secs(90)
+  )
   for (name in names(cases)) {
     expect_error(
       arrow_to_r(cases[[name]]),
       class = "zuarrow_lossy_error",
       info = name
     )
-    expect_no_error(arrow_to_r(cases[[name]], lossy = "allow"))
+    expect_identical(
+      arrow_to_r(cases[[name]], lossy = "allow"),
+      expected[[name]],
+      info = name
+    )
   }
 })
 
@@ -145,6 +185,26 @@ test_that("warn converts with one warning per lossy column", {
   expect_identical(out, 2^53)
 })
 
+test_that("warn gives one warning per column over every batch", {
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("l", "a"), zspec("l", "b"))
+  ))
+  big <- 2^53 + 2
+  df <- data.frame(a = c(big, 1, big, big, 2, big), b = c(1, big, 2, big, 3, 4))
+  stream <- arrow_stream(df, batch = 2L, schema = schema)
+  columns <- character()
+  out <- withCallingHandlers(
+    arrow_to_r(stream, lossy = "warn"),
+    zuarrow_lossy_warning = function(w) {
+      columns <<- c(columns, w$column)
+      invokeRestart("muffleWarning")
+    }
+  )
+  expect_identical(columns, c("a", "b"))
+  expect_identical(out, df)
+})
+
 test_that("allow gives integer64 when bit64 is loaded", {
   local_mocked_bindings(zar_bit64_loaded = function() TRUE)
   big <- test_array(
@@ -182,6 +242,11 @@ test_that("an embedded NUL is lossy with no text form", {
     class = "zuarrow_lossy_error"
   )
   expect_identical(arrow_to_r(nul, lossy = "allow"), "a")
+  # The hint does not offer the text form such a string lacks, as it does
+  # for a number.
+  expect_snapshot(arrow_to_r(nul), error = TRUE)
+  big <- arrow_array(2^53 + 2, schema = "l")
+  expect_snapshot(arrow_to_r(big), error = TRUE)
 })
 
 test_that("the scan finds lossy values in any batch of a stream", {
@@ -209,6 +274,29 @@ test_that("to names the R type a column must become", {
   expect_error(arrow_to_r(big, to = integer()), class = "zuarrow_lossy_error")
 })
 
+test_that("to = integer() checks uint32 and uint64 at the range limits", {
+  for (format in c("I", "L")) {
+    width <- if (format == "I") 4L else 8L
+    fits <- test_fixed(format, c(0, 2^31 - 1), width)
+    expect_identical(
+      arrow_to_r(fits, to = integer()),
+      c(0L, .Machine$integer.max)
+    )
+    past <- test_fixed(format, c(0, 2^31), width)
+    err <- expect_error(
+      arrow_to_r(past, to = integer()),
+      class = "zuarrow_lossy_error"
+    )
+    expect_identical(err$row, 2)
+  }
+  top <- test_array(
+    test_schema(zspec("L")),
+    1,
+    list(NULL, le_hex("ffffffffffffffff"))
+  )
+  expect_error(arrow_to_r(top, to = integer()), class = "zuarrow_lossy_error")
+})
+
 test_that("a target that cannot take the column is a type error", {
   expect_error(
     arrow_to_r(arrow_array(TRUE), to = character()),
@@ -230,8 +318,31 @@ test_that("a target that cannot take the column is a type error", {
   expect_error(arrow_to_r(df, to = double()), class = "zuarrow_type_error")
 })
 
-test_that("an unknown policy is an error", {
-  expect_error(arrow_to_r(arrow_array(1L), lossy = "round"))
+test_that("an unknown policy is a type error", {
+  array <- arrow_array(1L)
+  expect_error(arrow_to_r(array, lossy = "round"), class = "zuarrow_type_error")
+  expect_error(arrow_to_r(array, lossy = NA), class = "zuarrow_type_error")
+  expect_error(
+    arrow_to_r(array, lossy = c("error", "warn")),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_next(arrow_stream(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    arrow_read(arrow_write(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    as.data.frame(arrow_stream(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    as.data.frame(arrow_array(data.frame(x = 1L)), lossy = "round"),
+    class = "zuarrow_type_error"
+  )
+  expect_identical(arrow_to_r(array, lossy = "warn"), 1L)
 })
 
 test_that("the exact text is written back as the type it names", {
@@ -248,6 +359,8 @@ test_that("the exact text is written back as the type it names", {
     test_fixed("d:9,3,32", c(-999999999, 1), 4L),
     test_fixed("d:18,0,64", c(123456789012345), 8L),
     test_fixed("d:40,3,256", c(1, -2), 32L),
+    test_fixed("d:5,-2", c(123, -7, 0), 16L),
+    test_fixed("d:3,-2,32", c(999, -999), 4L),
     test_fixed("tsn:UTC", c(1500000001, -1), 8L),
     test_fixed("tsu:", c(0, -1, 1761040800123456), 8L),
     test_fixed("tss:Europe/Lisbon", c(-62135596800, 253402300799), 8L),
@@ -316,4 +429,16 @@ test_that("a parsed decimal at full precision round-trips", {
     as.vector(arrow_to_r(arrow_array(text), lossy = "character")),
     c("99999.99", "-0.01", "0.00")
   )
+})
+
+test_that("a negative-scale decimal parses only with its trailing zeros", {
+  text <- structure(c("12300", "-700", "0"), arrow_type = "d:5,-2")
+  expect_identical(
+    as.vector(arrow_to_r(arrow_array(text), lossy = "character")),
+    c("12300", "-700", "0")
+  )
+  bad <- function(value) arrow_array(structure(value, arrow_type = "d:5,-2"))
+  expect_error(bad("12345"), class = "zuarrow_lossy_error")
+  expect_error(bad("12300.5"), class = "zuarrow_lossy_error")
+  expect_error(bad("1230000000"), class = "zuarrow_lossy_error")
 })

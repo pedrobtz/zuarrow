@@ -21,6 +21,7 @@ arrow_limits <- function(
   max_batch_rows = 2^31 - 1,
   max_bytes = Inf
 ) {
+  call <- sys.call()
   values <- list(
     max_message = max_message,
     max_depth = max_depth,
@@ -30,7 +31,11 @@ arrow_limits <- function(
   for (name in names(values)) {
     v <- values[[name]]
     if (!is.numeric(v) || length(v) != 1L || is.na(v) || v < 0) {
-      zar_abort("type", sprintf("`%s` must be one non-negative number.", name))
+      zar_abort(
+        "type",
+        sprintf("`%s` must be one non-negative number.", name),
+        call = call
+      )
     }
   }
   values$max_depth <- as.integer(min(values$max_depth, .Machine$integer.max))
@@ -46,20 +51,30 @@ arrow_limits <- function(
 #' The input is checked before it is used: every message is verified,
 #' every buffer must lie inside its message, and every limit of
 #' [arrow_limits()] binds, so malformed or hostile bytes are a
-#' `zuarrow_format_error` or a `zuarrow_limit_error`, never a crash. Each
-#' batch then passes the full validation of [arrow_validate()] before it is
-#' converted. Bodies compressed with LZ4 or zstd are decompressed through
-#' 'zukomp'. Big-endian input is a `zuarrow_format_error`.
+#' `zuarrow_format_error` or a `zuarrow_limit_error`, never a crash. A file
+#' whose footer repeats the schema differently is a `zuarrow_format_error`
+#' too. Each batch then passes the full validation of [arrow_validate()]
+#' before it is converted. Bodies compressed with LZ4 or zstd are
+#' decompressed through 'zukomp'. Big-endian input is a
+#' `zuarrow_format_error`.
 #'
 #' Dictionary batches, and the deltas a stream may send between record
 #' batches, are applied as the format says; a file that replaces a
-#' dictionary is an error, as the format forbids it.
+#' dictionary is an error, as the format forbids it. A delta that extends a
+#' dictionary already holding values is not supported yet and is a
+#' `zuarrow_format_error`.
+#'
+#' A raw vector is read where it is. With `lazy = TRUE` the handle holds a
+#' copy instead, because a handle can be passed to another consumer that
+#' outlives the vector.
 #'
 #' @param x A path, a raw vector, or a connection, which is read to its end.
 #' @param columns `NULL` for every column, or the names or positions of the
 #'   top-level columns to read. Only those are decoded.
 #' @param lazy `FALSE` to read every batch into one data frame; `TRUE` to
 #'   return a stream handle whose batches are decoded by [arrow_next()].
+#'   With `lazy = TRUE`, `to`, `lossy` and `copy` belong to that later
+#'   conversion, and setting one here is a `zuarrow_type_error`.
 #' @inheritParams arrow_to_r
 #' @param limits An [arrow_limits()] object.
 #' @returns A data frame, or with `lazy = TRUE` a stream handle.
@@ -81,26 +96,34 @@ arrow_read <- function(
   limits = arrow_limits(),
   copy = TRUE
 ) {
-  lossy <- match.arg(lossy)
   call <- sys.call()
+  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
   if (!inherits(limits, "zuarrow_limits")) {
     zar_abort("type", "`limits` must come from arrow_limits().", call = call)
   }
-  if (!is.logical(lazy) || length(lazy) != 1L || is.na(lazy)) {
-    zar_abort("type", "`lazy` must be `TRUE` or `FALSE`.", call = call)
-  }
+  zar_check_flag(lazy, "lazy", call)
   zar_check_flag(copy, "copy", call)
+  converting <- !is.null(to) || lossy != "error" || !copy
+  if (lazy && converting) {
+    zar_abort(
+      "type",
+      paste(
+        "`to`, `lossy` and `copy` apply when converting;",
+        "with `lazy = TRUE` pass them to arrow_next() or arrow_to_r()."
+      ),
+      call = call
+    )
+  }
   source <- zar_read_source(x, limits, call)
+  bounds <- limits[c("max_message", "max_depth", "max_batch_rows", "max_bytes")]
   stream <- zar_check(
     .Call(
       zar_c_reader_open,
       source,
-      as.double(unlist(limits[c(
-        "max_message",
-        "max_depth",
-        "max_batch_rows",
-        "max_bytes"
-      )]))
+      as.double(unlist(bounds)),
+      # A raw vector is read in place only when this call consumes the
+      # stream; a lazy handle may leave R, so it reads a copy.
+      !lazy
     ),
     call = call
   )
@@ -118,14 +141,7 @@ arrow_read <- function(
     return(stream)
   }
   schema <- arrow_schema(stream)
-  batches <- list()
-  repeat {
-    batch <- zar_check(.Call(zar_c_stream_next, stream), call = call)
-    if (is.null(batch)) {
-      break
-    }
-    batches[[length(batches) + 1L]] <- batch
-  }
+  batches <- zar_stream_batches(stream, call)
   zar_convert(
     batches,
     schema,
@@ -148,7 +164,7 @@ zar_read_source <- function(x, limits, call) {
     if (!file.exists(x) || dir.exists(x)) {
       zar_abort(
         "io",
-        sprintf("Cannot open `%s`: no such file.", x),
+        sprintf("Can't open `%s`: no such file.", x),
         call = call,
         path = x
       )
@@ -165,35 +181,18 @@ zar_read_source <- function(x, limits, call) {
 # A connection is read through R's connection API in blocks, so a gzipped
 # file or a socket arrives as it is read, up to max_bytes.
 zar_read_connection <- function(con, limits, call) {
-  opened <- !isOpen(con)
-  if (opened) {
-    ok <- tryCatch(
-      {
-        open(con, "rb")
-        TRUE
-      },
-      error = function(e) e
-    )
-    if (!isTRUE(ok)) {
-      zar_abort(
-        "io",
-        sprintf("Cannot open the connection: %s", conditionMessage(ok)),
-        call = call
-      )
-    }
+  if (!isOpen(con)) {
+    zar_io(open(con, "rb"), "Can't open the connection", call)
     on.exit(close(con), add = TRUE)
   }
   blocks <- list()
   total <- 0
   repeat {
-    block <- tryCatch(readBin(con, raw(), 1048576L), error = function(e) e)
-    if (inherits(block, "error")) {
-      zar_abort(
-        "io",
-        sprintf("Cannot read the connection: %s", conditionMessage(block)),
-        call = call
-      )
-    }
+    block <- zar_io(
+      readBin(con, raw(), 1048576L),
+      "Can't read the connection",
+      call
+    )
     if (length(block) == 0L) {
       break
     }
@@ -211,12 +210,8 @@ zar_read_connection <- function(con, limits, call) {
 }
 
 zar_column_index <- function(stream, columns, call) {
-  spec <- .Call(zar_c_schema_to_spec, arrow_schema(stream))
-  names <- vapply(
-    spec$children,
-    function(f) if (is.na(f$name)) "" else f$name,
-    ""
-  )
+  spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(stream)))
+  names <- zar_field_names(spec$children)
   if (is.character(columns)) {
     idx <- match(columns, names)
     if (anyNA(idx)) {
