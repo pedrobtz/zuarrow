@@ -44,6 +44,9 @@ jobs:
   gctorture:
     uses: pedrobtz/r-actions/.github/workflows/gctorture.yml@v1
     with:
+      # The full run (step 20) took about 46 minutes until the review fixes
+      # of 2026-10-28 added tests; since then it passes the default 120.
+      timeout-minutes: 240
       env: |
         ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
