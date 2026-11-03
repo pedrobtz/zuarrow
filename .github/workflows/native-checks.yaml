@@ -16,9 +16,11 @@ concurrency:
 # every push.
 jobs:
   sanitizers:
-    uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@v1
+    uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@pre-install-hook # TEMPORARY: back to @v1 once pedrobtz/r-actions#81 is released
     with:
       asan: true
+      # As in R-CMD-check.yaml: duckdb as an R-devel binary.
+      pre-install: Rscript tools/ci-binaries.R
       env: |
         ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}

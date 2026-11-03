@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   R-CMD-check:
-    uses: pedrobtz/r-actions/.github/workflows/r-cmd-check.yml@v1
+    uses: pedrobtz/r-actions/.github/workflows/r-cmd-check.yml@pre-install-hook # TEMPORARY: back to @v1 once pedrobtz/r-actions#81 is released
     with:
       # Quick on each push to a pull request, full after merge. The
       # `full-ci` label runs the full set on a pull request before merging.
@@ -29,6 +29,9 @@ jobs:
       # fetched by the tests themselves (helper-fixtures.R).
       env: |
         ZUARROW_FETCH_FIXTURES=true
+      # duckdb has no R-devel binary on CRAN, and building it from source
+      # outlasted the job timeout; this installs r-universe's binary first.
+      pre-install: Rscript tools/ci-binaries.R
       # CRAN's NOSUGGESTS and NOLD flavours, in the full profile only. NOLD
       # is R without long double: the condition that made R parse 1e300
       # differently on arm64 macOS (Stage 8).
