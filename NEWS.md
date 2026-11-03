@@ -60,6 +60,19 @@
 * `arrow_register()`, `arrow_unregister()` and `arrow_registry()` let a
   package make a lossy type exact with its own R class, by format string,
   prefix pattern or extension name, in both directions.
+* A `to` handler of `(array, schema, lossy)` receives the caller's `lossy`
+  policy, so a registering package applies it to values its class cannot
+  hold. Two-argument handlers work as before. When several keys match, the
+  extension name wins, then the exact format, then the earliest pattern.
+* A prototype of a registered class in `to`, such as `zuint::int128()`,
+  converts a column through that registration whatever its Arrow type.
+
+## DuckDB
+
+* `arrow_duckdb()` runs a query on a DuckDB connection and returns the
+  result exactly or with an error, through DuckDB's Arrow export. `HUGEINT`
+  and `UHUGEINT` arrive as `arrow.opaque` rather than as a
+  `DECIMAL(38, 0)`. It needs 'DBI', 'duckdb' and 'nanoarrow'.
 
 ## The IPC file and stream formats
 
@@ -142,6 +155,9 @@
 * `arrow_write()` computes a null count the producer left unknown (`-1`)
   before it writes the batch. Before, the file it wrote could not be read
   back (#34).
+* Full validation bounds a large list view's offset plus size without
+  overflowing a 64-bit integer. Before, two large values wrapped around and
+  passed the check, so a hostile IPC input was read out of bounds (#85).
 * `arrow_read()` refuses a field name or metadata key that holds a NUL or
   is not valid UTF-8 with a `zuarrow_format_error`, and so do
   `arrow_metadata()` and `arrow_to_r()` for such a schema. Before, a NUL
