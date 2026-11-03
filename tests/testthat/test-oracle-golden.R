@@ -56,14 +56,20 @@ test_that("libarrow decodes the golden files to the same values", {
   # Cases libarrow itself cannot read, as "version case". None today; a
   # case added here is skipped, and one that reads again fails.
   unreadable <- character()
-  for (version in c(
+  versions <- c(
     "0.14.1",
     "0.17.1",
     "1.0.0-littleendian",
     "2.0.0-compression",
     "4.0.0-shareddict",
     "cpp-21.0.0"
-  )) {
+  )
+  # zuarrow's reading of every version is the test above; under gctorture
+  # this one adds only arrow's, so the version with the most cases is enough.
+  if (under_gctorture()) {
+    versions <- "cpp-21.0.0"
+  }
+  for (version in versions) {
     cases <- golden_cases(version)
     for (case in names(cases)) {
       if (no_r_form(case)) {
@@ -94,7 +100,8 @@ test_that("libarrow decodes the golden files to the same values", {
 
 test_that("big-endian input is a format error", {
   cases <- golden_cases("1.0.0-bigendian")
-  for (case in names(cases)) {
+  # Each case is refused at the same schema check.
+  for (case in gctorture_sample(names(cases), 3L)) {
     expect_error(
       arrow_read(paste0(cases[[case]], ".arrow_file")),
       class = "zuarrow_format_error",

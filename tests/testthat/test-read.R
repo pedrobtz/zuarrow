@@ -184,7 +184,7 @@ test_that("malformed input is a format error", {
 test_that("flipped bytes never crash the reader", {
   withr::local_seed(20261021)
   bytes <- readBin(test_data("basic-zstd.arrow"), raw(), 1e6)
-  for (k in 1:200) {
+  for (k in gctorture_sample(1:200, 20)) {
     mutated <- bytes
     at <- sample(length(bytes), 3)
     mutated[at] <- as.raw(sample(0:255, 3, TRUE))
