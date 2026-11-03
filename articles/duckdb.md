@@ -13,7 +13,7 @@ says which column could not be.
 ``` r
 
 library(zuarrow)
-con <- DBI::dbConnect(duckdb::duckdb())
+con <- DBI::dbConnect(duckdb::duckdb(shared_home = FALSE))
 ```
 
 ## The silent change
@@ -40,33 +40,16 @@ A join against the exact key would now miss this row.
 
 ## Exact or error
 
-DuckDB can hand over the same result as an Arrow stream, which zuarrow
-converts directly.
+[`arrow_duckdb()`](https://pedrobtz.github.io/zuarrow/reference/arrow_duckdb.md)
+runs the same query and receives the result as an Arrow stream, which
+zuarrow converts directly. By default it refuses, and the error names
+the column, the row and the ways to receive it exactly.
 
 ``` r
 
-fetch_arrow <- function(con, sql) {
-  res <- DBI::dbSendQuery(con, sql, arrow = TRUE)
-  on.exit(DBI::dbClearResult(res))
-  reader <- duckdb::duckdb_fetch_record_batch(res)
-  stream <- nanoarrow::as_nanoarrow_array_stream(reader)
-  arrow_to_r(stream, lossy = "character")
-}
-```
-
-By default the conversion refuses, and the error names the column, the
-row and the ways to receive it exactly.
-
-``` r
-
-res <- DBI::dbSendQuery(con, sql, arrow = TRUE)
-stream <- nanoarrow::as_nanoarrow_array_stream(
-  duckdb::duckdb_fetch_record_batch(res)
-)
-arrow_to_r(stream)
-#> Error in `arrow_to_r()`:
+arrow_duckdb(con, sql)
+#> Error in `arrow_duckdb()`:
 #> ! Column `key` (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
-DBI::dbClearResult(res)
 ```
 
 With `lossy = "character"` the key arrives as its exact text, and
@@ -75,7 +58,7 @@ turns that text back into the same `int64`.
 
 ``` r
 
-out <- fetch_arrow(con, sql)
+out <- arrow_duckdb(con, sql, lossy = "character")
 out$key
 #> [1] "9007199254740993" "1"               
 #> attr(,"arrow_type")
@@ -94,14 +77,26 @@ within 2^53 arrive as ordinary doubles under the default.
 
 ``` r
 
-small <- "SELECT 42::BIGINT AS key, DATE '2026-10-21' AS day"
-res <- DBI::dbSendQuery(con, small, arrow = TRUE)
-stream <- nanoarrow::as_nanoarrow_array_stream(
-  duckdb::duckdb_fetch_record_batch(res)
-)
-str(arrow_to_r(stream))
+str(arrow_duckdb(con, "SELECT 42::BIGINT AS key, DATE '2026-10-21' AS day"))
 #> 'data.frame':    1 obs. of  2 variables:
 #>  $ key: num 42
 #>  $ day: Date, format: "2026-10-21"
-DBI::dbClearResult(res)
+```
+
+## 128-bit integers
+
+[`arrow_duckdb()`](https://pedrobtz.github.io/zuarrow/reference/arrow_duckdb.md)
+turns on DuckDB’s `arrow_lossless_conversion` for the query and puts it
+back afterwards. `HUGEINT` then arrives as the `arrow.opaque` extension
+over 16 bytes, rather than as a `DECIMAL(38, 0)` that a decimal package
+would read as a decimal. With nothing registered for it, the column
+keeps its bytes and its extension.
+
+``` r
+
+h <- arrow_duckdb(con, "SELECT 1::HUGEINT AS h")$h
+h[[1]]
+#>  [1] 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00
+attr(h, "arrow_extension")
+#> [1] "arrow.opaque"
 ```

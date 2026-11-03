@@ -76,6 +76,13 @@
 <li>Extension types keep their name and metadata as attributes and are restored on export; <code>arrow.bool8</code> reads as logical. Field metadata round-trips through the <code>arrow_field_metadata</code> attribute.</li>
 <li>
 <code><a href="../reference/arrow_register.html">arrow_register()</a></code>, <code><a href="../reference/arrow_register.html">arrow_unregister()</a></code> and <code><a href="../reference/arrow_register.html">arrow_registry()</a></code> let a package make a lossy type exact with its own R class, by format string, prefix pattern or extension name, in both directions.</li>
+<li>A <code>to</code> handler of <code>(array, schema, lossy)</code> receives the caller’s <code>lossy</code> policy, so a registering package applies it to values its class cannot hold. Two-argument handlers work as before. When several keys match, the extension name wins, then the exact format, then the earliest pattern.</li>
+<li>A prototype of a registered class in <code>to</code>, such as <code>zuint::int128()</code>, converts a column through that registration whatever its Arrow type.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="duckdb-0-0-0-9000">DuckDB<a class="anchor" aria-label="anchor" href="#duckdb-0-0-0-9000"></a></h3>
+<ul><li>
+<code><a href="../reference/arrow_duckdb.html">arrow_duckdb()</a></code> runs a query on a DuckDB connection and returns the result exactly or with an error, through DuckDB’s Arrow export. <code>HUGEINT</code> and <code>UHUGEINT</code> arrive as <code>arrow.opaque</code> rather than as a <code>DECIMAL(38, 0)</code>. It needs ‘DBI’, ‘duckdb’ and ‘nanoarrow’.</li>
 </ul></div>
 <div class="section level3">
 <h3 id="the-ipc-file-and-stream-formats-0-0-0-9000">The IPC file and stream formats<a class="anchor" aria-label="anchor" href="#the-ipc-file-and-stream-formats-0-0-0-9000"></a></h3>
@@ -110,6 +117,7 @@
 <li><p>An inexact registration may not replace the exact conversion of second and millisecond timestamps, <code>fixed_size_list</code> or the list views (<a href="https://github.com/pedrobtz/zuarrow/issues/78" class="external-link">#78</a>).</p></li>
 <li><p>A list column with <code>NULL</code> elements writes to a <code>fixed_size_list</code>, whose null rows still hold their width of child values. Before, it was a <code>zuarrow_type_error</code>, so such a column read from Arrow could not be written back (found by the <a href="https://github.com/pedrobtz/zuarrow/issues/48" class="external-link">#48</a> oracle).</p></li>
 <li><p><code><a href="../reference/arrow_write.html">arrow_write()</a></code> computes a null count the producer left unknown (<code>-1</code>) before it writes the batch. Before, the file it wrote could not be read back (<a href="https://github.com/pedrobtz/zuarrow/issues/34" class="external-link">#34</a>).</p></li>
+<li><p>Full validation bounds a large list view’s offset plus size without overflowing a 64-bit integer. Before, two large values wrapped around and passed the check, so a hostile IPC input was read out of bounds (<a href="https://github.com/pedrobtz/zuarrow/issues/85" class="external-link">#85</a>).</p></li>
 <li><p><code><a href="../reference/arrow_read.html">arrow_read()</a></code> refuses a field name or metadata key that holds a NUL or is not valid UTF-8 with a <code>zuarrow_format_error</code>, and so do <code><a href="../reference/arrow_metadata.html">arrow_metadata()</a></code> and <code><a href="../reference/arrow_to_r.html">arrow_to_r()</a></code> for such a schema. Before, a NUL raised an unclassed error, a NUL in a name cut it short, and invalid bytes became a string marked UTF-8 (<a href="https://github.com/pedrobtz/zuarrow/issues/38" class="external-link">#38</a>).</p></li>
 <li><p>A compression <code>level</code> outside the codec’s range, and any codec failure while writing, is a <code>zuarrow_codec_error</code>. Before, it was an unclassed <code>zuarrow_error</code> (<a href="https://github.com/pedrobtz/zuarrow/issues/39" class="external-link">#39</a>).</p></li>
 <li><p><code><a href="../reference/arrow_read.html">arrow_read()</a></code> finds the size of a file through 64-bit offsets, so a file over 2 GiB opens on Windows (<a href="https://github.com/pedrobtz/zuarrow/issues/51" class="external-link">#51</a>).</p></li>

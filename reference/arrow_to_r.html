@@ -160,7 +160,9 @@ becomes <code>bit64</code>'s <code>integer64</code>, exactly, when <code>bit64</
 <p><code>to</code> names the R type a column must become: <code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code>, <code><a href="https://rdrr.io/r/base/double.html" class="external-link">double()</a></code>,
 <code><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer()</a></code>, or <code><a href="arrow_matrix.html">arrow_matrix()</a></code> for a <code>fixed_size_list</code>. A target that
 cannot take the column is a <code>zuarrow_type_error</code>, never a silent
-fallback.</p>
+fallback. A prototype of a class registered with <code><a href="arrow_register.html">arrow_register()</a></code>
+converts the column through that registration's <code>to</code> handler, whatever
+its Arrow type.</p>
 <p>Nested types follow the table too. A <code>struct</code> becomes a data frame
 column; <code>list</code>, <code>large_list</code> and the list views become list columns,
 <code>NULL</code> for a null list; a <code>map</code> becomes a list of data frames with

@@ -75,7 +75,7 @@ received through zuarrow, which either returns every value exactly or
 stops and says which column could not be.</p>
 <div class="sourceCode" id="cb1"><pre class="downlit sourceCode r">
 <code class="sourceCode R"><span><span class="kw"><a href="https://rdrr.io/r/base/library.html" class="external-link">library</a></span><span class="op">(</span><span class="va"><a href="https://github.com/pedrobtz/zuarrow" class="external-link">zuarrow</a></span><span class="op">)</span></span>
-<span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
+<span><span class="va">con</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbConnect.html" class="external-link">dbConnect</a></span><span class="op">(</span><span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb.html" class="external-link">duckdb</a></span><span class="op">(</span>shared_home <span class="op">=</span> <span class="cn">FALSE</span><span class="op">)</span><span class="op">)</span></span></code></pre></div>
 <div class="section level2">
 <h2 id="the-silent-change">The silent change<a class="anchor" aria-label="anchor" href="#the-silent-change"></a>
 </h2>
@@ -94,32 +94,19 @@ integer a double cannot hold.</p>
 <div class="section level2">
 <h2 id="exact-or-error">Exact or error<a class="anchor" aria-label="anchor" href="#exact-or-error"></a>
 </h2>
-<p>DuckDB can hand over the same result as an Arrow stream, which
-zuarrow converts directly.</p>
+<p><code><a href="../reference/arrow_duckdb.html">arrow_duckdb()</a></code> runs the same query and receives the
+result as an Arrow stream, which zuarrow converts directly. By default
+it refuses, and the error names the column, the row and the ways to
+receive it exactly.</p>
 <div class="sourceCode" id="cb4"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">fetch_arrow</span> <span class="op">&lt;-</span> <span class="kw">function</span><span class="op">(</span><span class="va">con</span>, <span class="va">sql</span><span class="op">)</span> <span class="op">{</span></span>
-<span>  <span class="va">res</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbSendQuery.html" class="external-link">dbSendQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">sql</span>, arrow <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="https://rdrr.io/r/base/on.exit.html" class="external-link">on.exit</a></span><span class="op">(</span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbClearResult.html" class="external-link">dbClearResult</a></span><span class="op">(</span><span class="va">res</span><span class="op">)</span><span class="op">)</span></span>
-<span>  <span class="va">reader</span> <span class="op">&lt;-</span> <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb_result-class.html" class="external-link">duckdb_fetch_record_batch</a></span><span class="op">(</span><span class="va">res</span><span class="op">)</span></span>
-<span>  <span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu">nanoarrow</span><span class="fu">::</span><span class="fu"><a href="https://arrow.apache.org/nanoarrow/latest/r/reference/as_nanoarrow_array_stream.html" class="external-link">as_nanoarrow_array_stream</a></span><span class="op">(</span><span class="va">reader</span><span class="op">)</span></span>
-<span>  <span class="fu"><a href="../reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">stream</span>, lossy <span class="op">=</span> <span class="st">"character"</span><span class="op">)</span></span>
-<span><span class="op">}</span></span></code></pre></div>
-<p>By default the conversion refuses, and the error names the column,
-the row and the ways to receive it exactly.</p>
-<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbSendQuery.html" class="external-link">dbSendQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">sql</span>, arrow <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu">nanoarrow</span><span class="fu">::</span><span class="fu"><a href="https://arrow.apache.org/nanoarrow/latest/r/reference/as_nanoarrow_array_stream.html" class="external-link">as_nanoarrow_array_stream</a></span><span class="op">(</span></span>
-<span>  <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb_result-class.html" class="external-link">duckdb_fetch_record_batch</a></span><span class="op">(</span><span class="va">res</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="../reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">stream</span><span class="op">)</span></span>
-<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;"> in `arrow_to_r()`:</span></span></span>
-<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Column `key` (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span></span>
-<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbClearResult.html" class="external-link">dbClearResult</a></span><span class="op">(</span><span class="va">res</span><span class="op">)</span></span></code></pre></div>
+<code class="sourceCode R"><span><span class="fu"><a href="../reference/arrow_duckdb.html">arrow_duckdb</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">sql</span><span class="op">)</span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00; font-weight: bold;">Error</span><span style="font-weight: bold;"> in `arrow_duckdb()`:</span></span></span>
+<span><span class="co">#&gt; <span style="color: #BBBB00;">!</span> Column `key` (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.</span></span></code></pre></div>
 <p>With <code>lossy = "character"</code> the key arrives as its exact
 text, and <code><a href="../reference/arrow_array.html">arrow_array()</a></code> turns that text back into the same
 <code>int64</code>.</p>
-<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">out</span> <span class="op">&lt;-</span> <span class="fu">fetch_arrow</span><span class="op">(</span><span class="va">con</span>, <span class="va">sql</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb5"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">out</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/arrow_duckdb.html">arrow_duckdb</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">sql</span>, lossy <span class="op">=</span> <span class="st">"character"</span><span class="op">)</span></span>
 <span><span class="va">out</span><span class="op">$</span><span class="va">key</span></span>
 <span><span class="co">#&gt; [1] "9007199254740993" "1"               </span></span>
 <span><span class="co">#&gt; attr(,"arrow_type")</span></span>
@@ -135,17 +122,28 @@ all.</p>
 </h2>
 <p>Only columns whose values cannot be held exactly are refused. Keys
 within 2^53 arrive as ordinary doubles under the default.</p>
-<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
-<code class="sourceCode R"><span><span class="va">small</span> <span class="op">&lt;-</span> <span class="st">"SELECT 42::BIGINT AS key, DATE '2026-10-21' AS day"</span></span>
-<span><span class="va">res</span> <span class="op">&lt;-</span> <span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbSendQuery.html" class="external-link">dbSendQuery</a></span><span class="op">(</span><span class="va">con</span>, <span class="va">small</span>, arrow <span class="op">=</span> <span class="cn">TRUE</span><span class="op">)</span></span>
-<span><span class="va">stream</span> <span class="op">&lt;-</span> <span class="fu">nanoarrow</span><span class="fu">::</span><span class="fu"><a href="https://arrow.apache.org/nanoarrow/latest/r/reference/as_nanoarrow_array_stream.html" class="external-link">as_nanoarrow_array_stream</a></span><span class="op">(</span></span>
-<span>  <span class="fu">duckdb</span><span class="fu">::</span><span class="fu"><a href="https://r.duckdb.org/reference/duckdb_result-class.html" class="external-link">duckdb_fetch_record_batch</a></span><span class="op">(</span><span class="va">res</span><span class="op">)</span></span>
-<span><span class="op">)</span></span>
-<span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu"><a href="../reference/arrow_to_r.html">arrow_to_r</a></span><span class="op">(</span><span class="va">stream</span><span class="op">)</span><span class="op">)</span></span>
+<div class="sourceCode" id="cb6"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="fu"><a href="https://rdrr.io/r/utils/str.html" class="external-link">str</a></span><span class="op">(</span><span class="fu"><a href="../reference/arrow_duckdb.html">arrow_duckdb</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT 42::BIGINT AS key, DATE '2026-10-21' AS day"</span><span class="op">)</span><span class="op">)</span></span>
 <span><span class="co">#&gt; 'data.frame':    1 obs. of  2 variables:</span></span>
 <span><span class="co">#&gt;  $ key: num 42</span></span>
-<span><span class="co">#&gt;  $ day: Date, format: "2026-10-21"</span></span>
-<span><span class="fu">DBI</span><span class="fu">::</span><span class="fu"><a href="https://dbi.r-dbi.org/reference/dbClearResult.html" class="external-link">dbClearResult</a></span><span class="op">(</span><span class="va">res</span><span class="op">)</span></span></code></pre></div>
+<span><span class="co">#&gt;  $ day: Date, format: "2026-10-21"</span></span></code></pre></div>
+</div>
+<div class="section level2">
+<h2 id="bit-integers">128-bit integers<a class="anchor" aria-label="anchor" href="#bit-integers"></a>
+</h2>
+<p><code><a href="../reference/arrow_duckdb.html">arrow_duckdb()</a></code> turns on DuckDB’s
+<code>arrow_lossless_conversion</code> for the query and puts it back
+afterwards. <code>HUGEINT</code> then arrives as the
+<code>arrow.opaque</code> extension over 16 bytes, rather than as a
+<code>DECIMAL(38, 0)</code> that a decimal package would read as a
+decimal. With nothing registered for it, the column keeps its bytes and
+its extension.</p>
+<div class="sourceCode" id="cb7"><pre class="downlit sourceCode r">
+<code class="sourceCode R"><span><span class="va">h</span> <span class="op">&lt;-</span> <span class="fu"><a href="../reference/arrow_duckdb.html">arrow_duckdb</a></span><span class="op">(</span><span class="va">con</span>, <span class="st">"SELECT 1::HUGEINT AS h"</span><span class="op">)</span><span class="op">$</span><span class="va">h</span></span>
+<span><span class="va">h</span><span class="op">[[</span><span class="fl">1</span><span class="op">]</span><span class="op">]</span></span>
+<span><span class="co">#&gt;  [1] 01 00 00 00 00 00 00 00 00 00 00 00 00 00 00 00</span></span>
+<span><span class="fu"><a href="https://rdrr.io/r/base/attr.html" class="external-link">attr</a></span><span class="op">(</span><span class="va">h</span>, <span class="st">"arrow_extension"</span><span class="op">)</span></span>
+<span><span class="co">#&gt; [1] "arrow.opaque"</span></span></code></pre></div>
 </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
     </nav></aside>

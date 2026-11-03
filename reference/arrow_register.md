@@ -30,7 +30,8 @@ arrow_registry()
 
 - to:
 
-  `NULL`, or a function of `(array, schema)` returning an R vector.
+  `NULL`, or a function of `(array, schema)` or `(array, schema, lossy)`
+  returning an R vector.
 
 - from:
 
@@ -64,14 +65,26 @@ The `key` is one of:
 - a prefix pattern ending in `*` for parameterised types: `"d:*"` for
   every decimal, `"tsn:*"` for every nanosecond timestamp;
 
-- an extension name, such as `"r.decimal"`, which takes precedence over
-  the storage type's key.
+- an extension name, such as `"r.decimal"`.
+
+When several keys match a column, the extension name wins, then the
+exact format string, then the pattern registered first. So a
+`decimal128(38, 0)` column is read by a `"d:*"` registration, even where
+it holds integers; naming a prototype of another registered class in the
+`to` of
+[`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+is how a caller opts into that class's handler instead.
 
 `to` converts Arrow to R: a function of `(array, schema)`, the column's
 array and schema handles, returning an R vector of the array's length.
 It may be implemented in C against nanoarrow's `r.h` layout. It is
 called once per batch, and the pieces are combined with
-[`c()`](https://rdrr.io/r/base/c.html).
+[`c()`](https://rdrr.io/r/base/c.html). A function of
+`(array, schema, lossy)` also receives the caller's `lossy` policy, so a
+handler can apply it to values its class cannot hold, such as one equal
+to its `NA` sentinel: an error under `"error"`, `NA` with a warning
+under `"warn"`. A `to` that cannot be called with two or three arguments
+is a `zuarrow_registry_error`.
 
 `from` converts R to Arrow: a function of `(x)` returning an array
 handle, used for every object that inherits from `class`.

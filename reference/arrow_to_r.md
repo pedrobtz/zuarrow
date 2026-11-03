@@ -128,7 +128,11 @@ Intervals and unions have no R form and always fail.
 [`integer()`](https://rdrr.io/r/base/integer.html), or
 [`arrow_matrix()`](https://pedrobtz.github.io/zuarrow/reference/arrow_matrix.md)
 for a `fixed_size_list`. A target that cannot take the column is a
-`zuarrow_type_error`, never a silent fallback.
+`zuarrow_type_error`, never a silent fallback. A prototype of a class
+registered with
+[`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
+converts the column through that registration's `to` handler, whatever
+its Arrow type.
 
 Nested types follow the table too. A `struct` becomes a data frame
 column; `list`, `large_list` and the list views become list columns,
