@@ -17,7 +17,7 @@ concurrency:
 
 jobs:
   R-CMD-check:
-    uses: pedrobtz/r-actions/.github/workflows/r-cmd-check.yml@pre-install-hook # TEMPORARY: back to @v1 once pedrobtz/r-actions#81 is released
+    uses: pedrobtz/r-actions/.github/workflows/r-cmd-check.yml@v1
     with:
       # Quick on each push to a pull request, full after merge. The
       # `full-ci` label runs the full set on a pull request before merging.

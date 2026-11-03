@@ -16,7 +16,7 @@ concurrency:
 # every push.
 jobs:
   sanitizers:
-    uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@pre-install-hook # TEMPORARY: back to @v1 once pedrobtz/r-actions#81 is released
+    uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@v1
     with:
       asan: true
       # As in R-CMD-check.yaml: duckdb as an R-devel binary.
