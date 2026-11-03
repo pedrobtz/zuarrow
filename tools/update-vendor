@@ -91,6 +91,10 @@ PROV=src/vendor/PROVENANCE
   echo "      lets a batch hold dictionary-encoded columns, and writes the footer's"
   echo "      dictionary blocks, with the padding of each footer block zeroed so"
   echo "      files are reproducible (nanoarrow #622)."
+  echo "  0014-list-view-bound-overflow.patch  bounds a large list view's"
+  echo "      offset and size as size > child_len - offset: offset + size"
+  echo "      overflowed int64_t, so a wrapped sum passed the check (found by"
+  echo "      the fuzz target, #85)."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |
