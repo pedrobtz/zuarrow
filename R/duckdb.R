@@ -25,7 +25,7 @@
 #' @returns A data frame.
 #' @seealso [arrow_to_r()] for the conversion and its policies.
 #' @export
-#' @examplesIf all(vapply(c("DBI", "duckdb", "nanoarrow"), requireNamespace, NA, quietly = TRUE))
+#' @examplesIf identical(Sys.getenv("NOT_CRAN"), "true") && all(vapply(c("DBI", "duckdb", "nanoarrow"), requireNamespace, NA, quietly = TRUE))
 #' con <- DBI::dbConnect(duckdb::duckdb())
 #' arrow_duckdb(con, "SELECT 42::BIGINT AS id, 'a' AS label")
 #'

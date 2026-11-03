@@ -41,7 +41,7 @@ classes with \code{\link[=arrow_register]{arrow_register()}} makes such columns 
 It needs the 'DBI', 'duckdb' (1.5.4 or later) and 'nanoarrow' packages.
 }
 \examples{
-\dontshow{if (all(vapply(c("DBI", "duckdb", "nanoarrow"), requireNamespace, NA, quietly = TRUE))) withAutoprint(\{ # examplesIf}
+\dontshow{if (identical(Sys.getenv("NOT_CRAN"), "true") && all(vapply(c("DBI", "duckdb", "nanoarrow"), requireNamespace, NA, quietly = TRUE))) withAutoprint(\{ # examplesIf}
 con <- DBI::dbConnect(duckdb::duckdb())
 arrow_duckdb(con, "SELECT 42::BIGINT AS id, 'a' AS label")
 
