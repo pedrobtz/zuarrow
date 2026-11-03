@@ -13,3 +13,16 @@
    obj:*/arrow/libs/arrow.so
    ...
 }
+
+# duckdb is a Suggests engine for arrow_duckdb()'s tests. Opening a database
+# starts a scheduler thread that DuckDB keeps for the life of the process,
+# even after dbDisconnect(shutdown = TRUE) and with threads = 1, so its
+# thread-local storage is "possibly lost" at exit in the same way.
+{
+   duckdb-scheduler-thread-tls
+   Memcheck:Leak
+   match-leak-kinds: possible
+   ...
+   obj:*/duckdb/libs/duckdb.so
+   ...
+}
