@@ -2,7 +2,9 @@
  * Modified for the zuarrow R package: minimal validation sizes a list view's
  * sizes buffer (tools/patches/0011-list-view-sizes.patch), and default
  * validation reads offsets only from a buffer that holds them
- * (tools/patches/0012-offsets-buffer-size.patch).
+ * (tools/patches/0012-offsets-buffer-size.patch), and full validation bounds
+ * a list view's offset and size without overflowing int64_t
+ * (tools/patches/0014-list-view-bound-overflow.patch).
  */
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
@@ -4243,7 +4245,9 @@ static int ArrowArrayViewValidateFull(struct ArrowArrayView* array_view,
         return EINVAL;
       }
 
-      if ((offset + size) > child_len) {
+      // offset and size are both non-negative here, so this cannot overflow
+      // where offset + size could.
+      if (size > child_len - offset) {
         ArrowErrorSet(error,
                       "Offset: %" PRId64 " + size: %" PRId64 " at index: %" PRId64
                       " exceeds length of child view: %" PRId64,

@@ -19,6 +19,12 @@ jobs:
     uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@v1
     with:
       asan: true
+      # As in R-CMD-check.yaml: duckdb and arrow as R-devel binaries, where
+      # r-universe has them. The UBSan runners (Ubuntu 24.04) and gcc-asan
+      # (Fedora) have none and build duckdb from source, about 55 minutes on
+      # a cache miss, hence the timeout (roadmap Stage 9).
+      pre-install: Rscript tools/ci-binaries.R
+      timeout-minutes: 120
       env: |
         ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
@@ -28,7 +34,7 @@ jobs:
   valgrind:
     uses: pedrobtz/r-actions/.github/workflows/valgrind.yml@v1
     with:
-      # arrow's thread pool leaves "possibly lost" TLS; see the file.
+      # arrow's and duckdb's threads leave "possibly lost" TLS; see the file.
       suppressions: tools/valgrind.supp
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
 
@@ -38,6 +44,9 @@ jobs:
   gctorture:
     uses: pedrobtz/r-actions/.github/workflows/gctorture.yml@v1
     with:
+      # The full run (step 20) took about 46 minutes until the review fixes
+      # of 2026-10-28 added tests; since then it passes the default 120.
+      timeout-minutes: 240
       env: |
         ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}

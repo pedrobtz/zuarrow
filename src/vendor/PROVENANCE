@@ -22,6 +22,7 @@ Vendored dependency: Apache Arrow nanoarrow C library, core and ipc
                  0011-list-view-sizes.patch
                  0012-offsets-buffer-size.patch
                  0013-encode-batches.patch
+                 0014-list-view-bound-overflow.patch
 
 src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py
 run on the archive with --symbol-namespace=zuarrow --with-ipc
@@ -83,6 +84,10 @@ Patches:
       lets a batch hold dictionary-encoded columns, and writes the footer's
       dictionary blocks, with the padding of each footer block zeroed so
       files are reproducible (nanoarrow #622).
+  0014-list-view-bound-overflow.patch  bounds a large list view's
+      offset and size as size > child_len - offset: offset + size
+      overflowed int64_t, so a wrapped sum passed the check (found by
+      the fuzz target, #85).
 
 SHA-256 of every vendored file:
   abdc436530c715318d843424f4f9b7b817f80f592678526942c2070ace3cba71  LICENSE.txt
@@ -123,7 +128,7 @@ SHA-256 of every vendored file:
   c13599ddbca131cf223d3a09ebef9decf9cd65f46cf45181dd1815c54ad3f22f  flatcc/portable/punaligned.h
   439eabad27674a5a8bb556330ece3b6715e588c1bb18969f497d9fb9ecf4ff1c  flatcc/portable/pversion.h
   17cfa18dbb6f81adb0006a9c7adf2776093f54fc760a89112e619ce796b67aa6  flatcc/portable/pwarnings.h
-  26b17204fd4513648cadaecd295e508aab82f48b10b0beced7b5872596240a1e  nanoarrow.c
+  ec8d1cf4014dd4fca9e1e59a544b862e935b0b2b3134a235b251b45d3cdf998b  nanoarrow.c
   222837c5aa58c3703606a64f5209312459e8ca350cfdffc16766e0074fa3856e  nanoarrow.h
   7f72b46054674bd8f9c44ecccd438e15780e6b8fa0252eb4f0ba4da666e6d795  nanoarrow_ipc.c
   f75b394226d48394d22f394985e2c3cf0df671387847288148ab3204e2d91ce8  nanoarrow_ipc.h

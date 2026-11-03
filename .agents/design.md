@@ -204,6 +204,8 @@ asked at each nanoarrow release (§15 Q1).
   schema metadata, byte-identical output across platforms.
 - **Nulls** (§6.9): the NA, NaN and sentinel rules, both directions.
 - **The registry** (§6.10): `arrow_register()` and its dispatch keys.
+- **A DuckDB helper** (§6.12): `arrow_duckdb()`, moved here from §14 on
+  2026-11-03 under X6(a) of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6).
 - **Validation, comparison and metadata** (§6.11): `arrow_validate()`,
   `arrow_equal()`, `arrow_metadata()` and the schema printer.
 - A README and one article, "Receiving a DuckDB result without rounding".
@@ -258,8 +260,13 @@ symbol beginning `zar_` or `ZAR_`.
   zuarrow handle is accepted wherever a nanoarrow one is.
 - **`arrow`**: `Suggests`. The heavy oracle (§9): it reads what zuarrow
   writes and zuarrow reads what it writes, including compressed bodies.
-- **`zuint`** (RFC 0009): registers `int64`, `uint64`, `int128` (as
-  `decimal128(p, 0)`) and `uint128` targets at load. Its own RFC's §9.1
+- **`zuint`** (RFC 0009): registers `int64`, `uint64`, `int128` and
+  `uint128` targets at load. Decided 2026-11-03 under X2(b) of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6):
+  `zuint` stays in `Suggests` and registers, and is never an `Imports`,
+  because `int64` is checked by value (§6.3) and most columns convert
+  without it. `int128` is not read from `decimal128(p, 0)` by default
+  (§6.10, X5); `to = zuint::int128()` is the opt-in. `zubin` and `zufast`
+  are not dependencies of 0.1.0 (D8). Its own RFC's §9.1
   nanoarrow glue becomes a registration with zuarrow; its ALTREP wrapping
   is the zero-copy path of §14. Until zuint ships, those types error
   under the default policy with a message naming it.
@@ -348,6 +355,7 @@ arrow_to_r(x, to = NULL,
 as.data.frame(stream, ...)               # S3, same arguments
 as.vector(array, ...)                    # S3
 arrow_next(stream, ...)                  # one batch as a data frame, or NULL
+arrow_duckdb(con, sql, to = NULL, lossy = "error")   # §6.12
 # the IPC formats
 arrow_read(x, columns = NULL, lazy = FALSE, to = NULL,
            lossy = "error", limits = arrow_limits())
@@ -443,6 +451,12 @@ name the family package that makes them exact:
 | Arrow | Lossy R form (`lossy = "allow"`) | Exact target |
 | --- | --- | --- |
 | `int64`, `uint64` | `double`; `integer64` when `bit64` is loaded | `zuint` |
+
+`int64` and `uint64` are exact by value: a column whose values all lie
+within ±2⁵³ converts to `double` exactly under every policy, and only a
+value beyond that is loss (§6.3). The row is here for those values.
+Corrected 2026-11-03 under X2 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6), which found the table
+calling the types lossy outright while §6.3 checks them by value.
 | `decimal32`, `decimal64`, `decimal128`, `decimal256` | `double` | `decimal` |
 | `timestamp[us]`, `timestamp[ns]` | `POSIXct` | `zutempo` |
 | `date64` | `POSIXct` | `zutempo` |
@@ -668,7 +682,32 @@ A registration binds a **dispatch key** to handlers. The key is one of:
 `to` is a function of `(array, schema)` receiving the handles and
 returning an R vector, which lets a registering package implement it in C
 through the `r.h` layout; `from` is a function of `(x)` returning an
-array handle. A registration declares `exact = TRUE` and is trusted;
+array handle.
+
+Decided 2026-11-03 under X4 and X5 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6):
+
+- **The policy reaches the handler.** A `to` may take a third argument,
+  `lossy`, and receives the caller's policy. A registering package then
+  applies the family rule at its own edges: a value equal to its class's
+  `NA` sentinel (`UINT64_MAX` in a `UBIGINT` column) is an error under
+  `"error"` and `NA` with a warning under `"warn"`, as §6.9 already does
+  for `int32`'s `INT_MIN`. Two-argument handlers keep working. Arity is
+  checked at registration: a `to` that cannot be called with two or
+  three arguments is a `zuarrow_registry_error`.
+- **Precedence.** When several keys match a field, the extension name
+  wins, then the exact format string, then the earliest pattern. The
+  order of registration decides only between patterns.
+- **`d:p,0` stays a decimal.** A `decimal128(38, 0)` column goes to the
+  `"d:*"` registration (`decimal`) when there is one, even where it holds
+  integers, because a real `DECIMAL(38, 0)` from an ADBC driver is a
+  decimal. There is no built-in route to `int128`. The opt-in is a
+  prototype in `to`: a prototype of a registered class (`to =
+  zuint::int128()`) selects that registration's `to` handler for the
+  column whatever its type. An inexact one still needs `lossy = "warn"`
+  or `"allow"`. DuckDB's own 128-bit columns are unambiguous instead,
+  through `arrow.opaque` (§6.12).
+
+A registration declares `exact = TRUE` and is trusted;
 the family rule is that a registration may make a lossy default exact
 and may never make an exact default lossy, and `arrow_registry()` shows
 `exact` so a reviewer can see what is claimed. Registration is
@@ -702,6 +741,32 @@ Four things the C library has and the nanoarrow binding does not reach:
   nanoarrow's schema printer, which is what #370 asks the binding for.
   Input stays format strings and R objects in v0.1.0; parsing the
   notation is §14.
+
+### 6.12 The DuckDB helper
+
+`arrow_duckdb(con, sql, to = NULL, lossy = "error")` runs a query on a
+DuckDB connection and returns a data frame through the same conversion as
+`arrow_to_r()`, registry applied. Added 2026-11-03 (X6(a) of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6)).
+
+- **Route.** `DBI::dbSendQueryArrow()` and `DBI::dbFetchArrow()`, which
+  duckdb 1.5.4 implements natively and returns as a nanoarrow stream
+  handle that zuarrow reads as its own (D6). zuint's
+  `zu_duckdb_query()` used `duckdb_fetch_arrow()` and needed `arrow` as
+  well; this route needs neither `arrow` nor a `:::` call. DBI's default
+  methods go through a data frame and would round a `BIGINT` first, so
+  the helper refuses any result that is not duckdb's own Arrow result.
+- **Lossless conversion.** The query runs with
+  `arrow_lossless_conversion` on, so `HUGEINT` and `UHUGEINT` arrive as
+  `arrow.opaque` over `fixed_size_binary(16)` (vendor `DuckDB`, type
+  `hugeint` or `uhugeint`) and not as `decimal128(38, 0)`. With nothing
+  registered they pass through as 16-byte raw vectors with the extension
+  in their attributes. The setting is put back on exit.
+- **A data frame, not a stream.** §14 had it return a stream. It returns
+  a data frame because the result is cleared on exit; a caller who wants
+  batches uses `DBI::dbFetchArrow()` and `arrow_next()` directly.
+- **Dependencies.** `DBI (>= 1.2.0)`, `duckdb (>= 1.5.4)` and
+  `nanoarrow` (which duckdb's method requires) are `Suggests`. A missing
+  one is a `zuarrow_dependency_error`.
 
 ## 7. Vendored code
 
@@ -930,13 +995,15 @@ them. None was discussed before writing.
 - **D3 (C).** One registry for the family's exact types, populated by
   the typed packages at load, replacing the three bridges in flight
   (§1.3). zuarrow knows nothing about `zuint`, `decimal` or `zutempo`
-  beyond the package name it prints in a `zuarrow_lossy_error`.
+  beyond the package name it prints in a `zuarrow_lossy_error`. Kept
+  2026-11-03 under X2(b) of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6).
 - **D4 (C).** `lossy = "error"` is the default. The package's reason to
   exist is that no bridge in R errors on loss today; a default of `warn`
   would make it nanoarrow with a different prefix.
 - **D5 (C).** `zukomp` is the only `Imports`. `bit64` is consulted only under
   `lossy = "allow"` and only when already loaded (§6.2); `vctrs` is not
-  used for list columns (§6.4).
+  used for list columns (§6.4). Kept 2026-11-03: `zuint` is `Suggests`
+  (X2(b)), and `zubin` and `zufast` wait for the zero-copy work of §14.
 - **D6 (C).** Handles use the layout nanoarrow's `r.h` documents:
   `malloc()`ed struct, `NULL` release means unset, tag holds the schema,
   protected field holds dependencies. The layout is the published
@@ -956,6 +1023,11 @@ them. None was discussed before writing.
   R string on first use, caching it. Every value is still checked during
   the conversion, so exact-or-error holds unchanged. Strings read through
   a dictionary, a run-end encoding or a struct with nulls are copied.
+  Amended 2026-11-03 under X3 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6): the zero-copy path of §14
+  goes through `zubin`'s foreign buffer, held by `zuint`'s ALTREP classes
+  for integers and zuarrow's for the rest, for null-free arrays only, with
+  the column keeping its array alive through the handle's protected
+  field.
   Creating R strings was the whole of the two §10 misses Stage 6
   recorded. The numeric zero-copy views of §14 are still to come.
 - **D9 (C).** `compression = "none"` on write, so a file zuarrow writes
@@ -1019,9 +1091,11 @@ them. None was discussed before writing.
   pass through the registry; decided in `qio`'s repository.
 - **`zutable` from a stream**: the locked schema taken from the Arrow
   schema; decided in `zutable`'s repository.
-- **A DuckDB helper**: once the `duckdb` R package's most direct route to
-  an `ArrowArrayStream` is verified (RFC 0031 §7.3 left it open),
-  `arrow_duckdb(con, sql)` returning a stream with the registry applied.
+- **`zubin` and `zufast`** (added 2026-11-03, X3 and X8 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6)):
+  `LinkingTo: zubin, zufast` once `zubin` is on CRAN; half floats widened
+  by `zufast`'s rule; §4's layer 3 over `zubin`'s kernels and `column.h`;
+  zero copy through `zubin`'s foreign buffer (D8). The DuckDB helper left
+  this list for §6.12 the same day.
 - **Writing run-end-encoded and view types**, if a consumer produces
   them.
 - **Arrow's cross-implementation integration suite**: the `integration/`

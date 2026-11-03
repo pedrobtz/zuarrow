@@ -11,6 +11,7 @@ data/crash-dictionary-nodes.arrow,zuarrow_format_error,pins patch 0009-dictionar
 data/crash-footer-size.arrow,zuarrow_format_error,pins the reader's footer bound in zar_open_file() (a footer size past the file)
 data/crash-header-size.arrow,zuarrow_format_error,pins patch 0006-header-size-overflow (a message length near INT32_MAX)
 data/crash-index-type.arrow,zuarrow_format_error,pins patch 0007-dictionary-index-type (a footer field with no indexType) and the reader's footer-schema comparison
+data/crash-list-view-overflow.arrow,zuarrow_format_error,pins patch 0014-list-view-bound-overflow (a large list view whose offset plus size overflows int64)
 data/crash-list-view-sizes.arrow,zuarrow_format_error,pins patch 0011-list-view-sizes (an unsized list-view sizes buffer)
 data/crash-metadata-key.arrow,zuarrow_format_error,pins patch 0010-metadata-strings (a metadata key read by strlen through NULL)
 data/crash-misaligned.arrow,zuarrow_format_error,pins the reader's buffer alignment check in zar_check_record_batch()

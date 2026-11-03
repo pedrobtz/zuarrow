@@ -31,7 +31,9 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' `to` names the R type a column must become: `character()`, `double()`,
 #' `integer()`, or [arrow_matrix()] for a `fixed_size_list`. A target that
 #' cannot take the column is a `zuarrow_type_error`, never a silent
-#' fallback.
+#' fallback. A prototype of a class registered with [arrow_register()]
+#' converts the column through that registration's `to` handler, whatever
+#' its Arrow type.
 #'
 #' Nested types follow the table too. A `struct` becomes a data frame
 #' column; `list`, `large_list` and the list views become list columns,
@@ -218,6 +220,11 @@ zar_to_code <- function(proto, call) {
   if (inherits(proto, "zuarrow_matrix")) {
     return(4L)
   }
+  # A prototype of a registered class: its `to` handler converts the column
+  # whatever its Arrow type (section 6.10).
+  if (!is.null(zar_handler_for_prototype(proto))) {
+    return(9L)
+  }
   if (!is.object(proto) && length(proto) == 0L) {
     code <- match(typeof(proto), c("character", "double", "integer"))
     if (!is.na(code)) {
@@ -228,8 +235,9 @@ zar_to_code <- function(proto, call) {
     "type",
     sprintf(
       paste(
-        "Each target in `to` must be character(), double(), integer()",
-        "or arrow_matrix(), not an object of class <%s>."
+        "Each target in `to` must be character(), double(), integer(),",
+        "arrow_matrix() or a prototype of a registered class, not an object",
+        "of class <%s>."
       ),
       paste(class(proto), collapse = "/")
     ),
@@ -237,12 +245,16 @@ zar_to_code <- function(proto, call) {
   )
 }
 
+zar_single_prototype <- function(to) {
+  if (is.list(to) && !is.object(to)) to[[1L]] else to
+}
+
 zar_to_codes <- function(to, names, frame, call) {
   if (is.null(to)) {
     return(integer())
   }
   if (!frame) {
-    if (is.list(to) && !inherits(to, "zuarrow_matrix")) {
+    if (is.list(to) && !is.object(to)) {
       if (length(to) != 1L) {
         zar_abort(
           "type",
@@ -296,8 +308,27 @@ zar_convert <- function(
 
   # Registered handlers convert their columns in R (section 6.10); an
   # inexact one only when the policy accepts loss. A struct with a handled
-  # field at any depth is converted in R too, field by field.
+  # field at any depth is converted in R too, field by field. A prototype of
+  # a registered class in `to` names its handler outright.
   handlers <- lapply(seq_along(fields), function(k) {
+    if (codes[[k]] == 9L) {
+      proto <- if (frame) to[[names[[k]]]] else zar_single_prototype(to)
+      h <- zar_handler_for_prototype(proto)
+      if (!h$exact && lossy %in% c("error", "character")) {
+        zar_abort(
+          "type",
+          sprintf(
+            paste(
+              "The registration of `%s` that `to` names is not exact;",
+              "use `lossy = \"warn\"` or `\"allow\"` to accept that."
+            ),
+            h$key
+          ),
+          call = call
+        )
+      }
+      return(h)
+    }
     if (codes[[k]] != 0L) {
       return(NULL)
     }
@@ -343,6 +374,7 @@ zar_convert <- function(
         frame,
         schema,
         out$rows,
+        lossy,
         call
       )
     }
@@ -460,7 +492,16 @@ zar_null_rows <- function(x, rows) {
   x
 }
 
-zar_apply_handler <- function(handler, arrays, k, frame, schema, rows, call) {
+zar_apply_handler <- function(
+  handler,
+  arrays,
+  k,
+  frame,
+  schema,
+  rows,
+  lossy,
+  call
+) {
   columns <- if (length(arrays) == 0L) {
     field_schema <- if (frame) zar_field_schema(schema, k) else schema
     list(zar_empty_array(field_schema))
@@ -474,7 +515,13 @@ zar_apply_handler <- function(handler, arrays, k, frame, schema, rows, call) {
   active <- zar_registry$active
   zar_registry$active <- c(active, handler$key)
   on.exit(zar_registry$active <- active, add = TRUE)
-  pieces <- lapply(columns, function(a) handler$to(a, arrow_schema(a)))
+  pieces <- lapply(columns, function(a) {
+    if (isTRUE(handler$to_lossy)) {
+      handler$to(a, arrow_schema(a), lossy)
+    } else {
+      handler$to(a, arrow_schema(a))
+    }
+  })
   out <- if (length(pieces) == 1L) pieces[[1L]] else do.call(c, unname(pieces))
   if (NROW(out) != rows) {
     zar_abort(

@@ -49,7 +49,7 @@ Two dependencies outside this repository shape the plan:
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | [#22](https://github.com/pedrobtz/zuarrow/pull/22) | 2026-10-21 |
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | [#23](https://github.com/pedrobtz/zuarrow/pull/23) | 2026-10-21 |
 | 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | [#24](https://github.com/pedrobtz/zuarrow/pull/24), [#26](https://github.com/pedrobtz/zuarrow/pull/26) | |
-| 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | | |
+| 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | [#86](https://github.com/pedrobtz/zuarrow/pull/86) | 2026-11-03 |
 | 10 | [v0.1.0 readiness](#stage-10--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | | |
 | 11 | [Review](#stage-11--review) | full | [#29](https://github.com/pedrobtz/zuarrow/issues/29) | | |
 
@@ -531,6 +531,20 @@ fixed before `zuint` builds on it.
   Stage 5 saw half-hour builds). Keep the quick profile near five minutes
   by restricting the engine tests to the legs with binaries or by caching;
   record what was done here.
+
+  *Done 2026-11-03, with a deviation.* The engine tests run on every leg.
+  Neither of the two options above works there: r-actions installed every
+  Suggests with no hook and no cache on the containers, and duckdb's source
+  build ran `clang23` and `ubsan (gcc)` past their 45 and 60 minutes.
+  Instead, r-actions v1.27.0 gained a `pre-install` input
+  (pedrobtz/r-actions#81), and `tools/ci-binaries.R` uses it to install
+  duckdb and arrow as cran.r-universe.dev binaries on the R-devel images
+  built on Ubuntu 26.04. `clang23` then spends nothing on duckdb or arrow.
+  r-universe has no such binaries for the UBSan runners (Ubuntu 24.04) or
+  for `gcc-asan` (Fedora), so those legs still build duckdb, for about 55
+  minutes on a cache miss. `native-checks.yaml` raises the sanitizers'
+  timeout to 120 minutes to fit, which means the quick profile is not near
+  five minutes on those two legs.
 
 **Exit criteria.**
 
