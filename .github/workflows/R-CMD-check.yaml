@@ -29,8 +29,9 @@ jobs:
       # fetched by the tests themselves (helper-fixtures.R).
       env: |
         ZUARROW_FETCH_FIXTURES=true
-      # duckdb has no R-devel binary on CRAN, and building it from source
-      # outlasted the job timeout; this installs r-universe's binary first.
+      # duckdb and arrow have no R-devel binaries on CRAN, and building
+      # duckdb from source outlasted the job timeout; this installs
+      # r-universe's binaries first on the images that have them.
       pre-install: Rscript tools/ci-binaries.R
       # CRAN's NOSUGGESTS and NOLD flavours, in the full profile only. NOLD
       # is R without long double: the condition that made R parse 1e300

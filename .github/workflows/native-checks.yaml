@@ -19,8 +19,12 @@ jobs:
     uses: pedrobtz/r-actions/.github/workflows/sanitizers.yml@v1
     with:
       asan: true
-      # As in R-CMD-check.yaml: duckdb as an R-devel binary.
+      # As in R-CMD-check.yaml: duckdb and arrow as R-devel binaries, where
+      # r-universe has them. The UBSan runners (Ubuntu 24.04) and gcc-asan
+      # (Fedora) have none and build duckdb from source, about 55 minutes on
+      # a cache miss, hence the timeout (roadmap Stage 9).
       pre-install: Rscript tools/ci-binaries.R
+      timeout-minutes: 120
       env: |
         ZUARROW_FETCH_FIXTURES=true
       profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}

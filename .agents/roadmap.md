@@ -532,6 +532,20 @@ fixed before `zuint` builds on it.
   by restricting the engine tests to the legs with binaries or by caching;
   record what was done here.
 
+  *Done 2026-11-03, with a deviation.* The engine tests run on every leg.
+  Neither of the two options above works there: r-actions installed every
+  Suggests with no hook and no cache on the containers, and duckdb's source
+  build ran `clang23` and `ubsan (gcc)` past their 45 and 60 minutes.
+  Instead, r-actions v1.27.0 gained a `pre-install` input
+  (pedrobtz/r-actions#81), and `tools/ci-binaries.R` uses it to install
+  duckdb and arrow as cran.r-universe.dev binaries on the R-devel images
+  built on Ubuntu 26.04. `clang23` then spends nothing on duckdb or arrow.
+  r-universe has no such binaries for the UBSan runners (Ubuntu 24.04) or
+  for `gcc-asan` (Fedora), so those legs still build duckdb, for about 55
+  minutes on a cache miss. `native-checks.yaml` raises the sanitizers'
+  timeout to 120 minutes to fit, which means the quick profile is not near
+  five minutes on those two legs.
+
 **Exit criteria.**
 
 - Through `arrow_duckdb()`, a `BIGINT` column within ±2⁵³ is a double, one
