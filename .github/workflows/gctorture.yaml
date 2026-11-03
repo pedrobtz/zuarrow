@@ -1,0 +1,79 @@
+on:
+  push:
+    branches: [main, master]
+  pull_request:
+  schedule:
+    # Daily while the package is in active development; weekly (for example
+    # "17 3 * * 1") once it is released and changes slow down.
+    - cron: "17 3 * * *"
+  workflow_dispatch:
+
+name: gctorture
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+# Pull requests and pushes run the wide quick-step under a 10-minute budget;
+# past it the check fails. The schedule and a manual dispatch run step 20,
+# the sensitive setting, which can take hours: dispatch it on a branch with
+# `gh workflow run gctorture.yaml --ref <branch>` before a release, or before
+# merging a change to PROTECTs or finalizers.
+jobs:
+  gctorture:
+    uses: pedrobtz/r-actions/.github/workflows/gctorture.yml@v1
+    with:
+      profile: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'full' || 'quick' }}
+      test-timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 0 || 10 }}
+      timeout-minutes: 240
+      # ZUARROW_GCTORTURE makes the loops that repeat one path run a fixed
+      # sample (helper-gctorture.R); every path still runs.
+      env: |
+        ZUARROW_FETCH_FIXTURES=true
+        ZUARROW_GCTORTURE=true
+
+  # A scheduled failure otherwise notifies only whoever last edited the cron
+  # line. This keeps one open issue, labelled gctorture, while the scheduled
+  # run is red: it opens it, comments on it at each further failure, and
+  # closes it on the next green run.
+  report:
+    needs: gctorture
+    # always(), so a failed or timed-out run is reported rather than skipping
+    # this job; skipped means a docs-only change and says nothing.
+    if: ${{ always() && github.event_name == 'schedule' && needs.gctorture.result != 'skipped' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      issues: write
+    steps:
+      - name: Open, update or close the gctorture issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          RESULT: ${{ needs.gctorture.result }}
+          RUN: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -eu
+          open=$(gh issue list --repo "$REPO" --label gctorture --state open \
+                   --json number --jq '.[0].number // empty')
+          if [ "$RESULT" = success ]; then
+            if [ -n "$open" ]; then
+              gh issue close "$open" --repo "$REPO" --comment "Green again on ${SHA:0:7}: $RUN"
+            fi
+            exit 0
+          fi
+          # A job that reached timeout-minutes is `cancelled`; that is a
+          # failure here too.
+          body="Scheduled gctorture at step 20 ended \`$RESULT\` on ${SHA:0:7}: $RUN"
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$REPO" --body "$body"
+          else
+            gh label create gctorture --repo "$REPO" --color B60205 \
+              --description "Scheduled gctorture run is failing" --force
+            gh issue create --repo "$REPO" --label gctorture \
+              --title "Scheduled gctorture fails" --body "$body"
+          fi
