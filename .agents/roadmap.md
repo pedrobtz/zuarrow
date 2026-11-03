@@ -49,7 +49,7 @@ Two dependencies outside this repository shape the plan:
 | 6 | [IPC writer and benchmarks](#stage-6--ipc-writer-and-benchmarks) | quick | [#8](https://github.com/pedrobtz/zuarrow/issues/8) | [#22](https://github.com/pedrobtz/zuarrow/pull/22) | 2026-10-21 |
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | [#23](https://github.com/pedrobtz/zuarrow/pull/23) | 2026-10-21 |
 | 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | [#24](https://github.com/pedrobtz/zuarrow/pull/24), [#26](https://github.com/pedrobtz/zuarrow/pull/26) | |
-| 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | | |
+| 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | [#86](https://github.com/pedrobtz/zuarrow/pull/86) | 2026-11-03 |
 | 10 | [v0.1.0 readiness](#stage-10--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | | |
 | 11 | [Review](#stage-11--review) | full | [#29](https://github.com/pedrobtz/zuarrow/issues/29) | | |
 
