@@ -378,3 +378,121 @@ test_that("more than 256 registered columns is a limit error", {
   )
   expect_error(arrow_array(past), class = "zuarrow_limit_error")
 })
+
+test_that("a three-argument to handler receives the lossy policy", {
+  local_registration("l", to = function(array, schema, lossy) {
+    rep(lossy, arrow_info_length(array))
+  })
+  big <- test_fixed("l", 1, 8L)
+  for (lossy in c("error", "character", "warn", "allow")) {
+    expect_identical(arrow_to_r(big, lossy = lossy), lossy)
+  }
+  local_registration("L", to = function(array, schema) {
+    rep("two", arrow_info_length(array))
+  })
+  expect_identical(arrow_to_r(test_fixed("L", 1, 8L)), "two")
+  local_registration("i", to = function(...) {
+    rep(as.character(...length()), arrow_info_length(..1))
+  })
+  expect_identical(arrow_to_r(test_fixed("i", 1, 4L)), "3")
+})
+
+test_that("a to handler that needs more than three arguments is refused", {
+  expect_error(
+    arrow_register("l", to = function(array, schema, lossy, extra) 1),
+    class = "zuarrow_registry_error"
+  )
+  expect_false("l" %in% arrow_registry()$key)
+  local_registration(
+    "l",
+    to = function(array, schema, lossy, extra = NULL) {
+      rep("ok", arrow_info_length(array))
+    }
+  )
+  expect_identical(arrow_to_r(test_fixed("l", 1, 8L)), "ok")
+})
+
+test_that("an extension name beats an exact format, which beats a pattern", {
+  tagged <- function(tag) {
+    function(array, schema) rep(tag, arrow_info_length(array))
+  }
+  # Registered in the reverse of their precedence, so the order of
+  # registration cannot be what decides.
+  local_registration("my.ext", to = tagged("extension"))
+  local_registration("d:5,2", to = tagged("format"))
+  local_registration("d:*", to = tagged("pattern"))
+  expect_identical(arrow_to_r(test_fixed("d:5,2", 1, 16L)), "format")
+  expect_identical(arrow_to_r(test_fixed("d:38,0", 1, 16L)), "pattern")
+  schema <- test_schema(list(
+    format = "d:5,2",
+    name = "",
+    flags = 2L,
+    metadata = list("ARROW:extension:name" = charToRaw("my.ext")),
+    children = list(),
+    dictionary = NULL
+  ))
+  expect_identical(
+    arrow_to_r(test_array(schema, 1, list(NULL, le_int(1, 16L)))),
+    "extension"
+  )
+})
+
+test_that("a prototype of a registered class in `to` selects its handler", {
+  # The opt-in for a d:38,0 column that holds integers: it stays a decimal
+  # by its schema, and `to` names the class that reads it otherwise.
+  local_registration(
+    "fake.int128",
+    to = function(array, schema) {
+      structure(rep("int128", arrow_info_length(array)), class = "fake_int128")
+    },
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_int128"
+  )
+  local_registration("d:*", to = function(array, schema) {
+    rep("decimal", arrow_info_length(array))
+  })
+  proto <- structure(character(), class = "fake_int128")
+  column <- test_fixed("d:38,0", c(1, 2), 16L)
+  expect_identical(arrow_to_r(column), c("decimal", "decimal"))
+  out <- arrow_to_r(column, to = proto)
+  expect_s3_class(out, "fake_int128")
+  expect_identical(unclass(out), c("int128", "int128"))
+
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("d:38,0", "h"), zspec("d:38,0", "d"))
+  ))
+  batch <- test_array(
+    schema,
+    1,
+    list(NULL),
+    children = list(
+      test_array_spec(1, list(NULL, le_int(1, 16L))),
+      test_array_spec(1, list(NULL, le_int(1, 16L)))
+    )
+  )
+  df <- arrow_to_r(batch, to = list(h = proto))
+  expect_s3_class(df$h, "fake_int128")
+  expect_identical(df$d, "decimal")
+
+  other <- structure(character(), class = "not_registered")
+  expect_error(arrow_to_r(column, to = other), class = "zuarrow_type_error")
+})
+
+test_that("an inexact registration named in `to` needs warn or allow", {
+  local_registration(
+    "fake.approx",
+    to = function(array, schema) rep(0, arrow_info_length(array)),
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_approx",
+    exact = FALSE
+  )
+  proto <- structure(double(), class = "fake_approx")
+  column <- test_fixed("d:38,0", 1, 16L)
+  expect_error(arrow_to_r(column, to = proto), class = "zuarrow_type_error")
+  expect_identical(arrow_to_r(column, to = proto, lossy = "allow"), 0)
+  expect_warning(
+    arrow_to_r(column, to = proto, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+})

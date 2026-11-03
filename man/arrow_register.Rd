@@ -22,8 +22,8 @@ arrow_registry()
 \arguments{
 \item{key}{A format string, a prefix pattern or an extension name.}
 
-\item{to}{\code{NULL}, or a function of \verb{(array, schema)} returning an R
-vector.}
+\item{to}{\code{NULL}, or a function of \verb{(array, schema)} or
+\verb{(array, schema, lossy)} returning an R vector.}
 
 \item{from}{\code{NULL}, or a function of \code{(x)} returning an array handle.}
 
@@ -51,14 +51,25 @@ The \code{key} is one of:
 \item an Arrow format string, matched exactly: \code{"l"} for \code{int64};
 \item a prefix pattern ending in \code{*} for parameterised types: \code{"d:*"} for
 every decimal, \code{"tsn:*"} for every nanosecond timestamp;
-\item an extension name, such as \code{"r.decimal"}, which takes precedence over
-the storage type's key.
+\item an extension name, such as \code{"r.decimal"}.
 }
+
+When several keys match a column, the extension name wins, then the
+exact format string, then the pattern registered first. So a
+\code{decimal128(38, 0)} column is read by a \code{"d:*"} registration, even where
+it holds integers; naming a prototype of another registered class in the
+\code{to} of \code{\link[=arrow_to_r]{arrow_to_r()}} is how a caller opts into that class's handler
+instead.
 
 \code{to} converts Arrow to R: a function of \verb{(array, schema)}, the column's
 array and schema handles, returning an R vector of the array's length.
 It may be implemented in C against nanoarrow's \code{r.h} layout. It is called
-once per batch, and the pieces are combined with \code{c()}.
+once per batch, and the pieces are combined with \code{c()}. A function of
+\verb{(array, schema, lossy)} also receives the caller's \code{lossy} policy, so a
+handler can apply it to values its class cannot hold, such as one equal
+to its \code{NA} sentinel: an error under \code{"error"}, \code{NA} with a warning under
+\code{"warn"}. A \code{to} that cannot be called with two or three arguments is a
+\code{zuarrow_registry_error}.
 
 \code{from} converts R to Arrow: a function of \code{(x)} returning an array
 handle, used for every object that inherits from \code{class}.

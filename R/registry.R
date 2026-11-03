@@ -48,13 +48,24 @@ zar_format_pattern <- paste0(
 #' * an Arrow format string, matched exactly: `"l"` for `int64`;
 #' * a prefix pattern ending in `*` for parameterised types: `"d:*"` for
 #'   every decimal, `"tsn:*"` for every nanosecond timestamp;
-#' * an extension name, such as `"r.decimal"`, which takes precedence over
-#'   the storage type's key.
+#' * an extension name, such as `"r.decimal"`.
+#'
+#' When several keys match a column, the extension name wins, then the
+#' exact format string, then the pattern registered first. So a
+#' `decimal128(38, 0)` column is read by a `"d:*"` registration, even where
+#' it holds integers; naming a prototype of another registered class in the
+#' `to` of [arrow_to_r()] is how a caller opts into that class's handler
+#' instead.
 #'
 #' `to` converts Arrow to R: a function of `(array, schema)`, the column's
 #' array and schema handles, returning an R vector of the array's length.
 #' It may be implemented in C against nanoarrow's `r.h` layout. It is called
-#' once per batch, and the pieces are combined with `c()`.
+#' once per batch, and the pieces are combined with `c()`. A function of
+#' `(array, schema, lossy)` also receives the caller's `lossy` policy, so a
+#' handler can apply it to values its class cannot hold, such as one equal
+#' to its `NA` sentinel: an error under `"error"`, `NA` with a warning under
+#' `"warn"`. A `to` that cannot be called with two or three arguments is a
+#' `zuarrow_registry_error`.
 #'
 #' `from` converts R to Arrow: a function of `(x)` returning an array
 #' handle, used for every object that inherits from `class`.
@@ -72,8 +83,8 @@ zar_format_pattern <- paste0(
 #' list column. A field under a null row of its data frame is `NA`.
 #'
 #' @param key A format string, a prefix pattern or an extension name.
-#' @param to `NULL`, or a function of `(array, schema)` returning an R
-#'   vector.
+#' @param to `NULL`, or a function of `(array, schema)` or
+#'   `(array, schema, lossy)` returning an R vector.
 #' @param from `NULL`, or a function of `(x)` returning an array handle.
 #' @param class The R classes `from` handles.
 #' @param package The registering package, so its registrations are removed
@@ -103,10 +114,13 @@ arrow_register <- function(
   if (!is.character(key) || length(key) != 1L || is.na(key) || !nzchar(key)) {
     zar_abort("registry", "`key` must be one non-empty string.", call = call)
   }
-  if (!is.null(to) && !(is.function(to) && zar_takes(to, 2L))) {
+  if (
+    !is.null(to) &&
+      !(is.function(to) && zar_takes(to, 2L) && zar_requires(to) <= 3L)
+  ) {
     zar_abort(
       "registry",
-      "`to` must be a function of `(array, schema)`.",
+      "`to` must be a function of `(array, schema)` or `(array, schema, lossy)`.",
       call = call
     )
   }
@@ -188,6 +202,7 @@ arrow_register <- function(
     kind = kind,
     prefix = prefix,
     to = to,
+    to_lossy = !is.null(to) && zar_takes(to, 3L),
     from = from,
     class = class,
     package = package,
@@ -248,6 +263,13 @@ zar_takes <- function(f, n) {
   "..." %in% args || length(args) >= n
 }
 
+# The number of arguments a function cannot be called without.
+zar_requires <- function(f) {
+  args <- formals(f)
+  args <- args[names(args) != "..."]
+  sum(vapply(args, function(a) identical(a, quote(expr = )), NA))
+}
+
 # Whether a key covers a format whose built-in conversion is exact.
 zar_covers_exact <- function(kind, prefix) {
   if (kind == "extension") {
@@ -300,6 +322,20 @@ zar_handler_for <- function(format, extension) {
   patterns <- patterns[order(vapply(patterns, `[[`, 0L, "order"))]
   for (e in patterns) {
     if (startsWith(format, e$prefix)) {
+      return(e)
+    }
+  }
+  NULL
+}
+
+# The handler a prototype in `to` names: the registration whose `class` the
+# prototype inherits from and that has a `to` handler, or NULL.
+zar_handler_for_prototype <- function(proto) {
+  if (!is.object(proto)) {
+    return(NULL)
+  }
+  for (e in zar_registry$entries) {
+    if (!is.null(e$to) && !is.null(e$class) && inherits(proto, e$class)) {
       return(e)
     }
   }

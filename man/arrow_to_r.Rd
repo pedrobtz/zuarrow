@@ -104,7 +104,9 @@ Intervals and unions have no R form and always fail.
 \code{to} names the R type a column must become: \code{character()}, \code{double()},
 \code{integer()}, or \code{\link[=arrow_matrix]{arrow_matrix()}} for a \code{fixed_size_list}. A target that
 cannot take the column is a \code{zuarrow_type_error}, never a silent
-fallback.
+fallback. A prototype of a class registered with \code{\link[=arrow_register]{arrow_register()}}
+converts the column through that registration's \code{to} handler, whatever
+its Arrow type.
 
 Nested types follow the table too. A \code{struct} becomes a data frame
 column; \code{list}, \code{large_list} and the list views become list columns,
