@@ -69,6 +69,9 @@ arrow_limits <- function(
 #' outlives the vector.
 #'
 #' @param x A path, a raw vector, or a connection, which is read to its end.
+#'   Or a list of these, each a whole IPC stream, read as one: Spark Connect,
+#'   for one, sends each batch of a result as its own stream. Every stream
+#'   must have the first one's schema, or it is a `zuarrow_format_error`.
 #' @param columns `NULL` for every column, or the names or positions of the
 #'   top-level columns to read. Only those are decoded.
 #' @param lazy `FALSE` to read every batch into one data frame; `TRUE` to
@@ -114,6 +117,28 @@ arrow_read <- function(
       call = call
     )
   }
+  if (is.list(x) && !is.object(x)) {
+    return(zar_read_list(x, columns, lazy, to, lossy, limits, copy, call))
+  }
+  stream <- zar_open_reader(x, columns, lazy, limits, call)
+  if (lazy) {
+    return(stream)
+  }
+  schema <- arrow_schema(stream)
+  batches <- zar_stream_batches(stream, call)
+  zar_convert(
+    batches,
+    schema,
+    to,
+    lossy,
+    call,
+    max_depth = limits$max_depth,
+    copy = copy
+  )
+}
+
+# A reader over one source, with only `columns` decoded.
+zar_open_reader <- function(x, columns, lazy, limits, call) {
   source <- zar_read_source(x, limits, call)
   bounds <- limits[c("max_message", "max_depth", "max_batch_rows", "max_bytes")]
   stream <- zar_check(
@@ -137,11 +162,48 @@ arrow_read <- function(
       call = call
     )
   }
-  if (lazy) {
-    return(stream)
+  stream
+}
+
+# Several IPC streams read as one, as Spark Connect sends a result: each
+# message repeats the schema, which must be the first one's.
+zar_read_list <- function(x, columns, lazy, to, lossy, limits, copy, call) {
+  if (length(x) == 0L) {
+    zar_abort("type", "`x` must hold at least one IPC stream.", call = call)
   }
-  schema <- arrow_schema(stream)
-  batches <- zar_stream_batches(stream, call)
+  sizes <- vapply(x, function(el) if (is.raw(el)) length(el) else 0, 0)
+  if (sum(sizes) > limits$max_bytes) {
+    zar_abort(
+      "limit",
+      sprintf(
+        "The %.0f bytes of input exceed `max_bytes` (%.0f).",
+        sum(sizes),
+        limits$max_bytes
+      ),
+      call = call
+    )
+  }
+  streams <- lapply(x, zar_open_reader, columns, lazy, limits, call)
+  schema <- arrow_schema(streams[[1L]])
+  for (i in seq_along(streams)[-1L]) {
+    if (!arrow_equal(arrow_schema(streams[[i]]), schema)) {
+      zar_abort(
+        "format",
+        sprintf("Stream %d's schema differs from the first stream's.", i),
+        call = call
+      )
+    }
+  }
+  batches <- unlist(
+    lapply(streams, zar_stream_batches, call = call),
+    recursive = FALSE
+  )
+  if (lazy) {
+    return(zar_check(
+      .Call(zar_c_stream_from_arrays, schema, batches),
+      call = call
+    ))
+  }
   zar_convert(
     batches,
     schema,
@@ -173,7 +235,7 @@ zar_read_source <- function(x, limits, call) {
   }
   zar_abort(
     "type",
-    "`x` must be a path, a raw vector or a connection.",
+    "`x` must be a path, a raw vector, a connection or a list of them.",
     call = call
   )
 }

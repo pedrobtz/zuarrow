@@ -15,7 +15,10 @@ arrow_read(
 )
 }
 \arguments{
-\item{x}{A path, a raw vector, or a connection, which is read to its end.}
+\item{x}{A path, a raw vector, or a connection, which is read to its end.
+Or a list of these, each a whole IPC stream, read as one: Spark Connect,
+for one, sends each batch of a result as its own stream. Every stream
+must have the first one's schema, or it is a \code{zuarrow_format_error}.}
 
 \item{columns}{\code{NULL} for every column, or the names or positions of the
 top-level columns to read. Only those are decoded.}

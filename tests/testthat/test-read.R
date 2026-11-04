@@ -295,3 +295,32 @@ test_that("a field name or metadata key R cannot hold is a format error", {
     expect_error(arrow_read(bad_name), class = "zuarrow_format_error")
   }
 })
+
+test_that("a list of IPC streams reads as one, as Spark Connect sends a result", {
+  first <- data.frame(x = 1:3, f = factor(c("a", "b", "a")))
+  second <- data.frame(x = 4:5, f = factor(c("c", NA)))
+  messages <- list(stream_bytes(first), stream_bytes(second))
+  expected <- data.frame(x = 1:5, f = factor(c("a", "b", "a", "c", NA)))
+
+  expect_identical(arrow_read(messages), expected)
+  expect_identical(arrow_read(messages, columns = "x"), expected["x"])
+
+  stream <- arrow_read(messages, lazy = TRUE)
+  rm(messages)
+  gc()
+  expect_s3_class(stream, "zuarrow_array_stream")
+  expect_identical(arrow_to_r(stream), expected)
+})
+
+test_that("streams read as one must share a schema and fit the limits", {
+  one <- stream_bytes(data.frame(x = 1:2))
+  other <- stream_bytes(data.frame(x = c(1.5, 2)))
+
+  expect_error(arrow_read(list(one, other)), class = "zuarrow_format_error")
+  expect_error(arrow_read(list()), class = "zuarrow_type_error")
+  expect_error(arrow_read(list(one, list())), class = "zuarrow_type_error")
+  expect_error(
+    arrow_read(list(one, one), limits = arrow_limits(max_bytes = length(one))),
+    class = "zuarrow_limit_error"
+  )
+})
