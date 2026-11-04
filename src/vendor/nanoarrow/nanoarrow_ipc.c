@@ -17,7 +17,9 @@
  * (tools/patches/0010-metadata-strings.patch), and the encoder writes
  * dictionary batches and compressed bodies through a caller's buffer
  * callback, and the footer lists the dictionary blocks with every padding
- * byte zeroed (tools/patches/0013-encode-batches.patch).
+ * byte zeroed (tools/patches/0013-encode-batches.patch), and a delta
+ * dictionary batch extends a dictionary that already holds values
+ * (tools/patches/0015-dictionary-delta-concat.patch).
  */
 #include "nanoarrow_ipc_flatcc_generated.h"
 // Licensed to the Apache Software Foundation (ASF) under one
@@ -559,13 +561,166 @@ static ArrowErrorCode ArrowIpcDictionaryReplace(struct ArrowIpcDictionary* dicti
   return NANOARROW_OK;
 }
 
+// Appends rows [0, view->length) of a validated view's validity bits to
+// `bitmap`, or all ones when the view has no validity buffer.
+static void ArrowIpcDictionaryAppendValidity(struct ArrowBitmap* bitmap,
+                                             const struct ArrowArrayView* view) {
+  const uint8_t* bits = view->buffer_views[0].data.as_uint8;
+  for (int64_t i = 0; i < view->length; i++) {
+    int valid = bits == NULL || view->null_count == 0 ||
+                ArrowBitGet(bits, view->offset + i);
+    ArrowBitmapAppendUnsafe(bitmap, (uint8_t)valid, 1);
+  }
+}
+
+// Offset i of a validated binary or string view, 32- or 64-bit.
+static int64_t ArrowIpcDictionaryOffset(const struct ArrowArrayView* view, int64_t i,
+                                        int large) {
+  const struct ArrowBufferView* offsets = &view->buffer_views[1];
+  return large ? offsets->data.as_int64[view->offset + i]
+               : offsets->data.as_int32[view->offset + i];
+}
+
+// Appends a validated view's offsets, rebased to start at `base`, and the
+// bytes they address.
+static ArrowErrorCode ArrowIpcDictionaryAppendBinary(struct ArrowBuffer* offsets,
+                                                     struct ArrowBuffer* data,
+                                                     const struct ArrowArrayView* view,
+                                                     int64_t base, int large,
+                                                     struct ArrowError* error) {
+  int64_t first = ArrowIpcDictionaryOffset(view, 0, large);
+  int64_t last = ArrowIpcDictionaryOffset(view, view->length, large);
+  for (int64_t i = 1; i <= view->length; i++) {
+    int64_t value = ArrowIpcDictionaryOffset(view, i, large) - first + base;
+    if (large) {
+      NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt64(offsets, value));
+    } else {
+      if (value > INT32_MAX) {
+        ArrowErrorSet(error, "Concatenated dictionary exceeds 32-bit offsets");
+        return EOVERFLOW;
+      }
+      NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt32(offsets, (int32_t)value));
+    }
+  }
+  return ArrowBufferAppend(data, view->buffer_views[2].data.as_uint8 + first,
+                           last - first);
+}
+
+// Concatenates `current` and `value`, both of the value type that
+// `layout_view` describes, into `out`. Fixed-width values, and binary or
+// string values with 32- or 64-bit offsets, are supported.
+static ArrowErrorCode ArrowIpcDictionaryConcat(
+    const struct ArrowArrayView* layout_view, const struct ArrowArray* current,
+    const struct ArrowArray* value, struct ArrowArray* out, struct ArrowError* error) {
+  const struct ArrowLayout* layout = &layout_view->layout;
+  int64_t bits = layout->element_size_bits[1];
+  int fixed = layout->buffer_type[0] == NANOARROW_BUFFER_TYPE_VALIDITY &&
+              layout->buffer_type[1] == NANOARROW_BUFFER_TYPE_DATA &&
+              layout->buffer_type[2] == NANOARROW_BUFFER_TYPE_NONE &&
+              (bits == 1 || (bits > 0 && bits % 8 == 0));
+  int binary = layout->buffer_type[0] == NANOARROW_BUFFER_TYPE_VALIDITY &&
+               layout->buffer_type[1] == NANOARROW_BUFFER_TYPE_DATA_OFFSET &&
+               layout->buffer_type[2] == NANOARROW_BUFFER_TYPE_DATA &&
+               (bits == 32 || bits == 64);
+  if (layout_view->n_children != 0 || layout_view->dictionary != NULL ||
+      (!fixed && !binary)) {
+    ArrowErrorSet(error,
+                  "Dictionary concatenation is supported for fixed-width, binary and "
+                  "string values only");
+    return ENOTSUP;
+  }
+
+  struct ArrowArrayView views[2];
+  const struct ArrowArray* arrays[2] = {current, value};
+  for (int k = 0; k < 2; k++) {
+    ArrowArrayViewInitFromType(&views[k], layout_view->storage_type);
+    views[k].layout = layout_view->layout;
+    ArrowErrorCode result = ArrowArrayViewSetArrayMinimal(&views[k], arrays[k], error);
+    if (result != NANOARROW_OK) {
+      if (k == 1) ArrowArrayViewReset(&views[0]);
+      ArrowArrayViewReset(&views[k]);
+      return result;
+    }
+  }
+  int64_t n = views[0].length + views[1].length;
+  int64_t nulls = views[0].null_count + views[1].null_count;
+
+  ArrowErrorCode result = ArrowArrayInitFromType(out, layout_view->storage_type);
+  if (result == NANOARROW_OK && nulls > 0) {
+    struct ArrowBitmap* bitmap = ArrowArrayValidityBitmap(out);
+    result = ArrowBitmapReserve(bitmap, n);
+    if (result == NANOARROW_OK) {
+      ArrowIpcDictionaryAppendValidity(bitmap, &views[0]);
+      ArrowIpcDictionaryAppendValidity(bitmap, &views[1]);
+    }
+  }
+  if (result == NANOARROW_OK && fixed && bits == 1) {
+    struct ArrowBitmap bitmap;
+    ArrowBitmapInit(&bitmap);
+    result = ArrowBitmapReserve(&bitmap, n);
+    for (int k = 0; result == NANOARROW_OK && k < 2; k++) {
+      const uint8_t* src = views[k].buffer_views[1].data.as_uint8;
+      for (int64_t i = 0; i < views[k].length; i++) {
+        ArrowBitmapAppendUnsafe(&bitmap, ArrowBitGet(src, views[k].offset + i), 1);
+      }
+    }
+    if (result == NANOARROW_OK) {
+      ArrowBufferMove(&bitmap.buffer, ArrowArrayBuffer(out, 1));
+    }
+    ArrowBitmapReset(&bitmap);
+  } else if (result == NANOARROW_OK && fixed) {
+    int64_t width = bits / 8;
+    struct ArrowBuffer* data = ArrowArrayBuffer(out, 1);
+    for (int k = 0; result == NANOARROW_OK && k < 2; k++) {
+      result = ArrowBufferAppend(
+          data, views[k].buffer_views[1].data.as_uint8 + views[k].offset * width,
+          views[k].length * width);
+    }
+  } else if (result == NANOARROW_OK) {
+    int large = bits == 64;
+    struct ArrowBuffer* offsets = ArrowArrayBuffer(out, 1);
+    struct ArrowBuffer* data = ArrowArrayBuffer(out, 2);
+    result = large ? ArrowBufferAppendInt64(offsets, 0) : ArrowBufferAppendInt32(offsets, 0);
+    int64_t base = 0;
+    for (int k = 0; result == NANOARROW_OK && k < 2; k++) {
+      result = ArrowIpcDictionaryAppendBinary(offsets, data, &views[k], base, large,
+                                              error);
+      base = data->size_bytes;
+    }
+  }
+  ArrowArrayViewReset(&views[0]);
+  ArrowArrayViewReset(&views[1]);
+  if (result == NANOARROW_OK) {
+    out->length = n;
+    out->null_count = nulls;
+    // Both inputs were validated when they were decoded.
+    result = ArrowArrayFinishBuilding(out, NANOARROW_VALIDATION_LEVEL_NONE, error);
+  }
+  if (result != NANOARROW_OK && out->release != NULL) ArrowArrayRelease(out);
+  return result;
+}
+
 static ArrowErrorCode ArrowIpcDictionaryAppend(struct ArrowIpcDictionary* dictionary,
                                                struct ArrowArray* value,
                                                struct ArrowError* error) {
   if (dictionary->current_value.release != NULL &&
       dictionary->current_value.length != 0) {
-    ArrowErrorSet(error, "Dictionary concatenation is not yet supported");
-    return ENOTSUP;
+    struct ArrowIpcDecoderPrivate* private_data =
+        (struct ArrowIpcDecoderPrivate*)dictionary->decoder.private_data;
+    struct ArrowArray combined;
+    combined.release = NULL;
+    NANOARROW_RETURN_NOT_OK(ArrowIpcDictionaryConcat(
+        private_data->array_view.children[0], &dictionary->current_value, value,
+        &combined, error));
+    // On failure the caller releases `value`, so it is released here only
+    // once the combined dictionary has replaced the current one.
+    ArrowErrorCode result = ArrowIpcDictionaryReplace(dictionary, &combined, error);
+    if (result != NANOARROW_OK) {
+      if (combined.release != NULL) ArrowArrayRelease(&combined);
+      return result;
+    }
+    ArrowArrayRelease(value);
+    return NANOARROW_OK;
   }
 
   NANOARROW_RETURN_NOT_OK(ArrowIpcDictionaryReplace(dictionary, value, error));
