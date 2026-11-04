@@ -887,9 +887,9 @@ dependency:
    and the reverse, for every built-in type, through `as.data.frame()`
    on both sides; a stream zuarrow writes is read by `read_nanoarrow()`
    and the reverse.
-4. **`arrow` 25.** `arrow::write_feather()` with each compression is read
+4. **`arrow` 25.** `arrow::write_ipc_file()` with each compression is read
    by `arrow_read()`; `arrow_write()` with each option is read by
-   `arrow::read_feather()` and `arrow::read_ipc_stream()`; the
+   `arrow::read_ipc_file()` and `arrow::read_ipc_stream()`; the
    round-trip frame is identical for the exact types.
 
 *Decided 2026-11-04:* oracles 3 and 4, and DuckDB as a producer, are not

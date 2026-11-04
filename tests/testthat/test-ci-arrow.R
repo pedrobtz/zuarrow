@@ -62,7 +62,7 @@ test_that("arrow reads what arrow wrote, the same way", {
   skip_if_not(arrow::codec_is_available("zstd"), "arrow was built without zstd")
   path <- test_data("basic-zstd.arrow")
   ours <- without_metadata(arrow_read(path))
-  theirs <- as.data.frame(arrow::read_feather(path))
+  theirs <- as.data.frame(arrow::read_ipc_file(path))
   expect_identical(ours, theirs)
 })
 
@@ -79,7 +79,7 @@ test_that("arrow reads what arrow_write() writes", {
   for (compression in c("none", "lz4", "zstd")) {
     file <- arrow_write(df, NULL, compression = compression)
     expect_identical(
-      as.data.frame(arrow::read_feather(file)),
+      as.data.frame(arrow::read_ipc_file(file)),
       df,
       info = compression
     )
@@ -107,7 +107,7 @@ test_that("arrow_read() reads what arrow writes, at every compression", {
   df <- basic_df()
   for (compression in c("uncompressed", "lz4", "zstd")) {
     path <- withr::local_tempfile(fileext = ".arrow")
-    arrow::write_feather(df, path, compression = compression)
+    arrow::write_ipc_file(df, path, compression = compression)
     expect_identical(without_metadata(arrow_read(path)), df, info = compression)
   }
 })
