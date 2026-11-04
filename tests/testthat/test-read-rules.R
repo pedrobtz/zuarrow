@@ -128,6 +128,10 @@ test_that("a file must start with a schema", {
     bytes[(schema_end + 1):length(bytes)]
   )
   expect_error(arrow_read(no_schema), class = "zuarrow_format_error")
+  # An end-of-stream marker where the schema should be, the footer intact.
+  eos_first <- bytes
+  eos_first[9:16] <- ipc_eos()
+  expect_error(arrow_read(eos_first), class = "zuarrow_format_error")
 })
 
 test_that("a message body over max_message is a limit error", {

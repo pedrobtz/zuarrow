@@ -291,3 +291,10 @@ test_that("bad arguments are type errors", {
     class = "zuarrow_io_error"
   )
 })
+
+test_that("only a struct array or stream can be written", {
+  expect_error(
+    arrow_write(arrow_array(1:3), NULL),
+    class = "zuarrow_type_error"
+  )
+})

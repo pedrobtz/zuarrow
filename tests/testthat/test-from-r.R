@@ -302,3 +302,10 @@ test_that("a struct schema needs a data frame", {
     class = "zuarrow_type_error"
   )
 })
+
+test_that("a binary element that is not a raw vector is a type error", {
+  expect_error(
+    arrow_array(list(as.raw(1:2), "a"), arrow_schema("z")),
+    class = "zuarrow_type_error"
+  )
+})

@@ -676,3 +676,38 @@ test_that("encoded values the decoder can't copy are a type error", {
   )
   expect_error(arrow_to_r(array), class = "zuarrow_type_error")
 })
+
+test_that("registration arguments are checked", {
+  expect_error(
+    arrow_register("zar_test_key", from = 1, class = "zar_test_class"),
+    class = "zuarrow_registry_error"
+  )
+  expect_error(
+    arrow_register(
+      "zar_test_key",
+      to = function(array, schema) NULL,
+      package = "zuarrowNoSuchPackage"
+    ),
+    class = "zuarrow_dependency_error"
+  )
+  expect_error(
+    arrow_register(
+      "zar_test_key",
+      to = function(array, schema) NULL,
+      package = 1
+    ),
+    class = "zuarrow_registry_error"
+  )
+  expect_error(arrow_unregister(1), class = "zuarrow_registry_error")
+  expect_false("zar_test_key" %in% arrow_registry()$key)
+})
+
+test_that("a `from` handler that returns no array is a registry error", {
+  local_registration(
+    "zar_test_not_array",
+    from = function(x) unclass(x),
+    class = "zar_test_not_array"
+  )
+  x <- structure(1:3, class = "zar_test_not_array")
+  expect_error(arrow_array(x), class = "zuarrow_registry_error")
+})

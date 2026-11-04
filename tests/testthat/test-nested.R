@@ -326,3 +326,11 @@ test_that("a ragged list to a fixed_size_list is a type error", {
     class = "zuarrow_type_error"
   )
 })
+
+test_that("an `arrow_keys_sorted` attribute must be one logical", {
+  x <- structure(
+    list(data.frame(key = "a", value = 1)),
+    arrow_keys_sorted = NA
+  )
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+})

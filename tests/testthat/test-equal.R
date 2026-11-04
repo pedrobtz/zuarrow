@@ -169,3 +169,180 @@ test_that("a dictionary on one side only is a difference", {
   expect_false(out)
   expect_type(attr(out, "reason"), "character")
 })
+
+test_that("run-end encoded arrays compare by the values they decode to", {
+  schema <- test_schema(zspec(
+    "+r",
+    children = list(zspec("i", "run_ends", flags = 0L), zspec("i", "values"))
+  ))
+  make <- function(ends, values) {
+    test_array(
+      schema,
+      3,
+      list(),
+      children = list(
+        test_array_spec(length(ends), list(NULL, le_int(ends, 4L))),
+        test_array_spec(length(values), list(NULL, le_int(values, 4L)))
+      )
+    )
+  }
+  # Runs of different lengths can decode to the same values.
+  expect_true(arrow_equal(make(c(2, 3), c(1, 2)), make(c(1, 2, 3), c(1, 1, 2))))
+  expect_false(arrow_equal(make(c(2, 3), c(1, 2)), make(c(1, 3), c(1, 2))))
+  expect_false(arrow_equal(make(c(2, 3), c(1, 2)), make(c(2, 3), c(1, 5))))
+})
+
+test_that("sparse union arrays compare by type id and the chosen value", {
+  schema <- test_schema(zspec(
+    "+us:0,1",
+    children = list(zspec("i", "a"), zspec("u", "b"))
+  ))
+  make <- function(ids, a, b) {
+    test_array(
+      schema,
+      length(ids),
+      list(as.raw(ids)),
+      children = list(
+        test_array_spec(length(a), list(NULL, le_int(a, 4L))),
+        test_array_spec(
+          length(b),
+          list(
+            NULL,
+            le_int(cumsum(c(0, nchar(b))), 4L),
+            charToRaw(paste(b, collapse = ""))
+          )
+        )
+      )
+    )
+  }
+  x <- make(c(0, 1), c(1, 2), c("x", "y"))
+  expect_true(arrow_equal(x, make(c(0, 1), c(1, 2), c("x", "y"))))
+  # Row 2 takes child b, so child a's second value does not count.
+  expect_true(arrow_equal(x, make(c(0, 1), c(1, 9), c("x", "y"))))
+  expect_false(arrow_equal(x, make(c(0, 1), c(1, 2), c("x", "z"))))
+  expect_false(arrow_equal(x, make(c(0, 0), c(1, 2), c("x", "y"))))
+  # A type id the schema does not list names no child.
+  bad <- make(c(0, 5), c(1, 2), c("x", "y"))
+  expect_error(arrow_equal(bad, bad), class = "zuarrow_format_error")
+})
+
+test_that("dense union arrays compare through their offsets", {
+  schema <- test_schema(zspec(
+    "+ud:0,1",
+    children = list(zspec("i", "a"), zspec("u", "b"))
+  ))
+  make <- function(offsets, a) {
+    test_array(
+      schema,
+      3,
+      list(as.raw(c(0, 1, 0)), le_int(offsets, 4L)),
+      children = list(
+        test_array_spec(length(a), list(NULL, le_int(a, 4L))),
+        test_array_spec(1, list(NULL, le_int(c(0, 1), 4L), charToRaw("x")))
+      )
+    )
+  }
+  x <- make(c(0, 0, 1), c(1, 2))
+  expect_true(arrow_equal(x, make(c(0, 0, 1), c(1, 2))))
+  expect_true(arrow_equal(x, make(c(1, 0, 2), c(0, 1, 2))))
+  expect_false(arrow_equal(x, make(c(0, 0, 1), c(1, 3))))
+  # An offset past its child's end.
+  expect_error(
+    arrow_equal(x, make(c(0, 0, 5), c(1, 2))),
+    class = "zuarrow_format_error"
+  )
+})
+
+test_that("large lists, list views and fixed-size lists compare by element", {
+  make <- function(format, buffers, values, n = 2) {
+    schema <- test_schema(zspec(format, children = list(zspec("i", "item"))))
+    test_array(
+      schema,
+      n,
+      c(list(NULL), buffers),
+      children = list(
+        test_array_spec(length(values), list(NULL, le_int(values, 4L)))
+      )
+    )
+  }
+  # [[1, 2], [3]]
+  large <- make("+L", list(le_int(c(0, 2, 3), 8L)), 1:3)
+  expect_true(arrow_equal(large, make("+L", list(le_int(c(0, 2, 3), 8L)), 1:3)))
+  expect_false(arrow_equal(
+    large,
+    make("+L", list(le_int(c(0, 1, 3), 8L)), 1:3)
+  ))
+  expect_false(arrow_equal(
+    large,
+    make("+L", list(le_int(c(0, 2, 3), 8L)), c(1, 2, 4))
+  ))
+
+  view <- make("+vl", list(le_int(c(0, 2), 4L), le_int(c(2, 1), 4L)), 1:3)
+  expect_true(arrow_equal(
+    view,
+    make("+vl", list(le_int(c(1, 0), 4L), le_int(c(2, 1), 4L)), c(3, 1, 2))
+  ))
+  expect_false(arrow_equal(
+    view,
+    make("+vl", list(le_int(c(0, 2), 4L), le_int(c(2, 1), 4L)), c(1, 2, 4))
+  ))
+
+  large_view <- make(
+    "+vL",
+    list(le_int(c(0, 2), 8L), le_int(c(2, 1), 8L)),
+    1:3
+  )
+  expect_true(arrow_equal(
+    large_view,
+    make("+vL", list(le_int(c(0, 2), 8L), le_int(c(2, 1), 8L)), 1:3)
+  ))
+  expect_false(arrow_equal(
+    large_view,
+    make("+vL", list(le_int(c(0, 2), 8L), le_int(c(1, 1), 8L)), 1:3)
+  ))
+
+  fixed <- make("+w:2", list(), 1:4)
+  expect_true(arrow_equal(fixed, make("+w:2", list(), 1:4)))
+  expect_false(arrow_equal(fixed, make("+w:2", list(), c(1, 2, 3, 5))))
+})
+
+test_that("a dictionary index out of range is a format error", {
+  make <- function(codes) {
+    spec <- zspec("i")
+    spec$dictionary <- zspec("u")
+    test_array(
+      test_schema(spec),
+      length(codes),
+      list(NULL, le_int(codes, 4L)),
+      dictionary = test_array_spec(
+        2,
+        list(NULL, le_int(c(0, 1, 2), 4L), charToRaw("ab"))
+      )
+    )
+  }
+  expect_true(arrow_equal(make(c(0, 1)), make(c(0, 1))))
+  expect_error(
+    arrow_equal(make(c(0, 5)), make(c(0, 1))),
+    class = "zuarrow_format_error"
+  )
+})
+
+test_that("null arrays of one length are equal", {
+  expect_true(arrow_equal(
+    test_array("n", 2, list()),
+    test_array("n", 2, list())
+  ))
+  expect_false(arrow_equal(
+    test_array("n", 2, list()),
+    test_array("n", 3, list())
+  ))
+})
+
+test_that("streams with different schemas are not equal", {
+  out <- arrow_equal(
+    test_stream("i", list(test_int32(1:2))),
+    test_stream("l", list())
+  )
+  expect_false(out)
+  expect_type(attr(out, "reason"), "character")
+})
