@@ -33,12 +33,14 @@ Stages 0 to 9 of `.agents/roadmap.md` are merged. Stage 10 (v0.1.0
 readiness) is in progress, and Stage 11 (Review) follows it. The first
 critical review (2026-10-27, issues labelled `review`) has been fixed.
 
-Stage 10 waits on three things outside this repository:
+Stage 10 waits on two things outside this repository:
 
 - `zukomp` 0.2.0, the release with the codecs, reaching CRAN. Its earliest
   submission date is 2026-11-27.
-- `decimal`'s registration with zuarrow (decimal#24).
 - An upstream nanoarrow pull request for vendored patch 0004.
+
+`decimal`'s registration (decimal#24) is optional. It is tested when
+`decimal` provides it, and 0.1.0 does not wait for it (design §12).
 
 ## Stage tracking
 

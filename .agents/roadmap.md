@@ -583,8 +583,10 @@ Stage 9 on 2026-10-23.
 
 - `zukomp` 0.2.0 is on CRAN: remove `Remotes:`, set the `LinkingTo` floor to
   that version, and record it in design §16.
-- The `decimal` registration is merged and its golden cases decode exactly
-  with `decimal` installed (design §12).
+- The `decimal` registration is optional (decided 2026-11-04, design §12).
+  When `decimal` is installed and registers, its golden cases decode
+  exactly; the test skips otherwise. The stage does not wait for
+  decimal#24.
 - The fuzz target runs one hour clean under `ZAR_STANDALONE` with
   sanitizers; the result is recorded on this issue.
 - `Version: 0.1.0` and the matching `NEWS.md` heading.

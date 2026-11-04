@@ -273,6 +273,8 @@ symbol beginning `zar_` or `ZAR_`.
 - **`decimal`**: registers `decimal128` and `decimal256` and its
   `r.decimal` extension name, giving it a libarrow-free path beside the
   `arrow` one it has.
+  It is optional for zuarrow 0.1.0 (decided 2026-11-04): zuarrow tests
+  the registration when `decimal` provides it, and ships without it.
 - **`zutempo`** (RFC 0035): registers `timestamp` at every unit and zone,
   `time64`, `duration` and `date64`; its `Instant` stores nanoseconds
   exactly (RFC 0035 §4.1), which is what makes `tsn:` exact.
@@ -966,7 +968,11 @@ profile and records the dates.
   and no `Arrow*` symbol; `DESCRIPTION` names the Apache Software
   Foundation as a copyright holder and `inst/COPYRIGHTS` states the
   nanoarrow commit.
-- `decimal` registers with zuarrow and its golden cases decode exactly.
+- Optional (decided 2026-11-04): when an installed `decimal` registers
+  with zuarrow, its golden cases decode exactly; the test skips when it
+  does not. v0.1.0 does not wait for `decimal`'s registration
+  (decimal#24). Without it, a decimal column is a `zuarrow_lossy_error`
+  naming `decimal`, or exact text under `lossy = "character"`.
 - `.agents/benchmarks.md` holds a number for every row of §10, met or
   not.
 - Seven stages. A stage that needs a second pull request moves scope to
