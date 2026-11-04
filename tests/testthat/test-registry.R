@@ -572,3 +572,118 @@ test_that("a variable-width registered column is built per batch", {
   bytes <- arrow_write(df, NULL, format = "stream", batch = 2)
   expect_identical(arrow_read(bytes)$t, unclass(df$t))
 })
+
+test_that("a package registering its own key again is silent", {
+  local_unload_hooks("utils")
+  local_registration("l", to = as_text_int64, package = "utils")
+  expect_no_message(
+    arrow_register("l", to = as_text_int64, package = "utils")
+  )
+})
+
+test_that("a dictionary column is handled by its value type, decoded", {
+  seen <- local_decimal_text()
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("d:5,1")
+  array <- test_array(
+    test_schema(spec),
+    5,
+    list(as.raw(0x1b), le_int(c(0, 1, 0, 2, 0), 4L)),
+    null_count = 1,
+    dictionary = test_array_spec(
+      3,
+      list(as.raw(0x03), le_int(c(15, -25, 0), 16L)),
+      null_count = 1
+    )
+  )
+  expect_identical(arrow_to_r(array), c("1.5", "-2.5", NA, NA, "1.5"))
+  expect_identical(seen$formats, "decimal128(5, 1)")
+})
+
+test_that("a run-end encoded column is handled by its value type, decoded", {
+  seen <- local_decimal_text()
+  schema <- test_schema(zspec(
+    "+r",
+    children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
+  ))
+  array <- test_array(
+    schema,
+    4,
+    list(),
+    offset = 1,
+    children = list(
+      test_array_spec(3, list(NULL, le_int(c(2, 3, 5), 4L))),
+      test_array_spec(
+        3,
+        list(as.raw(0x05), le_int(c(15, 0, -25), 16L)),
+        null_count = 1
+      )
+    )
+  )
+  df <- as.data.frame(test_stream(
+    test_schema(zspec(
+      "+s",
+      children = list(zspec(
+        "+r",
+        "x",
+        children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
+      ))
+    )),
+    list(test_array(
+      test_schema(zspec(
+        "+s",
+        children = list(zspec(
+          "+r",
+          "x",
+          children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
+        ))
+      )),
+      2,
+      list(NULL),
+      children = list(test_array_spec(
+        2,
+        list(),
+        children = list(
+          test_array_spec(1, list(NULL, le_int(2, 4L))),
+          test_array_spec(1, list(NULL, le_int(7, 16L)))
+        )
+      ))
+    ))
+  ))
+  expect_identical(arrow_to_r(array), c("1.5", NA, "-2.5", "-2.5"))
+  expect_identical(df$x, c("0.7", "0.7"))
+  expect_identical(unique(seen$formats), "decimal128(5, 1)")
+})
+
+test_that("a handler for the index type never gets a dictionary", {
+  local_registration("l", to = function(array, schema) stop("not this one"))
+  spec <- zspec("l", "x")
+  spec$dictionary <- zspec("u")
+  array <- test_array(
+    test_schema(spec),
+    3,
+    list(NULL, le_int(c(0, 1, 0), 8L)),
+    dictionary = test_array_spec(
+      2,
+      list(NULL, le_int(c(0, 1, 2), 4L), charToRaw("ab"))
+    )
+  )
+  expect_identical(arrow_to_r(array), factor(c("a", "b", "a")))
+})
+
+test_that("encoded values the decoder can't copy are a type error", {
+  local_registration("+w:*", to = function(array, schema) "x", exact = TRUE)
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("+w:1", children = list(zspec("i", "item")))
+  array <- test_array(
+    test_schema(spec),
+    1,
+    list(NULL, le_int(0, 4L)),
+    dictionary = test_array_spec(
+      1,
+      list(NULL),
+      children = list(test_array_spec(1, list(NULL, le_int(1, 4L))))
+    )
+  )
+  expect_error(arrow_to_r(array), class = "zuarrow_type_error")
+})

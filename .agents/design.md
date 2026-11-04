@@ -701,6 +701,19 @@ nonzero offset, so a borrowed slice could not be written. For any other
 layout `from` is called again on each batch's rows, and each result must
 have the column's type, or it is a `zuarrow_registry_error`.
 
+*Decided 2026-11-04 (#93):* a dictionary or run-end encoded column is
+matched to a registration by its value type, never by its index or
+run-end type, and its extension name is the field's or else the values'.
+Its `to` handler receives an array of the decoded values, one per row,
+with the value type and the field's name and metadata. Fixed-width,
+binary and string values are decoded; a registered handler for any other
+value layout is a `zuarrow_type_error`. Before, an `int64`-indexed
+dictionary reached a handler registered for `"l"`.
+
+*Decided 2026-11-04 (#92):* a package that registers a key it already
+owns replaces its registration without a message, as it does on every
+reload. The message stays for a different owner.
+
 Decided 2026-11-03 under X4 and X5 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6):
 
 - **The policy reaches the handler.** A `to` may take a third argument,
