@@ -255,9 +255,13 @@ symbol beginning `zar_` or `ZAR_`.
 
 - **`nanoarrow`**: `Suggests`. Never `Imports` or `LinkingTo`: zuarrow
   vendors the C library (D1) and reproduces the handle layout (D6). Used
-  in tests to prove interchange both ways, and as the target of delayed
-  S3 registrations (`as_nanoarrow_array_stream()` and friends) so a
-  zuarrow handle is accepted wherever a nanoarrow one is.
+  in tests to prove interchange both ways, and by `arrow_duckdb()`, whose
+  DBI fetch returns a nanoarrow stream. A zuarrow handle is accepted
+  wherever a nanoarrow one is because its second class is nanoarrow's
+  (D7), so zuarrow registers no methods on nanoarrow's generics.
+  *Decided 2026-11-04:* the delayed `as_nanoarrow_*()` registrations were
+  removed. They only called `NextMethod()`, and zuarrow is an alternative
+  to nanoarrow, not an extension of it.
 - **`arrow`**: `Suggests`. The heavy oracle (§9): it reads what zuarrow
   writes and zuarrow reads what it writes, including compressed bodies.
 - **`zuint`** (RFC 0009): registers `int64`, `uint64`, `int128` and
