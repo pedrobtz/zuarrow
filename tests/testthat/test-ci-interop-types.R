@@ -4,14 +4,14 @@
 # helper-interop.R.
 
 test_that("the cases cover every built-in type", {
-  skip_if_not_installed("nanoarrow")
+  skip_without_oracle("nanoarrow")
   types <- unlist(strsplit(arrow_types()$arrow, ", ", fixed = TRUE))
   covered <- vapply(interop_cases(), `[[`, "", "arrow")
   expect_setequal(unique(covered), types)
 })
 
 test_that("nanoarrow and zuarrow build and read every type alike", {
-  skip_if_not_installed("nanoarrow")
+  skip_without_oracle("nanoarrow")
   withr::local_options(nanoarrow.warn_unregistered_extension = FALSE)
   # nanoarrow's own reading of a handle, or the class of its error.
   na_read <- function(x, df = FALSE) {

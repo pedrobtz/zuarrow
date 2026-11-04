@@ -1,0 +1,57 @@
+# The oracle tests (design section 9) against the arrow, nanoarrow, DBI and
+# duckdb packages. None of them is a dependency of zuarrow, so the tests
+# that use them live in tests/testthat/*-ci-*.R, which .Rbuildignore leaves
+# out of the package tarball: R CMD check and CRAN never run them. This
+# workflow runs them from the source tree, with every oracle installed and
+# ZUARROW_ORACLES=true, so a missing oracle fails rather than skips.
+#
+# r-actions has no workflow that runs tests outside the tarball, hence a
+# workflow of our own, built from r-lib/actions as pkgdown.yaml is. It runs
+# on Ubuntu only, where the oracles install as binaries
+# (tools/install-oracles.R).
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+name: oracles
+
+permissions:
+  contents: read
+
+concurrency:
+  group: oracles-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  oracles:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
+      ZUARROW_ORACLES: true
+      ZUARROW_FETCH_FIXTURES: true
+      NOT_CRAN: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          extra-packages: any::devtools
+
+      # arrow and duckdb as binaries, never built from source: building
+      # duckdb alone has taken close to an hour. The time limit turns a
+      # silent fall back to a source build into a failure.
+      - name: Install the oracle packages
+        run: Rscript tools/install-oracles.R
+        timeout-minutes: 10
+
+      - name: Run the oracle tests
+        run: |
+          devtools::test(filter = "^ci-", stop_on_failure = TRUE)
+        shell: Rscript {0}

@@ -68,9 +68,9 @@ decompressed through 'zukomp'. Big-endian input is a
 
 Dictionary batches, and the deltas a stream may send between record
 batches, are applied as the format says; a file that replaces a
-dictionary is an error, as the format forbids it. A delta that extends a
-dictionary already holding values is not supported yet and is a
-\code{zuarrow_format_error}.
+dictionary is an error, as the format forbids it. A delta extends a
+dictionary of fixed-width, binary or string values; a delta onto a
+dictionary of any other values is a \code{zuarrow_format_error}.
 
 A raw vector is read where it is. With \code{lazy = TRUE} the handle holds a
 copy instead, because a handle can be passed to another consumer that
@@ -78,11 +78,9 @@ outlives the vector.
 }
 \examples{
 path <- tempfile(fileext = ".arrows")
-stream <- arrow_stream(data.frame(x = 1:3, y = c("a", "b", "c")))
-if (requireNamespace("nanoarrow", quietly = TRUE)) {
-  nanoarrow::write_nanoarrow(stream, path)
-  arrow_read(path)
-}
+df <- data.frame(x = 1:3, y = c("a", "b", "c"))
+arrow_write(df, path, format = "stream")
+arrow_read(path)
 }
 \seealso{
 \code{\link[=arrow_to_r]{arrow_to_r()}} for the conversion and its \code{lossy} policy.

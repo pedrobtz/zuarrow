@@ -82,22 +82,6 @@ test_that("batch must be a positive whole number", {
   )
 })
 
-test_that("a nanoarrow stream converts through zuarrow", {
-  skip_if_not_installed("nanoarrow")
-  df <- data.frame(x = 1:3, y = c("a", "b", NA))
-  stream <- nanoarrow::as_nanoarrow_array_stream(df)
-  expect_identical(arrow_to_r(stream), df)
-})
-
-test_that("nanoarrow reads what arrow_stream() writes", {
-  skip_if_not_installed("nanoarrow")
-  df <- data.frame(x = c(1.5, NA), y = c("a", NA), b = c(TRUE, FALSE))
-  expect_identical(
-    as.data.frame(nanoarrow::convert_array_stream(arrow_stream(df))),
-    df
-  )
-})
-
 test_that("a stream whose next batch fails raises a classed error", {
   # A lazy reader over a stream cut short fails in get_next(), as a foreign
   # producer can: every consumer of a stream reaches that branch.

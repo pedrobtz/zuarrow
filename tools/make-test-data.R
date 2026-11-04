@@ -25,17 +25,17 @@ df <- data.frame(
 saveRDS(df, file.path(out, "basic.rds"), version = 2)
 table <- arrow::arrow_table(df)
 table$metadata <- list(origin = "zuarrow tests")
-arrow::write_feather(
+arrow::write_ipc_file(
   table,
   file.path(out, "basic.arrow"),
   compression = "uncompressed"
 )
-arrow::write_feather(
+arrow::write_ipc_file(
   table,
   file.path(out, "basic-lz4.arrow"),
   compression = "lz4"
 )
-arrow::write_feather(
+arrow::write_ipc_file(
   table,
   file.path(out, "basic-zstd.arrow"),
   compression = "zstd"

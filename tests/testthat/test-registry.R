@@ -38,17 +38,6 @@ test_that("handlers convert data frame columns", {
   expect_identical(out$n, 1:2)
 })
 
-test_that("a handler sees a sliced field", {
-  skip_if_not_installed("nanoarrow")
-  local_registration("i", to = function(array, schema) arrow_to_r(array) * 10L)
-  array <- nanoarrow::as_nanoarrow_array(data.frame(a = 1:4))
-  sliced <- nanoarrow::nanoarrow_array_modify(
-    array,
-    list(offset = 1, length = 2)
-  )
-  expect_identical(arrow_to_r(sliced)$a, c(20L, 30L))
-})
-
 test_that("a stream with no batches calls the handler on an empty array", {
   local_registration("l", to = as_text_int64)
   out <- arrow_to_r(test_stream(

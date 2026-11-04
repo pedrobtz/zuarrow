@@ -96,13 +96,6 @@ test_that("lazy returns a stream read batch by batch", {
   expect_null(arrow_next(stream))
 })
 
-test_that("a lazy stream crosses to nanoarrow", {
-  skip_if_not_installed("nanoarrow")
-  stream <- arrow_read(test_data("basic.arrows"), lazy = TRUE)
-  out <- as.data.frame(nanoarrow::as_nanoarrow_array_stream(stream))
-  expect_identical(out$i, basic_df()$i)
-})
-
 test_that("conversion options pass through", {
   out <- arrow_read(test_data("basic.arrow"), to = list(i = character()))
   expect_identical(as.vector(out$i), c("1", NA, "3", "4"))
@@ -243,16 +236,6 @@ test_that("bad arguments are type errors", {
     class = "zuarrow_type_error"
   )
   expect_error(arrow_limits(max_bytes = -1), class = "zuarrow_type_error")
-})
-
-test_that("arrow reads what arrow wrote, the same way", {
-  skip_if_not_installed("arrow")
-  # A minimal arrow build has no zstd: the portability gap D2 removes.
-  skip_if_not(arrow::codec_is_available("zstd"), "arrow was built without zstd")
-  path <- test_data("basic-zstd.arrow")
-  ours <- without_metadata(arrow_read(path))
-  theirs <- as.data.frame(arrow::read_feather(path))
-  expect_identical(ours, theirs)
 })
 
 test_that("fields that share a dictionary must share its value type", {

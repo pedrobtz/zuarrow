@@ -55,9 +55,8 @@ The source tarball contains no object code.
 
 ## Suggested packages
 
-`arrow`, `nanoarrow`, `DBI` and `duckdb` are used only as test oracles and by
-one example. The tests that need them skip when they are missing, and the
-DuckDB tests and example also skip on CRAN.
+`decimal` and `zujson` are used only in tests, which skip when they are
+missing.
 
 ## Reverse dependencies
 

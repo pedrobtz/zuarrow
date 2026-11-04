@@ -67,13 +67,6 @@
 * A prototype of a registered class in `to`, such as `zuint::int128()`,
   converts a column through that registration whatever its Arrow type.
 
-## DuckDB
-
-* `arrow_duckdb()` runs a query on a DuckDB connection and returns the
-  result exactly or with an error, through DuckDB's Arrow export. `HUGEINT`
-  and `UHUGEINT` arrive as `arrow.opaque` rather than as a
-  `DECIMAL(38, 0)`. It needs 'DBI', 'duckdb' and 'nanoarrow'.
-
 ## The IPC file and stream formats
 
 * `arrow_read()` reads the Arrow IPC file format (`.arrow`, Feather
@@ -106,6 +99,10 @@
 
 ## Fixes
 
+* `arrow_read()` applies a delta dictionary batch that extends a
+  dictionary already holding values, for fixed-width, binary and string
+  values. Before, the bundled decoder refused it with a
+  `zuarrow_format_error` (#81).
 * A stream whose next batch fails raises the same class from every
   function: a `zuarrow_format_error`, `zuarrow_limit_error` or
   `zuarrow_codec_error` from zuarrow's IPC reader, and a

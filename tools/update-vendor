@@ -95,6 +95,10 @@ PROV=src/vendor/PROVENANCE
   echo "      offset and size as size > child_len - offset: offset + size"
   echo "      overflowed int64_t, so a wrapped sum passed the check (found by"
   echo "      the fuzz target, #85)."
+  echo "  0015-dictionary-delta-concat.patch  lets a delta dictionary batch"
+  echo "      extend a dictionary that already holds values, for fixed-width,"
+  echo "      binary and string values; upstream refuses it as 'not yet"
+  echo "      supported' (#81). To be offered upstream with #17."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |
