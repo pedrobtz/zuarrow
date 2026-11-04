@@ -2,6 +2,7 @@
    validation so tests can make malformed arrays on purpose, and a stream
    over arrays. Stage 3's conversion kernels are the public way to build
    arrays; these stay internal. */
+#include <errno.h>
 #include <string.h>
 
 #include "zar.h"
@@ -130,6 +131,58 @@ SEXP zar_c_stream_from_arrays(SEXP schema_xptr, SEXP arrays) {
     ArrowBasicArrayStreamSetArray(stream, (int64_t)i, array);
   }
   R_SetExternalPtrProtected(out, arrays);
+  UNPROTECT(1);
+  return out;
+}
+
+/* A stream from another producer whose get_next() always fails, for the
+   tests: any consumer reaches the branch a foreign producer's failure
+   takes, without nanoarrow (#83). */
+static int zar_failing_get_schema(struct ArrowArrayStream *stream,
+                                  struct ArrowSchema *out) {
+  return ArrowSchemaDeepCopy((struct ArrowSchema *)stream->private_data, out);
+}
+
+static int zar_failing_get_next(struct ArrowArrayStream *stream,
+                                struct ArrowArray *out) {
+  (void)stream;
+  out->release = NULL;
+  return EIO;
+}
+
+static const char *zar_failing_get_last_error(
+    struct ArrowArrayStream *stream) {
+  (void)stream;
+  return "the producer failed";
+}
+
+static void zar_failing_release(struct ArrowArrayStream *stream) {
+  struct ArrowSchema *schema = (struct ArrowSchema *)stream->private_data;
+  if (schema->release != NULL) schema->release(schema);
+  ArrowFree(schema);
+  stream->release = NULL;
+}
+
+SEXP zar_c_test_failing_stream(SEXP schema_xptr) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowSchema *schema = zar_schema_from_xptr(schema_xptr, &error);
+  if (schema == NULL) return zar_failure_from_error("handle", &error);
+  SEXP out = PROTECT(zar_stream_owning_xptr());
+  struct ArrowArrayStream *stream =
+      (struct ArrowArrayStream *)R_ExternalPtrAddr(out);
+  struct ArrowSchema *copy =
+      (struct ArrowSchema *)ArrowMalloc(sizeof(struct ArrowSchema));
+  if (copy == NULL || ArrowSchemaDeepCopy(schema, copy) != NANOARROW_OK) {
+    ArrowFree(copy);
+    UNPROTECT(1);
+    return zar_failure(NULL, "the schema could not be copied");
+  }
+  stream->get_schema = &zar_failing_get_schema;
+  stream->get_next = &zar_failing_get_next;
+  stream->get_last_error = &zar_failing_get_last_error;
+  stream->release = &zar_failing_release;
+  stream->private_data = copy;
   UNPROTECT(1);
   return out;
 }

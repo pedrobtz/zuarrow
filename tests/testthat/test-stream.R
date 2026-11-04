@@ -94,9 +94,27 @@ test_that("a stream whose next batch fails raises a classed error", {
   expect_error(arrow_next(s), class = "zuarrow_format_error")
   expect_error(arrow_to_r(stream()), class = "zuarrow_format_error")
   expect_error(arrow_write(stream(), NULL), class = "zuarrow_format_error")
-  expect_error(arrow_validate(stream()), class = "zuarrow_handle_error")
+  expect_error(arrow_validate(stream()), class = "zuarrow_format_error")
   expect_error(
     arrow_equal(stream(), arrow_read(bytes, lazy = TRUE)),
+    class = "zuarrow_format_error"
+  )
+  expect_error(
+    arrow_equal(arrow_read(bytes, lazy = TRUE), stream()),
+    class = "zuarrow_format_error"
+  )
+})
+
+test_that("a foreign stream whose next batch fails is a handle error", {
+  # Any producer other than zuarrow's own reader: the same class from every
+  # consumer (#83).
+  failing <- function() test_failing_stream(arrow_schema(data.frame(x = 1L)))
+  expect_error(arrow_next(failing()), class = "zuarrow_handle_error")
+  expect_error(arrow_to_r(failing()), class = "zuarrow_handle_error")
+  expect_error(arrow_write(failing(), NULL), class = "zuarrow_handle_error")
+  expect_error(arrow_validate(failing()), class = "zuarrow_handle_error")
+  expect_error(
+    arrow_equal(failing(), arrow_stream(data.frame(x = 1L))),
     class = "zuarrow_handle_error"
   )
 })
