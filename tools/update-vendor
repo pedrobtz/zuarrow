@@ -99,6 +99,10 @@ PROV=src/vendor/PROVENANCE
   echo "      extend a dictionary that already holds values, for fixed-width,"
   echo "      binary and string values; upstream refuses it as 'not yet"
   echo "      supported' (#81). To be offered upstream with #17."
+  echo "  0016-encode-dictionary-children.patch  writes a dictionary-encoded"
+  echo "      field's children from its value type; upstream wrote the index"
+  echo "      type's (none), so a dictionary of struct or list values lost its"
+  echo "      children (#140). To be offered upstream."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |

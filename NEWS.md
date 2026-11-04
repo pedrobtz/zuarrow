@@ -103,6 +103,9 @@
   dictionary already holding values, for fixed-width, binary and string
   values. Before, the bundled decoder refused it with a
   `zuarrow_format_error` (#81).
+* `arrow_write()` writes a dictionary of struct or list values with the
+  value type's children in the schema. Before, the bundled encoder dropped
+  them, so the output could not be read back (#140).
 * A stream whose next batch fails raises the same class from every
   function: a `zuarrow_format_error`, `zuarrow_limit_error` or
   `zuarrow_codec_error` from zuarrow's IPC reader, and a
