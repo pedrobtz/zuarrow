@@ -20,7 +20,7 @@ jobs:
       group: pkgdown-${{ github.event_name != 'pull_request' || github.run_id }}
     env:
       GITHUB_PAT: ${{ secrets.GITHUB_TOKEN }}
-      # Runs the examples kept off CRAN, such as arrow_duckdb()'s.
+      # Runs the examples kept off CRAN.
       NOT_CRAN: true
     permissions:
       contents: write

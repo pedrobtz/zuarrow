@@ -66,13 +66,3 @@ test_that("a null struct row is NA in every column", {
   out <- arrow_to_r(array)
   expect_identical(out, data.frame(x = c(1L, NA), y = c("a", NA)))
 })
-
-test_that("a struct with an offset reads its children from that offset", {
-  skip_if_not_installed("nanoarrow")
-  array <- nanoarrow::as_nanoarrow_array(data.frame(x = 1:4, y = letters[1:4]))
-  sliced <- nanoarrow::nanoarrow_array_modify(
-    array,
-    list(offset = 2, length = 2)
-  )
-  expect_identical(arrow_to_r(sliced), data.frame(x = 3:4, y = c("c", "d")))
-})

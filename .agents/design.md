@@ -18,7 +18,9 @@ Adopted from [RFC 0041](https://github.com/pedrobtz/packages/blob/main/rfcs/star
 - **Packages:** `zuarrow` (not yet created; the name was absent from
   crandb and from the `pedrobtz` account on 2026-10-21). `Imports:
   zukomp` and `LinkingTo: zukomp` for the IPC codecs (D2); nothing else.
-  `Suggests: testthat, nanoarrow, arrow, zuint, decimal, zutempo`.
+  `Suggests: testthat, withr, decimal, zujson`. *2026-11-04:* `nanoarrow`,
+  `arrow`, `DBI` and `duckdb` left `Suggests`; they are test oracles run
+  in CI only (§9).
   Vendors the nanoarrow C library's core and IPC components
   (Apache-2.0), and its integration-testing header for the test harness
   only (§7). MIT for its own code, with the vendored licences in
@@ -204,11 +206,11 @@ asked at each nanoarrow release (§15 Q1).
   schema metadata, byte-identical output across platforms.
 - **Nulls** (§6.9): the NA, NaN and sentinel rules, both directions.
 - **The registry** (§6.10): `arrow_register()` and its dispatch keys.
-- **A DuckDB helper** (§6.12): `arrow_duckdb()`, moved here from §14 on
-  2026-11-03 under X6(a) of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6).
+- ~~**A DuckDB helper** (§6.12)~~: removed 2026-11-04; see §6.12.
 - **Validation, comparison and metadata** (§6.11): `arrow_validate()`,
   `arrow_equal()`, `arrow_metadata()` and the schema printer.
-- A README and one article, "Receiving a DuckDB result without rounding".
+- A README. The article "Receiving a DuckDB result without rounding"
+  was removed with the DuckDB helper (§6.12).
 
 **Not in v0.1.0, and why:**
 
@@ -253,13 +255,13 @@ symbol beginning `zar_` or `ZAR_`.
 
 **Relationships, as decided rather than as hoped:**
 
-- **`nanoarrow`**: `Suggests`. Never `Imports` or `LinkingTo`: zuarrow
-  vendors the C library (D1) and reproduces the handle layout (D6). Used
-  in tests to prove interchange both ways, and as the target of delayed
-  S3 registrations (`as_nanoarrow_array_stream()` and friends) so a
-  zuarrow handle is accepted wherever a nanoarrow one is.
-- **`arrow`**: `Suggests`. The heavy oracle (§9): it reads what zuarrow
-  writes and zuarrow reads what it writes, including compressed bodies.
+- **`nanoarrow`**: not a dependency, not even `Suggests` (*2026-11-04*):
+  zuarrow is an alternative to it, vendors the C library (D1) and
+  reproduces the handle layout (D6). It is a CI-only oracle (§9) that
+  proves interchange both ways.
+- **`arrow`**: not a dependency (*2026-11-04*). The heavy oracle (§9), CI only:
+  it reads what zuarrow writes and zuarrow reads what it writes,
+  including compressed bodies.
 - **`zuint`** (RFC 0009): registers `int64`, `uint64`, `int128` and
   `uint128` targets at load. Decided 2026-11-03 under X2(b) of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6):
   `zuint` stays in `Suggests` and registers, and is never an `Imports`,
@@ -357,7 +359,6 @@ arrow_to_r(x, to = NULL,
 as.data.frame(stream, ...)               # S3, same arguments
 as.vector(array, ...)                    # S3
 arrow_next(stream, ...)                  # one batch as a data frame, or NULL
-arrow_duckdb(con, sql, to = NULL, lossy = "error")   # §6.12
 # the IPC formats
 arrow_read(x, columns = NULL, lazy = FALSE, to = NULL,
            lossy = "error", limits = arrow_limits())
@@ -777,29 +778,13 @@ Four things the C library has and the nanoarrow binding does not reach:
 
 ### 6.12 The DuckDB helper
 
-`arrow_duckdb(con, sql, to = NULL, lossy = "error")` runs a query on a
-DuckDB connection and returns a data frame through the same conversion as
-`arrow_to_r()`, registry applied. Added 2026-11-03 (X6(a) of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6)).
-
-- **Route.** `DBI::dbSendQueryArrow()` and `DBI::dbFetchArrow()`, which
-  duckdb 1.5.4 implements natively and returns as a nanoarrow stream
-  handle that zuarrow reads as its own (D6). zuint's
-  `zu_duckdb_query()` used `duckdb_fetch_arrow()` and needed `arrow` as
-  well; this route needs neither `arrow` nor a `:::` call. DBI's default
-  methods go through a data frame and would round a `BIGINT` first, so
-  the helper refuses any result that is not duckdb's own Arrow result.
-- **Lossless conversion.** The query runs with
-  `arrow_lossless_conversion` on, so `HUGEINT` and `UHUGEINT` arrive as
-  `arrow.opaque` over `fixed_size_binary(16)` (vendor `DuckDB`, type
-  `hugeint` or `uhugeint`) and not as `decimal128(38, 0)`. With nothing
-  registered they pass through as 16-byte raw vectors with the extension
-  in their attributes. The setting is put back on exit.
-- **A data frame, not a stream.** §14 had it return a stream. It returns
-  a data frame because the result is cleared on exit; a caller who wants
-  batches uses `DBI::dbFetchArrow()` and `arrow_next()` directly.
-- **Dependencies.** `DBI (>= 1.2.0)`, `duckdb (>= 1.5.4)` and
-  `nanoarrow` (which duckdb's method requires) are `Suggests`. A missing
-  one is a `zuarrow_dependency_error`.
+*Removed 2026-11-04.* `arrow_duckdb()` (added 2026-11-03 under X6(a)) needed
+`DBI`, `duckdb` and `nanoarrow`, and moving data from an engine is
+transport, which zuarrow is not. A DuckDB result reaches zuarrow without
+it: `DBI::dbExecute(con, "SET arrow_lossless_conversion = true")`, then
+`arrow_to_r(DBI::dbGetQueryArrow(con, sql))`. The setting makes DuckDB
+export `HUGEINT` and `UHUGEINT` as `arrow.opaque` rather than as
+`decimal128(38, 0)`. DuckDB stays a CI-only oracle (§9).
 
 ## 7. Vendored code
 
@@ -905,10 +890,18 @@ dependency:
    and the reverse, for every built-in type, through `as.data.frame()`
    on both sides; a stream zuarrow writes is read by `read_nanoarrow()`
    and the reverse.
-4. **`arrow` 25.** `arrow::write_feather()` with each compression is read
+4. **`arrow` 25.** `arrow::write_ipc_file()` with each compression is read
    by `arrow_read()`; `arrow_write()` with each option is read by
-   `arrow::read_feather()` and `arrow::read_ipc_stream()`; the
+   `arrow::read_ipc_file()` and `arrow::read_ipc_stream()`; the
    round-trip frame is identical for the exact types.
+
+*Decided 2026-11-04:* oracles 3 and 4, and DuckDB as a producer, are not
+dependencies. Their tests are `tests/testthat/test-ci-*.R`, with helpers
+in `helper-ci-*.R`; `.Rbuildignore` leaves those files out of the
+tarball, so R CMD check and CRAN never see them. The `oracles` workflow
+runs them from the source tree with every oracle installed and
+`ZUARROW_ORACLES=true`, which turns a missing oracle into a failure.
+Locally `devtools::test()` runs them and skips what is not installed.
 
 Property tests: for every built-in exact type and random values with
 nulls, `arrow_to_r(arrow_array(x))` is identical to `x`,
@@ -1136,7 +1129,7 @@ them. None was discussed before writing.
   `LinkingTo: zubin, zufast` once `zubin` is on CRAN; half floats widened
   by `zufast`'s rule; §4's layer 3 over `zubin`'s kernels and `column.h`;
   zero copy through `zubin`'s foreign buffer (D8). The DuckDB helper left
-  this list for §6.12 the same day.
+  this list for §6.12 the same day, and the package on 2026-11-04.
 - **Writing run-end-encoded and view types**, if a consumer produces
   them.
 - **Arrow's cross-implementation integration suite**: the `integration/`

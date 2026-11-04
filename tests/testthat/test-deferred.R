@@ -22,22 +22,6 @@ test_that("strings are created on first use and the batches then let go", {
   expect_identical(deferred_info(x), list(made = 3, holds_arrays = FALSE))
 })
 
-test_that("large_string and sliced arrays are deferred", {
-  big <- arrow_array(c("p", NA, "qr"), schema = "U")
-  x <- arrow_to_r(big, copy = FALSE)
-  expect_false(is.null(deferred_info(x)))
-  expect_identical(x, c("p", NA, "qr"))
-
-  skip_if_not_installed("nanoarrow")
-  sliced <- nanoarrow::nanoarrow_array_modify(
-    nanoarrow::as_nanoarrow_array(c("a", NA, "c", "d")),
-    list(offset = 1L, length = 2L)
-  )
-  y <- arrow_to_r(sliced, copy = FALSE)
-  expect_false(is.null(deferred_info(y)))
-  expect_identical(y, c(NA, "c"))
-})
-
 test_that("a struct field is deferred unless the struct has nulls", {
   df <- data.frame(id = 1:2)
   df$inner <- data.frame(s = c("a", "b"))
@@ -92,14 +76,6 @@ test_that("copy = FALSE raises the same errors at the same time", {
     arrow_to_r(nul, lossy = "allow", copy = FALSE),
     arrow_to_r(nul, lossy = "allow")
   )
-})
-
-test_that("a released array is a handle error, not a crash", {
-  skip_if_not_installed("nanoarrow")
-  array <- arrow_array(c("x", "y"))
-  x <- arrow_to_r(array, copy = FALSE)
-  nanoarrow::nanoarrow_pointer_release(array)
-  expect_error(x[[1]], class = "zuarrow_handle_error")
 })
 
 test_that("a deferred vector saves and modifies as an ordinary one", {
