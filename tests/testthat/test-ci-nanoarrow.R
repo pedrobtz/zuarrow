@@ -3,12 +3,7 @@
 # (.Rbuildignore) and runs from the source tree, in CI by oracles.yaml.
 
 # From test-deferred.R.
-test_that("large_string and sliced arrays are deferred", {
-  big <- arrow_array(c("p", NA, "qr"), schema = "U")
-  x <- arrow_to_r(big, copy = FALSE)
-  expect_false(is.null(deferred_info(x)))
-  expect_identical(x, c("p", NA, "qr"))
-
+test_that("sliced arrays are deferred", {
   skip_without_oracle("nanoarrow")
   sliced <- nanoarrow::nanoarrow_array_modify(
     nanoarrow::as_nanoarrow_array(c("a", NA, "c", "d")),
@@ -17,15 +12,6 @@ test_that("large_string and sliced arrays are deferred", {
   y <- arrow_to_r(sliced, copy = FALSE)
   expect_false(is.null(deferred_info(y)))
   expect_identical(y, c(NA, "c"))
-})
-
-# From test-deferred.R.
-test_that("a released array is a handle error, not a crash", {
-  skip_without_oracle("nanoarrow")
-  array <- arrow_array(c("x", "y"))
-  x <- arrow_to_r(array, copy = FALSE)
-  nanoarrow::nanoarrow_pointer_release(array)
-  expect_error(x[[1]], class = "zuarrow_handle_error")
 })
 
 # From test-dictionary.R.
@@ -61,27 +47,6 @@ test_that("sliced arrays convert from their offset", {
     arrow_to_r(slice(c("a", NA, "cc", "d"), 1L, 3L)),
     c(NA, "cc", "d")
   )
-})
-
-# From test-handles.R.
-test_that("a released stream is a handle error", {
-  skip_without_oracle("nanoarrow")
-  stream <- arrow_stream(data.frame(a = 1:3))
-  nanoarrow::nanoarrow_pointer_release(stream)
-  expect_error(arrow_next(stream), class = "zuarrow_handle_error")
-  expect_error(arrow_to_r(stream), class = "zuarrow_handle_error")
-  expect_error(arrow_validate(stream), class = "zuarrow_handle_error")
-})
-
-# From test-handles.R.
-test_that("an array whose schema was released is a handle error", {
-  skip_without_oracle("nanoarrow")
-  array <- arrow_array(1:3)
-  # nanoarrow returns the array's own schema, the handle's tag, not a copy.
-  nanoarrow::nanoarrow_pointer_release(nanoarrow::infer_nanoarrow_schema(array))
-  expect_error(arrow_to_r(array), class = "zuarrow_handle_error")
-  expect_error(arrow_schema(array), class = "zuarrow_handle_error")
-  expect_error(arrow_validate(array), class = "zuarrow_handle_error")
 })
 
 # From test-nulls.R.

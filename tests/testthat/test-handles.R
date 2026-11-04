@@ -166,3 +166,29 @@ test_that("finalizers release handles without error", {
   # only by crashing, as a double free or a bad release would.
   expect_no_error(gc())
 })
+
+test_that("a released stream is a handle error", {
+  stream <- arrow_stream(data.frame(a = 1:3))
+  test_release(stream)
+  expect_error(arrow_next(stream), class = "zuarrow_handle_error")
+  expect_error(arrow_to_r(stream), class = "zuarrow_handle_error")
+  expect_error(arrow_validate(stream), class = "zuarrow_handle_error")
+  expect_error(arrow_schema(stream), class = "zuarrow_handle_error")
+  expect_identical(format(stream), "<zuarrow_array_stream [released]>")
+})
+
+test_that("a released schema is a handle error", {
+  schema <- arrow_schema("i")
+  test_release(schema)
+  expect_error(arrow_schema(schema), class = "zuarrow_handle_error")
+  expect_error(arrow_validate(schema), class = "zuarrow_handle_error")
+  expect_identical(format(schema), "<zuarrow_schema [released]>")
+})
+
+test_that("an array whose schema was released is a handle error", {
+  array <- arrow_array(1:3)
+  test_release(array, schema = TRUE)
+  expect_error(arrow_to_r(array), class = "zuarrow_handle_error")
+  expect_error(arrow_schema(array), class = "zuarrow_handle_error")
+  expect_error(arrow_validate(array), class = "zuarrow_handle_error")
+})

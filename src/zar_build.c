@@ -186,3 +186,29 @@ SEXP zar_c_test_failing_stream(SEXP schema_xptr) {
   UNPROTECT(1);
   return out;
 }
+
+/* Releases a schema, array or stream handle in place, as another consumer
+   or nanoarrow_pointer_release() would, so tests reach the released paths
+   without nanoarrow (#106). The struct stays allocated, marked released.
+   With `tag` true it releases the handle's tag instead: an array's own
+   schema. */
+SEXP zar_c_test_release(SEXP x, SEXP tag) {
+  if (TYPEOF(x) == EXTPTRSXP && Rf_asLogical(tag) == TRUE) {
+    x = R_ExternalPtrTag(x);
+  }
+  void *addr = TYPEOF(x) == EXTPTRSXP ? R_ExternalPtrAddr(x) : NULL;
+  if (addr == NULL) return zar_failure("handle", "expected a live handle");
+  if (Rf_inherits(x, "nanoarrow_schema")) {
+    struct ArrowSchema *schema = (struct ArrowSchema *)addr;
+    if (schema->release != NULL) schema->release(schema);
+  } else if (Rf_inherits(x, "nanoarrow_array")) {
+    struct ArrowArray *array = (struct ArrowArray *)addr;
+    if (array->release != NULL) array->release(array);
+  } else if (Rf_inherits(x, "nanoarrow_array_stream")) {
+    struct ArrowArrayStream *stream = (struct ArrowArrayStream *)addr;
+    if (stream->release != NULL) stream->release(stream);
+  } else {
+    return zar_failure("handle", "expected a schema, array or stream handle");
+  }
+  return R_NilValue;
+}
