@@ -27,7 +27,9 @@ jobs:
     uses: pedrobtz/r-actions/.github/workflows/gctorture.yml@v1
     with:
       profile: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 'full' || 'quick' }}
-      test-timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 0 || 10 }}
+      # Inverted, because `cond && 0 || 10` is always 10: an expression
+      # treats 0 as false.
+      test-timeout-minutes: ${{ (github.event_name != 'schedule' && github.event_name != 'workflow_dispatch') && 10 || 0 }}
       timeout-minutes: 240
       # ZUARROW_GCTORTURE makes the loops that repeat one path run a fixed
       # sample (helper-gctorture.R); every path still runs.
