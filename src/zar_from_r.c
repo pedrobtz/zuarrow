@@ -703,6 +703,19 @@ static int zar_build_dictionary(struct ArrowArray *array,
                          (int64_t)Rf_xlength(levels), b);
 }
 
+/* Whether two schemas have the same type: format strings, children and
+   dictionaries, recursively. Names, flags and metadata do not matter. The
+   same rule as zar_same_type() in the IPC reader, whose core builds
+   without R. */
+static int zar_same_type(const struct ArrowSchema *a, const struct ArrowSchema *b) {
+  if (a == NULL || b == NULL) return a == b;
+  if (strcmp(a->format, b->format) != 0 || a->n_children != b->n_children) return 0;
+  for (int64_t i = 0; i < a->n_children; i++) {
+    if (!zar_same_type(a->children[i], b->children[i])) return 0;
+  }
+  return zar_same_type(a->dictionary, b->dictionary);
+}
+
 /* An array a registered `from` handler built: moved into its slot after
    its schema is checked against the slot's. */
 static int zar_build_prebuilt(struct ArrowArray *array,
@@ -713,10 +726,16 @@ static int zar_build_prebuilt(struct ArrowArray *array,
   SEXP tag = zar_array_schema_xptr(x, &b->error);
   if (tag == NULL) return zar_build_fail(b, "handle", NA_REAL);
   struct ArrowSchema *src_schema = zar_schema_from_xptr(tag, &b->error);
-  if (strcmp(src_schema->format, schema->format) != 0 ||
-      src_schema->n_children != schema->n_children) {
+  if (src_schema == NULL) return zar_build_fail(b, "handle", NA_REAL);
+  /* The whole type, not just the top-level format: a handler may pick the
+     type from the values, so one batch can build list<int32> where the
+     column's schema says list<int64> (#100). */
+  if (!zar_same_type(src_schema, schema)) {
+    char built[256], wanted[256];
+    ArrowSchemaToString(src_schema, built, sizeof(built), 1);
+    ArrowSchemaToString(schema, wanted, sizeof(wanted), 1);
     ArrowErrorSet(&b->error, "a registered handler built %s where the schema says %s",
-                  src_schema->format, schema->format);
+                  built, wanted);
     return zar_build_fail(b, "registry", NA_REAL);
   }
   if (src->length != n) {
