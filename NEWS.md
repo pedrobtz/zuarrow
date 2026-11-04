@@ -103,6 +103,12 @@
   dictionary already holding values, for fixed-width, binary and string
   values. Before, the bundled decoder refused it with a
   `zuarrow_format_error` (#81).
+* `arrow_read()` bounds what delta dictionaries build. Each delta copies
+  the whole dictionary, so many small deltas could take memory and time
+  quadratic in their number. A dictionary that deltas extend is now held to
+  `max_batch_rows` values and `max_message` bytes, and every byte the
+  copies build counts against the new `max_dictionary` limit of
+  `arrow_limits()`. Going over one is a `zuarrow_limit_error` (#101).
 * A stream whose next batch fails raises the same class from every
   function: a `zuarrow_format_error`, `zuarrow_limit_error` or
   `zuarrow_codec_error` from zuarrow's IPC reader, and a
