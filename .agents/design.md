@@ -857,7 +857,11 @@ dependency:
    Cases whose types are lossy without the family packages are read
    with `lossy = "character"` and compared with the JSON's own text
    encoding of integers and decimals, and again exactly when `zuint`,
-   `decimal` and `zutempo` are installed. The `cpp-21.0.0` directory's
+   `decimal` and `zutempo` are installed. *2026-11-04:* the integer and
+   decimal text is compared with the `.json.gz` read by `zujson`, a
+   test-only `Suggests`, rather than by nanoarrow's integration-testing
+   reader. File-against-stream identity and the comparison with libarrow
+   cover the other types. The `cpp-21.0.0` directory's
    `binary_view`, `list_view` and `run_end_encoded` cases must decode
    (§6.7). The `union` case must raise `zuarrow_lossy_error` without
    crashing. The big-endian directory must error cleanly, since v0.1.0

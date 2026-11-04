@@ -34,10 +34,12 @@ Imports:
 Suggests: 
     arrow,
     DBI (>= 1.2.0),
+    decimal,
     duckdb (>= 1.5.4),
     nanoarrow,
     testthat (>= 3.0.0),
-    withr
+    withr,
+    zujson
 LinkingTo: 
     zukomp (> 0.1.0)
 Remotes: 
