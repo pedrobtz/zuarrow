@@ -865,6 +865,12 @@ otherwise turn `lossy = "warn"` into an error.
 `arrow_schema()` on any handle never raises on content; `arrow_next()`
 after the end returns `NULL` rather than raising.
 
+*Decided 2026-11-04 (#83):* a stream's failing `get_next()` raises the
+same class from every consumer (`arrow_next()`, `arrow_to_r()`,
+`arrow_write()`, `arrow_validate()`, `arrow_equal()`). zuarrow's own IPC
+reader names the kind of its failure (`format`, `limit` or `codec`), and
+any other producer's failure is a `zuarrow_handle_error`.
+
 ## 9. Testing
 
 `testthat` 3e. One file per subsection of §6. Four oracles, none a

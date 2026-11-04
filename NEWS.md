@@ -106,6 +106,12 @@
 
 ## Fixes
 
+* A stream whose next batch fails raises the same class from every
+  function: a `zuarrow_format_error`, `zuarrow_limit_error` or
+  `zuarrow_codec_error` from zuarrow's IPC reader, and a
+  `zuarrow_handle_error` from any other producer. Before,
+  `arrow_validate()` and `arrow_equal()` always raised a handle error
+  (#83).
 * A registered `from` handler is called once on the whole column, and the
   column takes the type of the array it returns. So a handler may choose
   the type from the values, as `decimal` chooses a precision, and

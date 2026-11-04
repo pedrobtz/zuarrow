@@ -135,3 +135,9 @@ ext_schema <- function(format, name, metadata = raw()) {
     dictionary = NULL
   ))
 }
+
+# A stream from a producer other than zuarrow's reader, whose get_next()
+# always fails.
+test_failing_stream <- function(schema) {
+  .Call(zuarrow:::zar_c_test_failing_stream, schema)
+}

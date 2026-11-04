@@ -81,7 +81,10 @@ SEXP zar_c_stream_validate(SEXP x, SEXP level) {
       const char *msg = stream->get_last_error(stream);
       ArrowErrorSet(&error, "batch %ld could not be read: %s", batch,
                     msg == NULL ? strerror(code) : msg);
-      kind = "handle";
+      /* As arrow_next() does: a zuarrow reader names its own kind, any
+         other producer's failure is a handle error (#83). */
+      kind = zar_reader_kind(stream);
+      if (kind == NULL) kind = "handle";
       break;
     }
     if (array.release == NULL) break;
@@ -483,6 +486,8 @@ SEXP zar_c_stream_equal(SEXP x, SEXP y, SEXP metadata) {
         const char *msg = s[i]->get_last_error(s[i]);
         ArrowErrorSet(&error, "batch %ld could not be read: %s", batch,
                       msg == NULL ? strerror(code) : msg);
+        kind = zar_reader_kind(s[i]);
+        if (kind == NULL) kind = "handle";
         if (a[0].release != NULL) a[0].release(&a[0]);
         equal = -1;
         goto done;
