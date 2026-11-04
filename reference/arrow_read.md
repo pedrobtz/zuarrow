@@ -22,7 +22,10 @@ arrow_read(
 
 - x:
 
-  A path, a raw vector, or a connection, which is read to its end.
+  A path, a raw vector, or a connection, which is read to its end. Or a
+  list of these, each a whole IPC stream, read as one: Spark Connect,
+  for one, sends each batch of a result as its own stream. Every stream
+  must have the first one's schema, or it is a `zuarrow_format_error`.
 
 - columns:
 

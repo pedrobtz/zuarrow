@@ -108,6 +108,10 @@
   stream format (`.arrows`) from a path, a raw vector or a connection,
   eagerly into a data frame or lazily as a stream, with column
   selection.
+- [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  also takes a list of IPC streams and reads them as one, as Spark
+  Connect sends a result: one data frame, or with `lazy = TRUE` one
+  stream. Every stream must have the first one’s schema.
 - LZ4 and zstd bodies are decompressed through ‘zukomp’, so a compressed
   file opens everywhere; dictionary batches and deltas are applied, and
   the binary-view, string-view, list-view and run-end-encoded layouts

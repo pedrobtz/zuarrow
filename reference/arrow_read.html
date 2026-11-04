@@ -65,7 +65,10 @@ found from the first bytes, whatever the source is called.</p>
 
 
 <dl><dt id="arg-x">x<a class="anchor" aria-label="anchor" href="#arg-x"></a></dt>
-<dd><p>A path, a raw vector, or a connection, which is read to its end.</p></dd>
+<dd><p>A path, a raw vector, or a connection, which is read to its end.
+Or a list of these, each a whole IPC stream, read as one: Spark Connect,
+for one, sends each batch of a result as its own stream. Every stream
+must have the first one's schema, or it is a <code>zuarrow_format_error</code>.</p></dd>
 
 
 <dt id="arg-columns">columns<a class="anchor" aria-label="anchor" href="#arg-columns"></a></dt>

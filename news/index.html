@@ -88,6 +88,8 @@
 <h3 id="the-ipc-file-and-stream-formats-0-1-0">The IPC file and stream formats<a class="anchor" aria-label="anchor" href="#the-ipc-file-and-stream-formats-0-1-0"></a></h3>
 <ul><li>
 <code><a href="../reference/arrow_read.html">arrow_read()</a></code> reads the Arrow IPC file format (<code>.arrow</code>, Feather version 2) and stream format (<code>.arrows</code>) from a path, a raw vector or a connection, eagerly into a data frame or lazily as a stream, with column selection.</li>
+<li>
+<code><a href="../reference/arrow_read.html">arrow_read()</a></code> also takes a list of IPC streams and reads them as one, as Spark Connect sends a result: one data frame, or with <code>lazy = TRUE</code> one stream. Every stream must have the first one’s schema.</li>
 <li>LZ4 and zstd bodies are decompressed through ‘zukomp’, so a compressed file opens everywhere; dictionary batches and deltas are applied, and the binary-view, string-view, list-view and run-end-encoded layouts decode.</li>
 <li>Every message is verified and checked against <code><a href="../reference/arrow_limits.html">arrow_limits()</a></code> before it is used, and every batch passes full validation, so hostile input is a <code>zuarrow_format_error</code> or <code>zuarrow_limit_error</code>. Big-endian input is refused.</li>
 <li>Full validation also checks that every binary or string view points inside its buffers, which the bundled C library does not.</li>
