@@ -221,3 +221,49 @@ ipc_utf8_dictionary <- function(id, values, is_delta = FALSE) {
     is_delta = is_delta
   )
 }
+
+# A stream of one column `x`, int32 indices `codes` into an int32
+# dictionary of `values`.
+int_dictionary_stream <- function(codes, values) {
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("i")
+  array <- test_array(
+    test_schema(zspec("+s", children = list(spec))),
+    length(codes),
+    list(NULL),
+    children = list(test_array_spec(
+      length(codes),
+      list(NULL, le_int(codes, 4L)),
+      dictionary = test_array_spec(
+        length(values),
+        list(NULL, le_int(values, 4L))
+      )
+    ))
+  )
+  arrow_write(array, NULL, format = "stream")
+}
+
+# A dictionary batch of int32 values, NA as a null, as
+# ipc_dictionary_message() takes.
+ipc_int32_dictionary <- function(id, values, is_delta = FALSE) {
+  n <- length(values)
+  nulls <- is.na(values)
+  pad <- function(x) c(x, raw((8 - length(x) %% 8) %% 8))
+  validity <- if (any(nulls)) {
+    pad(packBits(c(!nulls, logical((8 - n %% 8) %% 8)), "raw"))
+  } else {
+    raw()
+  }
+  data <- pad(le_int(ifelse(nulls, 0, values), 4L))
+  ipc_dictionary_message(
+    id,
+    n,
+    nodes = list(c(n, sum(nulls))),
+    buffers = list(
+      c(0, length(validity)),
+      c(length(validity), n * 4)
+    ),
+    body = c(validity, data),
+    is_delta = is_delta
+  )
+}

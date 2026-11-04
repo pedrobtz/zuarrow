@@ -602,7 +602,10 @@ tensor extensions pass through as storage with the attribute.
 - **Dictionaries.** Dictionary batches before the first record batch, and
   delta batches between record batches, are applied as the specification
   says; a replacement dictionary in the file format is an error, as the
-  format forbids it.
+  format forbids it. *2026-11-04 (#81):* a delta onto a dictionary that
+  already holds values appends to it, through vendored patch 0015, for
+  fixed-width, binary and string values. A delta onto a dictionary of any
+  other value type is a `zuarrow_format_error`.
 - **Newer layouts.** Run-end-encoded arrays are decoded to their value
   type; string-view, binary-view and list-view arrays are converted by
   copying through their views. nanoarrow's IPC decoder stops short of

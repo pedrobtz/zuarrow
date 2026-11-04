@@ -53,8 +53,8 @@ test_that("a delta dictionary batch extends the dictionary", {
     ipc_eos()
   )
   expect_identical(arrow_read(delta)$f, factor(c("a", "b")))
-  # The vendored decoder cannot yet concatenate a delta onto a dictionary
-  # that holds values; until it can, that is a format error, not a misread.
+  # A delta onto a dictionary that already holds values appends to it
+  # (tools/patches/0015-dictionary-delta-concat.patch, #81).
   later <- factor_stream(c("a", "b", "c"), "c")
   later_batch <- ipc_message_bytes(later, ipc_messages(later)[[3]])
   extend <- c(
@@ -65,7 +65,30 @@ test_that("a delta dictionary batch extends the dictionary", {
     later_batch,
     ipc_eos()
   )
-  expect_error(arrow_read(extend), class = "zuarrow_format_error")
+  expect_identical(
+    arrow_read(extend)$f,
+    factor(c("a", "b", "c"), levels = c("a", "b", "c"))
+  )
+})
+
+test_that("deltas extend a fixed-width dictionary, nulls included", {
+  first <- int_dictionary_stream(c(0, 1), c(10, 20))
+  m <- ipc_messages(first)
+  batch <- function(codes) {
+    bytes <- int_dictionary_stream(codes, seq_len(max(codes) + 1))
+    ipc_message_bytes(bytes, ipc_messages(bytes)[[3]])
+  }
+  stream <- c(
+    ipc_message_bytes(first, m[[1]]),
+    ipc_message_bytes(first, m[[2]]),
+    ipc_message_bytes(first, m[[3]]),
+    ipc_int32_dictionary(0, c(30, NA), is_delta = TRUE),
+    batch(c(2, 3)),
+    ipc_int32_dictionary(0, 40, is_delta = TRUE),
+    batch(c(4, 0)),
+    ipc_eos()
+  )
+  expect_identical(arrow_read(stream)$x, c(10L, 20L, 30L, NA, 40L, 10L))
 })
 
 test_that("a file's blocks must name messages of their kind", {
