@@ -380,7 +380,11 @@ arrow_types()                            # the built-in table of §6.2
 zuarrow_info()
 ```
 
-`x` in `arrow_read()` is a path, a raw vector or a connection. With
+`x` in `arrow_read()` is a path, a raw vector or a connection, or a
+list of them read as one stream (2026-11-04, for `zuspark`: Spark
+Connect sends each batch of a result as its own IPC stream). Every
+stream must have the first one's schema, or it is a
+`zuarrow_format_error`. `max_bytes` bounds their total. With
 `lazy = TRUE` it returns a stream handle whose batches are decoded on
 `arrow_next()`; otherwise a data frame. `arrow_write()` returns `x`
 invisibly for a path or connection, or the raw vector when `x` is

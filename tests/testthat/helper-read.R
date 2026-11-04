@@ -56,3 +56,7 @@ patch_bytes <- function(bytes, from, to) {
   bytes[at[[1]]:(at[[1]] + length(from) - 1L)] <- to
   bytes
 }
+
+# The bytes of `df` written as one IPC stream, as a Spark Connect
+# ArrowBatch carries them.
+stream_bytes <- function(df) arrow_write(df, NULL, format = "stream")
