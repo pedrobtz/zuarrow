@@ -496,3 +496,79 @@ test_that("an inexact registration named in `to` needs warn or allow", {
     class = "zuarrow_lossy_warning"
   )
 })
+
+test_that("a from handler whose type depends on the values writes in batches", {
+  # int8 when every value fits, int16 otherwise: the type is the whole
+  # column's, and each batch is a slice of one array (issue #91).
+  local_registration(
+    "s",
+    from = function(x) {
+      v <- unclass(x)
+      arrow_array(v, schema = if (all(abs(v) < 128L)) "c" else "s")
+    },
+    class = "fake_wide"
+  )
+  x <- structure(c(1L, 2L, 300L, 4L, 5L), class = "fake_wide")
+  df <- data.frame(id = 1:5)
+  df$w <- x
+
+  stream <- arrow_stream(df, batch = 2)
+  expect_identical(format(arrow_schema(stream)), "struct<id: int32, w: int16>")
+  expect_identical(as.data.frame(stream)$w, unclass(x))
+
+  bytes <- arrow_write(df, NULL, format = "stream", batch = 2)
+  expect_identical(arrow_read(bytes)$w, unclass(x))
+
+  small <- structure(1:3, class = "fake_wide")
+  expect_identical(format(arrow_schema(arrow_array(small))), "int8")
+})
+
+test_that("a batch keeps the whole registered column's array alive", {
+  local_registration(
+    "i",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_int"
+  )
+  df <- data.frame(id = 1:4)
+  df$v <- structure(c(10L, 20L, 30L, 40L), class = "fake_int")
+  stream <- arrow_stream(df, batch = 3)
+  rm(df)
+  gc()
+  expect_identical(as.data.frame(stream)$v, c(10L, 20L, 30L, 40L))
+})
+
+test_that("copied slices keep nulls and bits across batch boundaries", {
+  local_registration(
+    "i",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_int"
+  )
+  local_registration(
+    "b",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_bool"
+  )
+  v <- c(1L, NA, 3L, 4L, NA, 6L, 7L, 8L, 9L, NA, 11L)
+  b <- c(TRUE, NA, FALSE, TRUE, TRUE, NA, FALSE, FALSE, TRUE, TRUE, NA)
+  df <- data.frame(id = seq_along(v))
+  df$v <- structure(v, class = "fake_int")
+  df$b <- structure(b, class = "fake_bool")
+  for (batch in c(1, 3, 5, 10)) {
+    bytes <- arrow_write(df, NULL, format = "stream", batch = batch)
+    out <- arrow_read(bytes)
+    expect_identical(out$v, v, info = batch)
+    expect_identical(out$b, b, info = batch)
+  }
+})
+
+test_that("a variable-width registered column is built per batch", {
+  local_registration(
+    "u",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_text"
+  )
+  df <- data.frame(id = 1:5)
+  df$t <- structure(c("a", "bb", NA, "dddd", "e"), class = "fake_text")
+  bytes <- arrow_write(df, NULL, format = "stream", batch = 2)
+  expect_identical(arrow_read(bytes)$t, unclass(df$t))
+})
