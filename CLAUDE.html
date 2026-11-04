@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="index.html">zuarrow</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -48,7 +48,9 @@
 </div>
 <div class="section level2">
 <h2 id="current-state">Current state<a class="anchor" aria-label="anchor" href="#current-state"></a></h2>
-<p>Stages 0 to 8 of <code>.agents/roadmap.md</code> are merged. Stage 9 (the DuckDB helper and the typed-package contract), Stage 10 (v0.1.0 readiness) and Stage 11 (Review) remain. The first critical review (2026-10-27, issues labelled <code>review</code>) has been fixed on one branch.</p>
+<p>Stages 0 to 9 of <code>.agents/roadmap.md</code> are merged. Stage 10 (v0.1.0 readiness) is in progress, and Stage 11 (Review) follows it. The first critical review (2026-10-27, issues labelled <code>review</code>) has been fixed.</p>
+<p>The version is <code>0.1.0</code>. It builds on zukomp’s development version through <code>Remotes:</code>. Submission waits for zukomp 0.2.0, the release with the codecs, to reach CRAN, which can happen 2026-11-27 at the earliest. The first step of the CRAN-submission issue (#12) is then to remove <code>Remotes:</code> and set <code>zukomp (&gt;= 0.2.0)</code>. Stage 10 also wants an upstream nanoarrow pull request for vendored patch 0004.</p>
+<p><code>decimal</code>’s registration (decimal#24) is optional. It is tested when <code>decimal</code> provides it, and 0.1.0 does not wait for it (design §12).</p>
 </div>
 <div class="section level2">
 <h2 id="stage-tracking">Stage tracking<a class="anchor" aria-label="anchor" href="#stage-tracking"></a></h2>
@@ -102,7 +104,8 @@
 <li><p><strong>Internal constructors</strong> in <code>src/zar_build.c</code>: arrays from raw buffers, built without validation so tests can make malformed arrays, and a stream over arrays. Tests reach them through <code>helper-arrays.R</code>.</p></li>
 <li><p><strong>Conversion</strong> in <code>src/zar_to_r.c</code> (Arrow to R) and <code>src/zar_from_r.c</code> (R to Arrow). <code>zar_c_to_r</code> takes every batch at once: a plan per column picks the R form from the type and the lossy policy, a value scan settles the columns whose exactness depends on their values (<code>int64</code> past 2^53, <code>int32</code> <code>INT_MIN</code>, a NUL in a string), and each column is then allocated once and filled from every batch. <code>R/to-r.R</code> builds the data frame and raises the lossy conditions, naming the family package from <code>zar_exact_target()</code>.</p></li>
 <li><p><strong>Nested conversion.</strong> A plan is a tree that mirrors the schema. A <code>zar_slice</code> reads a node’s elements in one batch, either directly or through a map (a dictionary’s indices, a run-end encoding’s runs), and <code>up</code> points at the enclosing struct, whose null rows make its fields NA. Factors take the union of every batch’s dictionary through a small hash table. Export takes list columns flattened by <code>zar_prepare()</code> in R, so C never calls R.</p></li>
-<li><p><strong>The registry</strong> lives in <code>R/registry.R</code>. Registered columns are converted in R: C leaves them (<code>to</code> code 9), <code>zar_c_array_child()</code> lends each batch’s field to the handler, and the pieces are combined with <code><a href="https://rdrr.io/r/base/c.html" class="external-link">c()</a></code>. A <code>from</code> handler’s array is moved into its slot only after the rest is finished, because nanoarrow’s finishing walks every child’s <code>private_data</code> as its own.</p></li>
+<li><p><strong>The registry</strong> lives in <code>R/registry.R</code>. Registered columns are converted in R: C leaves them (<code>to</code> code 9), <code>zar_c_array_child()</code> lends each batch’s field to the handler, and the pieces are combined with <code><a href="https://rdrr.io/r/base/c.html" class="external-link">c()</a></code>. A <code>from</code> handler’s array is moved into its slot only after the rest is finished, because nanoarrow’s finishing walks every child’s <code>private_data</code> as its own. A <code>to</code> handler takes two arguments, or three if it also wants the <code>lossy</code> policy. Its arity is checked at registration. Keys are tried in a fixed order: an extension name, then an exact format string, then a pattern (<code>zar_handler_for()</code>).</p></li>
+<li><p><strong>The DuckDB helper</strong> in <code>R/duckdb.R</code>: <code><a href="reference/arrow_duckdb.html">arrow_duckdb()</a></code> turns on <code>arrow_lossless_conversion</code>, fetches through DuckDB’s Arrow stream export, and converts with <code><a href="reference/arrow_to_r.html">arrow_to_r()</a></code>. It puts the setting back as it was when it returns. <code>DBI</code>, <code>duckdb</code> and <code>nanoarrow</code> are <code>Suggests</code> only. The engine tests skip on CRAN, because DuckDB’s scheduler thread shows in valgrind as “possibly lost” (<code>tools/valgrind.supp</code>). <code>tools/ci-binaries.R</code> installs duckdb and arrow as binaries on the R-devel images.</p></li>
 <li><p><strong>The IPC reader</strong> in <code>src/zar_ipc_read.c</code> holds the input in memory and walks the stream’s messages or the file’s footer blocks over nanoarrow’s decoder. Before decoding it verifies each header, checks every field node, buffer range, buffer alignment and compression prefix against <code><a href="reference/arrow_limits.html">arrow_limits()</a></code> (<code>zar_check_record_batch()</code>), and copies a misaligned pre-0.15 message to aligned memory. Its core compiles without R under <code>ZAR_STANDALONE</code> for <code>tools/fuzz/harness.c</code>; <code>src/zar_codecs.c</code> is the zukomp adapter (a stub when standalone).</p></li>
 <li><p><strong>The IPC writer</strong> in <code>src/zar_ipc_write.c</code> encodes through <code>ArrowIpcEncoderEncodeBatch()</code>, which vendored patch 0013 adds: a record batch or a dictionary batch whose buffers go through zuarrow’s callback, 8-byte padded with zeros and compressed through zukomp. It writes the schema, each dictionary before the batch that first uses it, the batches, the end-of-stream marker, and for files the footer. <code>test-write.R</code> holds the MD5 of a fixed input in each format and codec, so a platform whose bytes differ fails.</p></li>
 <li><p><strong>Deferred strings</strong> in <code>src/zar_altrep.c</code>: with <code>copy = FALSE</code>, <code>zar_build()</code> turns a plain string or large_string column into an ALTREP <code>STRSXP</code> after the same per-value checks the copying fill makes. It keeps the batch handles in <code>data1</code>, caches each <code>CHARSXP</code> in <code>data2</code> on first access, and drops the handles once every element exists. It has no serialization method, so <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> writes a plain vector.</p></li>
@@ -127,6 +130,10 @@
 <strong>Validate before allocating</strong> (§6.7): nothing goes on the R heap for an IPC message that fails validation, and every IPC input gets nanoarrow’s <code>full</code> level. The <code>arrow-testing</code> crash corpus is the regression set.</li>
 <li>
 <strong>Little-endian only in v0.1.0</strong> (D13): a big-endian schema is a <code>zuarrow_format_error</code>, not a silent misread.</li>
+<li>
+<strong>Every crash input stays in the corpus.</strong> An input that the fuzz target or the crash corpus made fail goes into <code>tests/testthat/data/</code> with its fix. The fuzzer then uses it as a seed, and the tests pin its outcome. A vendored fix is a numbered patch in <code>tools/patches/</code>, offered upstream.</li>
+<li>
+<strong>DuckDB stays off CRAN.</strong> <code>local_duckdb()</code> and the <code><a href="reference/arrow_duckdb.html">arrow_duckdb()</a></code> example skip there. A new engine test goes through <code>local_duckdb()</code>.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="testing-conventions">Testing conventions<a class="anchor" aria-label="anchor" href="#testing-conventions"></a></h2>
@@ -143,7 +150,7 @@
 <li>
 <strong>Helpers live in <code>tests/testthat/helper-*.R</code>.</strong> <code>tests/testthat/README.md</code> records the C error branches no test can reach, and why.</li>
 <li>
-<strong>Keep the suite inside the CRAN time budget.</strong> No runtime recorded yet.</li>
+<strong>Keep the suite inside the CRAN time budget.</strong> The whole suite took 15 s on 2026-11-04 with the fixtures fetched and every Suggests installed: <code>devtools::test(shuffle = TRUE)</code>, macOS x86_64, R 4.5.2. Under gctorture it runs a sample of the repeated loops (<code>helper-gctorture.R</code>).</li>
 </ul></div>
 <div class="section level2">
 <h2 id="definition-of-done">Definition of done<a class="anchor" aria-label="anchor" href="#definition-of-done"></a></h2>
