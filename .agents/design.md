@@ -760,7 +760,15 @@ Four things the C library has and the nanoarrow binding does not reach:
   or every batch of a stream, returning `TRUE` or raising
   `zuarrow_format_error` with the path to the offending child. IPC input
   always gets `full` (§6.7); handles from another producer get `default`
-  on conversion and `full` on request.
+  on conversion and `full` on request. *2026-11-04 (#102):* foreign
+  producers are not trusted. Before reading any array, `arrow_to_r()` and
+  `arrow_equal()` run nanoarrow's `full` level on it (every offset
+  non-decreasing and inside its data or child, list-view ranges, run
+  ends, union offsets, dictionary indices) and zuarrow's view-layout
+  check, and a failure is `zuarrow_format_error`. UTF-8 is not checked
+  twice: conversion checks it as it copies, and `arrow_equal()` compares
+  bytes. The pass is O(n) over the offsets and costs nothing measurable
+  next to conversion.
 - **`arrow_equal(x, y, metadata = TRUE)`** compares two arrays or two
   streams value by value through nanoarrow's array comparison, nulls
   equal to nulls, and schemas including metadata unless told otherwise.

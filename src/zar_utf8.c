@@ -102,6 +102,15 @@ int zar_view_check_layout(const struct ArrowArrayView *view, const char *path,
   return NANOARROW_OK;
 }
 
+/* A foreign array arrives with default validation at most, which checks
+   only the first and last offsets (#102). Everything that reads a view
+   calls this first. */
+int zar_view_check_read(struct ArrowArrayView *view, struct ArrowError *error) {
+  int code = ArrowArrayViewValidate(view, NANOARROW_VALIDATION_LEVEL_FULL, error);
+  if (code != NANOARROW_OK) return code;
+  return zar_view_check_layout(view, "", error);
+}
+
 int zar_view_validate_utf8(const struct ArrowArrayView *view, const char *path,
                            struct ArrowError *error) {
   if (path[0] == '\0') {

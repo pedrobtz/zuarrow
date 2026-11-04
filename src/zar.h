@@ -73,6 +73,12 @@ int zar_schema_check_text(const struct ArrowSchema *schema, struct ArrowError *e
 int zar_view_check_layout(const struct ArrowArrayView *view, const char *path,
                           struct ArrowError *error);
 
+/* Checks a view of a foreign array before it is read: nanoarrow's full
+   level (every offset non-decreasing and inside its data or child, list
+   views, run ends, union offsets, dictionary indices) and then
+   zar_view_check_layout(). Not UTF-8, which conversion checks itself. */
+int zar_view_check_read(struct ArrowArrayView *view, struct ArrowError *error);
+
 /* Checks every non-null string in a view and its children is valid UTF-8,
    naming the path to the first that is not. */
 int zar_view_validate_utf8(const struct ArrowArrayView *view, const char *path,
