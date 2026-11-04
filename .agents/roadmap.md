@@ -192,7 +192,8 @@ metadata and printing from R.
 - Oracle 3 handle tests pass where `nanoarrow` is installed, and the suite
   passes on the `nosuggests` leg without it.
 - A full-profile r-actions run is green on the pull request and on the
-  merge commit.
+  merge commit, and a dispatched step-20 gctorture run is green on the
+  pull request's last commit.
 
 **Design.** §6.1, §6.11, §8, D6, D7; design stage 1.
 
@@ -461,9 +462,12 @@ with no new features.
 **Work.**
 
 - Run the full profile (`full-ci` label) and fix everything it finds:
-  gctorture at the sensitive step, valgrind, ASan, UBSan, rchk, every
-  platform leg including Windows R-devel, `nosuggests`, `nold`,
-  cran-special.
+  valgrind, ASan, UBSan, rchk, every platform leg including Windows
+  R-devel, `nosuggests`, `nold`, cran-special. Dispatch gctorture at the
+  sensitive step on the branch (`gh workflow run gctorture.yaml --ref
+  <branch>`) and fix what it finds, with any open `gctorture` issue the
+  scheduled run filed. *Since 2026-11-03 step 20 runs on a schedule and on
+  dispatch, not in the full profile (CLAUDE.md, Continuous integration).*
 - Confirm the Stage 6 determinism snapshot matches on the Linux, macOS and
   Windows legs.
 - Address any full-only failure a `quick` stage left as a comment on this
@@ -472,7 +476,8 @@ with no new features.
 **Exit criteria.**
 
 - A full-profile r-actions run is green on the pull request and on the
-  merge commit.
+  merge commit, and a dispatched step-20 gctorture run is green on the
+  pull request's last commit.
 - The determinism snapshot passes on every leg.
 
 **Recorded 2026-10-22.** #24 merged with only a diagnostic, and the full
