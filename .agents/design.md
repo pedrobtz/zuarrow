@@ -690,6 +690,17 @@ returning an R vector, which lets a registering package implement it in C
 through the `r.h` layout; `from` is a function of `(x)` returning an
 array handle.
 
+*Decided 2026-11-04 (#91):* `from` receives the whole column once, and the
+column's type is the type of the array it returns. A handler may pick
+that type from the values, as `decimal` picks a precision. Batches are
+cut from that one array. A batch that covers the whole column is the
+array itself. For a fixed-width layout, a smaller batch is a copy of its
+rows at offset 0: a validity bitmap and one buffer of fixed-size values,
+which covers every family registration. nanoarrow's IPC encoder refuses a
+nonzero offset, so a borrowed slice could not be written. For any other
+layout `from` is called again on each batch's rows, and each result must
+have the column's type, or it is a `zuarrow_registry_error`.
+
 Decided 2026-11-03 under X4 and X5 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6):
 
 - **The policy reaches the handler.** A `to` may take a third argument,

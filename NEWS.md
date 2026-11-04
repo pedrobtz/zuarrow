@@ -106,6 +106,12 @@
 
 ## Fixes
 
+* A registered `from` handler is called once on the whole column, and the
+  column takes the type of the array it returns. So a handler may choose
+  the type from the values, as `decimal` chooses a precision, and
+  `arrow_write()` and `arrow_stream()` write the column in batches of that
+  type (#91).
+
 * `arrow_metadata<-` raises `zuarrow_type_error` for a key that is not
   valid UTF-8 or a value that is not raw. Before, it raised a plain
   `zuarrow_error`.

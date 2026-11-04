@@ -1000,6 +1000,14 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
     code = ArrowArrayFinishBuilding(array, NANOARROW_VALIDATION_LEVEL_NONE, &b.error);
     if (code == NANOARROW_OK) {
       zar_swap_prebuilt(&b);
+      /* A prebuilt array may borrow its buffers, as a slice of a whole
+         registered column does: the result keeps their owners alive. */
+      SEXP keep = PROTECT(Rf_allocVector(VECSXP, b.n_prebuilt));
+      for (int k = 0; k < b.n_prebuilt; k++) {
+        SET_VECTOR_ELT(keep, k, b.sources[k]);
+      }
+      R_SetExternalPtrProtected(out, keep);
+      UNPROTECT(1);
       struct ArrowArrayView view;
       code = ArrowArrayViewInitFromSchema(&view, schema, &b.error);
       if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(&view, array, &b.error);

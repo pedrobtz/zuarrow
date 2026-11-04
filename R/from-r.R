@@ -55,6 +55,7 @@ arrow_array <- function(x, schema = NULL) {
   if (is.null(schema) && !is.null(handler)) {
     return(zar_from_handler(handler, x, call))
   }
+  x <- zar_prebuild(x, call)
   schema <- zar_schema_for(x, schema, call)
   prepared <- zar_prepare(x, schema, call)
   n <- zar_nrow(x)
@@ -74,6 +75,7 @@ arrow_stream <- function(x, batch = 65536L, schema = NULL) {
   ) {
     zar_abort("type", "`batch` must be a positive whole number.", call = call)
   }
+  x <- zar_prebuild(x, call)
   schema <- zar_schema_for(x, schema, call)
   prepared <- zar_prepare(x, schema, call)
   n <- zar_nrow(x)
@@ -119,7 +121,60 @@ zar_utf8_limit <- function() {
   getOption("zuarrow.utf8_limit", 2^31 - 1)
 }
 
+# Each registered column, at the top or inside a data frame, built once by
+# its `from` handler on the whole column (section 6.10). Its schema is that
+# array's, so a handler whose type depends on the values gives one type for
+# the column. A batch is that array, or a copied slice of it for a
+# fixed-width layout; any other layout is built again per batch.
+zar_prebuild <- function(x, call = NULL) {
+  handler <- zar_handler_for_class(x)
+  if (!is.null(handler)) {
+    attrs <- attributes(x)
+    keep <- grep("^arrow_", names(attrs), value = TRUE)
+    out <- list(array = zar_from_handler(handler, x, call), x = x)
+    attributes(out) <- c(
+      list(names = c("array", "x")),
+      attrs[keep],
+      list(class = "zar_prebuilt")
+    )
+    n <- .Call(zar_c_array_info, out$array)$length
+    if (n != length(x)) {
+      zar_abort(
+        "registry",
+        sprintf(
+          "The `from` handler for `%s` built %.0f values, not %.0f.",
+          handler$key,
+          n,
+          length(x)
+        ),
+        call = call
+      )
+    }
+    return(out)
+  }
+  if (is.data.frame(x)) {
+    built <- FALSE
+    attrs <- attributes(x)
+    cols <- unclass(x)
+    for (k in seq_along(cols)) {
+      col <- zar_prebuild(cols[[k]], call)
+      if (!identical(col, cols[[k]])) {
+        cols[[k]] <- col
+        built <- TRUE
+      }
+    }
+    if (built) {
+      attributes(cols) <- attrs
+      return(cols)
+    }
+  }
+  x
+}
+
 zar_nrow <- function(x) {
+  if (inherits(x, "zar_prebuilt")) {
+    return(.Call(zar_c_array_info, x$array)$length)
+  }
   if (is.data.frame(x)) {
     .row_names_info(x, 2L)
   } else if (is.matrix(x)) {
@@ -137,6 +192,9 @@ zar_prepare <- function(x, schema, call = NULL) {
 }
 
 zar_prepare_spec <- function(x, spec, call = NULL) {
+  if (inherits(x, "zar_prebuilt")) {
+    return(structure(list(x = x$x, array = x$array), class = "zar_registered"))
+  }
   if (!is.null(zar_handler_for_class(x))) {
     return(structure(list(x = x), class = "zar_registered"))
   }
@@ -233,6 +291,20 @@ zar_empty_like <- function(spec) {
 # handlers. Every other column is sliced by the C builder.
 zar_batch <- function(x, start, n, call = NULL) {
   if (inherits(x, "zar_registered")) {
+    if (!is.null(x$array)) {
+      # The whole column is the array itself, lent so the caller's handle
+      # survives the batch; a fixed-width slice is a copy at offset 0.
+      if (start == 0 && n == length(x$x)) {
+        return(zar_check(.Call(zar_c_array_borrow, x$array), call = call))
+      }
+      slice <- zar_check(
+        .Call(zar_c_array_slice, x$array, start, n),
+        call = call
+      )
+      if (!is.null(slice)) {
+        return(slice)
+      }
+    }
     handler <- zar_handler_for_class(x$x)
     return(zar_from_handler(handler, x$x[seq_len(n) + start], call))
   }

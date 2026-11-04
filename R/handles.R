@@ -150,6 +150,11 @@ zar_with_field_metadata <- function(spec, x, call = NULL) {
 }
 
 zar_infer_type <- function(x, name, call = NULL) {
+  if (inherits(x, "zar_prebuilt")) {
+    spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(x$array)))
+    spec$name <- name
+    return(spec)
+  }
   handler <- zar_handler_for_class(x)
   if (!is.null(handler)) {
     array <- zar_from_handler(handler, x[0L], call)
