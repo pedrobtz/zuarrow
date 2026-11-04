@@ -138,6 +138,12 @@
 
 ### Fixes
 
+- [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  applies a delta dictionary batch that extends a dictionary already
+  holding values, for fixed-width, binary and string values. Before, the
+  bundled decoder refused it with a `zuarrow_format_error`
+  ([\#81](https://github.com/pedrobtz/zuarrow/issues/81)).
+
 - A registered `from` handler is called once on the whole column, and
   the column takes the type of the array it returns. So a handler may
   choose the type from the values, as `decimal` chooses a precision, and
