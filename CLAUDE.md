@@ -16,12 +16,13 @@ naming the column and the exact target. The default is never `warn` or
 `allow`.
 
 The one hard dependency is `zukomp` (`Imports` and `LinkingTo`), which
-supplies the IPC codecs. `nanoarrow` and `arrow` are `Suggests` only,
-used as test oracles. The package is not a query engine, not Parquet,
-not a table object model, not transport (Flight, ADBC, PyCapsule) and
-not a replacement for `nanoarrow`: its handles are nanoarrow’s handles,
-so a session with both loaded passes objects between them without
-conversion.
+supplies the IPC codecs. `nanoarrow`, `arrow`, `DBI` and `duckdb` are
+not dependencies at all, not even `Suggests`: they are test oracles that
+run in CI only (see Testing conventions). The package is not a query
+engine, not Parquet, not a table object model, not transport (Flight,
+ADBC, PyCapsule) and not a replacement for `nanoarrow`: its handles are
+nanoarrow’s handles, so a session with both loaded passes objects
+between them without conversion.
 
 The specification is
 [`.agents/design.md`](https://pedrobtz.github.io/zuarrow/.agents/design.md),
@@ -176,17 +177,6 @@ Design §4 names five layers. What exists so far:
   in a fixed order: an extension name, then an exact format string, then
   a pattern (`zar_handler_for()`).
 
-- **The DuckDB helper** in `R/duckdb.R`:
-  [`arrow_duckdb()`](https://pedrobtz.github.io/zuarrow/reference/arrow_duckdb.md)
-  turns on `arrow_lossless_conversion`, fetches through DuckDB’s Arrow
-  stream export, and converts with
-  [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md).
-  It puts the setting back as it was when it returns. `DBI`, `duckdb`
-  and `nanoarrow` are `Suggests` only. The engine tests skip on CRAN,
-  because DuckDB’s scheduler thread shows in valgrind as “possibly lost”
-  (`tools/valgrind.supp`). `tools/ci-binaries.R` installs duckdb and
-  arrow as binaries on the R-devel images.
-
 - **The IPC reader** in `src/zar_ipc_read.c` holds the input in memory
   and walks the stream’s messages or the file’s footer blocks over
   nanoarrow’s decoder. Before decoding it verifies each header, checks
@@ -229,10 +219,10 @@ variable.
 The design fixes these before any code exists; each has a consequence a
 test or CI leg will catch late. Add more as stages establish them.
 
-- **`zukomp` is the only `Imports`** (D2, D5). `nanoarrow` and `arrow`
-  stay in `Suggests`; `bit64` and `vctrs` are never imported. Adding a
-  dependency is a design change through the RFC, not a `DESCRIPTION`
-  edit.
+- **`zukomp` is the only `Imports`** (D2, D5). `nanoarrow`, `arrow`,
+  `DBI` and `duckdb` are in no field of `DESCRIPTION`; `bit64` and
+  `vctrs` are never imported. Adding a dependency is a design change
+  through the RFC, not a `DESCRIPTION` edit.
 - **Handles use nanoarrow’s `r.h` layout** (D6): `malloc()`ed struct,
   `NULL` `release` means unset, an array’s tag holds its schema, the
   protected field holds what keeps the memory alive. Deviating breaks
@@ -265,9 +255,12 @@ test or CI leg will catch late. Add more as stages establish them.
   with its fix. The fuzzer then uses it as a seed, and the tests pin its
   outcome. A vendored fix is a numbered patch in `tools/patches/`,
   offered upstream.
-- **DuckDB stays off CRAN.** `local_duckdb()` and the
-  [`arrow_duckdb()`](https://pedrobtz.github.io/zuarrow/reference/arrow_duckdb.md)
-  example skip there. A new engine test goes through `local_duckdb()`.
+- **Oracle packages stay out of the tarball.** A test or helper that
+  uses `nanoarrow`, `arrow`, `DBI` or `duckdb` goes in a `test-ci-*.R`
+  or `helper-ci-*.R` file, which `.Rbuildignore` excludes, and guards
+  with `skip_without_oracle()`. Anywhere else, R CMD check reports the
+  use as an undeclared dependency. The `oracles` workflow runs those
+  files with `ZUARROW_ORACLES=true`, where a missing oracle fails.
 
 ## Testing conventions
 
@@ -295,7 +288,7 @@ test or CI leg will catch late. Add more as stages establish them.
   `tests/testthat/README.md` records the C error branches no test can
   reach, and why.
 - **Keep the suite inside the CRAN time budget.** The whole suite took
-  15 s on 2026-11-04 with the fixtures fetched and every Suggests
+  15 s on 2026-11-04 with the fixtures fetched and every oracle
   installed: `devtools::test(shuffle = TRUE)`, macOS x86_64, R 4.5.2.
   Under gctorture it runs a sample of the repeated loops
   (`helper-gctorture.R`).

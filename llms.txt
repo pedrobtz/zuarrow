@@ -109,9 +109,6 @@ a class for each kind, such as `zuarrow_lossy_error`.
 
 ## Learn more
 
-- [Receiving a DuckDB result without
-  rounding](https://pedrobtz.github.io/zuarrow/articles/duckdb.html)
-  shows the headline use.
 - The [reference](https://pedrobtz.github.io/zuarrow/reference/) lists
   every function;
   [`arrow_types()`](https://pedrobtz.github.io/zuarrow/reference/arrow_types.md)
@@ -150,8 +147,6 @@ Exact conversion to R vectors and data frames, or an error.
   : Convert Arrow data to R
 - [`arrow_matrix()`](https://pedrobtz.github.io/zuarrow/reference/arrow_matrix.md)
   : Matrices as fixed-size lists
-- [`arrow_duckdb()`](https://pedrobtz.github.io/zuarrow/reference/arrow_duckdb.md)
-  : Run a DuckDB query and receive the result exactly
 
 ## The IPC formats
 
@@ -187,9 +182,3 @@ Which R class is the exact form of which Arrow type.
 - [`zuarrow_info()`](https://pedrobtz.github.io/zuarrow/reference/zuarrow_info.md)
   : Package information
 
-# Articles
-
-### Articles
-
-- [Receiving a DuckDB result without
-  rounding](https://pedrobtz.github.io/zuarrow/articles/duckdb.md):

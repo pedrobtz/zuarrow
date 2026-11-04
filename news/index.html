@@ -16,10 +16,6 @@
 
     <div id="navbar" class="collapse navbar-collapse ms-3">
       <ul class="navbar-nav me-auto"><li class="nav-item"><a class="nav-link" href="../reference/index.html">Reference</a></li>
-<li class="nav-item dropdown">
-  <button class="nav-link dropdown-toggle" type="button" id="dropdown-articles" data-bs-toggle="dropdown" aria-expanded="false" aria-haspopup="true">Articles</button>
-  <ul class="dropdown-menu" aria-labelledby="dropdown-articles"><li><a class="dropdown-item" href="../articles/duckdb.html">Receiving a DuckDB result without rounding</a></li>
-  </ul></li>
 <li class="active nav-item"><a class="nav-link" href="../news/index.html">Changelog</a></li>
       </ul><ul class="navbar-nav"><li class="nav-item"><form class="form-inline" role="search">
  <input class="form-control" type="search" name="search-input" id="search-input" autocomplete="off" aria-label="Search site" placeholder="Search for" data-search-index="../search.json"></form></li>
@@ -78,11 +74,6 @@
 <code><a href="../reference/arrow_register.html">arrow_register()</a></code>, <code><a href="../reference/arrow_register.html">arrow_unregister()</a></code> and <code><a href="../reference/arrow_register.html">arrow_registry()</a></code> let a package make a lossy type exact with its own R class, by format string, prefix pattern or extension name, in both directions.</li>
 <li>A <code>to</code> handler of <code>(array, schema, lossy)</code> receives the caller’s <code>lossy</code> policy, so a registering package applies it to values its class cannot hold. Two-argument handlers work as before. When several keys match, the extension name wins, then the exact format, then the earliest pattern.</li>
 <li>A prototype of a registered class in <code>to</code>, such as <code>zuint::int128()</code>, converts a column through that registration whatever its Arrow type.</li>
-</ul></div>
-<div class="section level3">
-<h3 id="duckdb-0-1-0">DuckDB<a class="anchor" aria-label="anchor" href="#duckdb-0-1-0"></a></h3>
-<ul><li>
-<code><a href="../reference/arrow_duckdb.html">arrow_duckdb()</a></code> runs a query on a DuckDB connection and returns the result exactly or with an error, through DuckDB’s Arrow export. <code>HUGEINT</code> and <code>UHUGEINT</code> arrive as <code>arrow.opaque</code> rather than as a <code>DECIMAL(38, 0)</code>. It needs ‘DBI’, ‘duckdb’ and ‘nanoarrow’.</li>
 </ul></div>
 <div class="section level3">
 <h3 id="the-ipc-file-and-stream-formats-0-1-0">The IPC file and stream formats<a class="anchor" aria-label="anchor" href="#the-ipc-file-and-stream-formats-0-1-0"></a></h3>
