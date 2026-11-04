@@ -583,6 +583,15 @@ Stage 9 on 2026-10-23.
 
 - `zukomp` 0.2.0 is on CRAN: remove `Remotes:`, set the `LinkingTo` floor to
   that version, and record it in design §16.
+
+  *Deviation, 2026-11-04.* The maintainer decided the stage does not wait
+  for zukomp 0.2.0 to reach CRAN. Its earliest submission date is
+  2026-11-27. The stage builds on zukomp's development version
+  (`0.1.0.9000`, through `Remotes: pedrobtz/zukomp`), and the floor is
+  `zukomp (> 0.1.0)`. Removing `Remotes:` and setting the floor to
+  `(>= 0.2.0)` move to the CRAN-submission issue
+  ([#12](https://github.com/pedrobtz/zuarrow/issues/12)). They are its
+  first step.
 - The `decimal` registration is optional (decided 2026-11-04, design §12).
   When `decimal` is installed and registers, its golden cases decode
   exactly; the test skips otherwise. The stage does not wait for
@@ -597,7 +606,8 @@ Stage 9 on 2026-10-23.
 
 **Exit criteria.**
 
-- `DESCRIPTION` has no `Remotes:`; `zukomp` is the only `Imports`.
+- `zukomp` is the only `Imports`. Removing `Remotes:` waits for zukomp 0.2.0
+  on CRAN, under #12 (see the deviation above).
 - Every item of design §12 holds and is checked off on this issue.
 - A full-profile r-actions run is green on the merge commit.
 

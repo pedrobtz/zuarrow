@@ -4,6 +4,8 @@ on:
     # A long run nightly. The corpus cache is what makes the short PR runs
     # and this one add up to a single campaign.
     - cron: "0 3 * * *"
+  # A dispatch runs the long hour too: design section 12 wants one hour
+  # clean on the release candidate, `gh workflow run fuzz.yaml --ref <branch>`.
   workflow_dispatch:
 
 name: fuzz
@@ -43,6 +45,6 @@ jobs:
       libfuzzer-args: >-
         .github-packages/arrow-testing/data/arrow-ipc-file
         tests/testthat/data
-      max-total-time: ${{ github.event_name == 'schedule' && 3600 || 120 }}
+      max-total-time: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 3600 || 120 }}
       # The job must outlast max-total-time by ten minutes.
-      timeout-minutes: ${{ github.event_name == 'schedule' && 75 || 30 }}
+      timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 75 || 30 }}

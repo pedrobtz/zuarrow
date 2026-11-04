@@ -1151,3 +1151,9 @@ whether `arrow_registry()` lists built-in rows or registered ones only;
 the wording of condition messages beyond their classes and the fields
 §6.3 requires; the `zukomp` floor version, which Stage 0 records once
 that release exists; and the article's second example.
+
+*2026-11-04:* the `zukomp` floor is the release that ships the lz4 and
+zstd codecs, 0.2.0. Until it is on CRAN, `DESCRIPTION` says
+`zukomp (> 0.1.0)` with `Remotes: pedrobtz/zukomp`, the development
+version `0.1.0.9000`. Submission sets `(>= 0.2.0)` and removes
+`Remotes:`.
