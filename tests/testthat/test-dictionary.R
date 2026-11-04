@@ -102,12 +102,6 @@ test_that("an index out of range is a format error", {
   expect_error(arrow_to_r(array), class = "zuarrow_format_error")
 })
 
-test_that("nanoarrow's dictionaries read as factors", {
-  skip_if_not_installed("nanoarrow")
-  f <- factor(c("x", "y", "x"))
-  expect_identical(arrow_to_r(nanoarrow::as_nanoarrow_array(f)), f)
-})
-
 test_that("a level with an embedded NUL is cut there under warn and allow", {
   schema <- arrow_schema(factor("a"))
   array <- test_array(

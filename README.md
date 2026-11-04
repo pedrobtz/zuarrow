@@ -109,9 +109,6 @@ inherit from `zuarrow_error`, with a class for each kind, such as
 
 ## Learn more
 
-- [Receiving a DuckDB result without
-  rounding](https://pedrobtz.github.io/zuarrow/articles/duckdb.html)
-  shows the headline use.
 - The [reference](https://pedrobtz.github.io/zuarrow/reference/) lists
   every function; `arrow_types()` prints the type table.
 

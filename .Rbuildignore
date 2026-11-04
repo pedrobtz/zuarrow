@@ -17,4 +17,5 @@
 ^\.worktrees$
 ^tools$
 ^tests/testthat/fixtures$
+^tests/testthat/(test|helper)-ci-.*\.R$
 ^README\.Rmd$

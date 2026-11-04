@@ -15,7 +15,6 @@ reference:
     contents:
       - arrow_to_r
       - arrow_matrix
-      - arrow_duckdb
   - title: The IPC formats
     desc: The Arrow file and stream formats, plain or compressed.
     contents:
@@ -38,4 +37,3 @@ articles:
   - title: Articles
     navbar: ~
     contents:
-      - articles/duckdb

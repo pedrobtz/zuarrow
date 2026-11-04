@@ -2,7 +2,7 @@
 # in both directions without conversion.
 
 test_that("zuarrow accepts nanoarrow's schemas, arrays and streams", {
-  skip_if_not_installed("nanoarrow")
+  skip_without_oracle("nanoarrow")
   schema <- nanoarrow::na_int64()
   expect_identical(format(arrow_schema(schema)), "int64")
 
@@ -20,7 +20,7 @@ test_that("zuarrow accepts nanoarrow's schemas, arrays and streams", {
 })
 
 test_that("zuarrow reads nanoarrow's schema metadata", {
-  skip_if_not_installed("nanoarrow")
+  skip_without_oracle("nanoarrow")
   schema <- nanoarrow::nanoarrow_schema_modify(
     nanoarrow::na_int32(),
     list(metadata = list(origin = "nanoarrow"))
@@ -29,7 +29,7 @@ test_that("zuarrow reads nanoarrow's schema metadata", {
 })
 
 test_that("nanoarrow accepts zuarrow's schemas, arrays and streams", {
-  skip_if_not_installed("nanoarrow")
+  skip_without_oracle("nanoarrow")
   schema <- arrow_schema(data.frame(x = 1L, y = "a"))
   parsed <- nanoarrow::nanoarrow_schema_parse(schema)
   expect_identical(parsed$type, "struct")
@@ -42,7 +42,7 @@ test_that("nanoarrow accepts zuarrow's schemas, arrays and streams", {
 })
 
 test_that("nanoarrow's coercions return zuarrow handles unchanged", {
-  skip_if_not_installed("nanoarrow")
+  skip_without_oracle("nanoarrow")
   schema <- arrow_schema("i")
   expect_s3_class(nanoarrow::as_nanoarrow_schema(schema), "zuarrow_schema")
   array <- test_int32(1:3)
@@ -55,6 +55,6 @@ test_that("nanoarrow's coercions return zuarrow handles unchanged", {
 })
 
 test_that("a zuarrow array equals nanoarrow's array of the same values", {
-  skip_if_not_installed("nanoarrow")
+  skip_without_oracle("nanoarrow")
   expect_true(arrow_equal(test_int32(1:3), nanoarrow::as_nanoarrow_array(1:3)))
 })

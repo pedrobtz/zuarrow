@@ -85,11 +85,9 @@ arrow_limits <- function(
 #' @export
 #' @examples
 #' path <- tempfile(fileext = ".arrows")
-#' stream <- arrow_stream(data.frame(x = 1:3, y = c("a", "b", "c")))
-#' if (requireNamespace("nanoarrow", quietly = TRUE)) {
-#'   nanoarrow::write_nanoarrow(stream, path)
-#'   arrow_read(path)
-#' }
+#' df <- data.frame(x = 1:3, y = c("a", "b", "c"))
+#' arrow_write(df, path, format = "stream")
+#' arrow_read(path)
 arrow_read <- function(
   x,
   columns = NULL,

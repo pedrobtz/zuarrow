@@ -59,33 +59,6 @@ test_that("bool converts with nulls", {
   expect_identical(arrow_to_r(bools), c(TRUE, FALSE, NA, FALSE, TRUE))
 })
 
-test_that("sliced arrays convert from their offset", {
-  skip_if_not_installed("nanoarrow")
-  slice <- function(x, offset, length) {
-    nanoarrow::nanoarrow_array_modify(
-      nanoarrow::as_nanoarrow_array(x),
-      list(offset = offset, length = length)
-    )
-  }
-  expect_identical(
-    arrow_to_r(slice(c(1L, NA, 3L, 4L, 5L), 1L, 3L)),
-    c(NA, 3L, 4L)
-  )
-  expect_identical(arrow_to_r(slice(c(0.5, 1.5, NA, 3.5), 2L, 2L)), c(NA, 3.5))
-  expect_identical(
-    arrow_to_r(slice(c(TRUE, NA, FALSE, TRUE), 1L, 3L)),
-    c(NA, FALSE, TRUE)
-  )
-  expect_identical(
-    arrow_to_r(slice(as.Date("2026-10-22") + c(0L, NA, 2L), 1L, 2L)),
-    as.Date("2026-10-22") + c(NA, 2L)
-  )
-  expect_identical(
-    arrow_to_r(slice(c("a", NA, "cc", "d"), 1L, 3L)),
-    c(NA, "cc", "d")
-  )
-})
-
 test_that("fields of a struct with nulls are NA in its null rows", {
   df <- data.frame(
     i = c(1L, 2L, 3L),

@@ -1,9 +1,10 @@
-# arrow_duckdb(), roadmap Stage 9: a DuckDB result reaches R through its
-# Arrow export, exact or an error.
+# DuckDB as an oracle: a result read through DuckDB's Arrow export
+# converts exactly or with an error. DBI, duckdb and nanoarrow are not
+# dependencies; see helper-ci-oracles.R.
 
 test_that("a BIGINT within 2^53 arrives as a double", {
   con <- local_duckdb()
-  out <- arrow_duckdb(
+  out <- duckdb_to_r(
     con,
     "SELECT 42::BIGINT AS id, -9007199254740992::BIGINT AS low, 'a' AS s"
   )
@@ -13,18 +14,18 @@ test_that("a BIGINT within 2^53 arrives as a double", {
 test_that("a BIGINT past 2^53 is a lossy error naming zuint", {
   con <- local_duckdb()
   sql <- "SELECT 9007199254740993::BIGINT AS id"
-  err <- expect_error(arrow_duckdb(con, sql), class = "zuarrow_lossy_error")
+  err <- expect_error(duckdb_to_r(con, sql), class = "zuarrow_lossy_error")
   expect_identical(err$column, "id")
   expect_identical(err$target, "zuint")
   expect_identical(
-    arrow_duckdb(con, sql, lossy = "character")$id,
+    duckdb_to_r(con, sql, lossy = "character")$id,
     structure("9007199254740993", arrow_type = "l")
   )
 })
 
 test_that("HUGEINT and UHUGEINT pass through as opaque storage", {
   con <- local_duckdb()
-  out <- arrow_duckdb(
+  out <- duckdb_to_r(
     con,
     paste(
       "SELECT 1::HUGEINT AS h,",
@@ -41,27 +42,12 @@ test_that("HUGEINT and UHUGEINT pass through as opaque storage", {
   expect_identical(out$u[[1]], as.raw(rep(0xff, 16)))
 })
 
-test_that("the connection's lossless setting is put back", {
-  con <- local_duckdb()
-  setting <- function() {
-    DBI::dbGetQuery(
-      con,
-      "SELECT current_setting('arrow_lossless_conversion') AS v"
-    )$v
-  }
-  before <- setting()
-  arrow_duckdb(con, "SELECT 1 AS x")
-  expect_identical(setting(), before)
-  expect_error(arrow_duckdb(con, "SELECT nothing FROM nowhere"))
-  expect_identical(setting(), before)
-})
-
 test_that("to and lossy reach the conversion", {
   con <- local_duckdb()
-  out <- arrow_duckdb(con, "SELECT 7::BIGINT AS n", to = list(n = character()))
+  out <- duckdb_to_r(con, "SELECT 7::BIGINT AS n", to = list(n = character()))
   expect_identical(out$n, structure("7", arrow_type = "l"))
   expect_warning(
-    out <- arrow_duckdb(
+    out <- duckdb_to_r(
       con,
       "SELECT 9007199254740993::BIGINT AS n",
       lossy = "warn"
@@ -73,29 +59,8 @@ test_that("to and lossy reach the conversion", {
 
 test_that("an empty result keeps its columns", {
   con <- local_duckdb()
-  out <- arrow_duckdb(con, "SELECT 1::INTEGER AS x WHERE false")
+  out <- duckdb_to_r(con, "SELECT 1::INTEGER AS x WHERE false")
   expect_identical(out, data.frame(x = integer()))
-})
-
-test_that("a connection that is not DuckDB's is a type error", {
-  skip_if_not_installed("DBI")
-  skip_if_not_installed("duckdb")
-  expect_error(arrow_duckdb("con", "SELECT 1"), class = "zuarrow_type_error")
-  con <- local_duckdb()
-  expect_error(arrow_duckdb(con, 1), class = "zuarrow_type_error")
-  expect_error(
-    arrow_duckdb(con, c("SELECT 1", "SELECT 2")),
-    class = "zuarrow_type_error"
-  )
-})
-
-test_that("a missing engine package is a dependency error", {
-  local_mocked_bindings(zar_installed = function(package) package != "duckdb")
-  err <- expect_error(
-    arrow_duckdb(NULL, "SELECT 1"),
-    class = "zuarrow_dependency_error"
-  )
-  expect_identical(err$package, "duckdb")
 })
 
 test_that("with zuint's registration the integers are exact", {
@@ -110,7 +75,7 @@ test_that("with zuint's registration the integers are exact", {
     "zuint does not register with zuarrow yet"
   )
   prototype <- function(name) getExportedValue(zuint, name)()
-  out <- arrow_duckdb(
+  out <- duckdb_to_r(
     con,
     paste(
       "SELECT 9007199254740993::BIGINT AS i,",

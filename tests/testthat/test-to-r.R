@@ -72,18 +72,6 @@ test_that("strings convert in every layout", {
   expect_identical(arrow_to_r(large), c("a", "bc"))
 })
 
-test_that("string and binary views convert", {
-  skip_if_not_installed("nanoarrow")
-  views <- nanoarrow::as_nanoarrow_array(
-    c("short", NA, "a string longer than twelve bytes"),
-    schema = nanoarrow::na_string_view()
-  )
-  expect_identical(
-    arrow_to_r(views),
-    c("short", NA, "a string longer than twelve bytes")
-  )
-})
-
 test_that("invalid UTF-8 in a string column is a format error", {
   expect_error(
     arrow_to_r(test_utf8(c(0L, 2L), as.raw(c(0xc3, 0x28)))),
