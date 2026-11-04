@@ -272,8 +272,9 @@ test or CI leg will catch late. Add more as stages establish them.
 the first release. `devtools::test(shuffle = TRUE)` green. CI green at
 the change’s tier: the quick profile for a `quick` roadmap stage or an
 ordinary pull request, the full profile for a `full` stage, `Full CI`,
-and every release. A user-facing change also needs a test, roxygen
-documentation and a `NEWS.md` entry.
+and every release, plus a dispatched step-20 gctorture run where the
+gctorture section below asks for one. A user-facing change also needs a
+test, roxygen documentation and a `NEWS.md` entry.
 
 ## Releasing to CRAN
 
@@ -322,6 +323,9 @@ pre-submission check. This package calls `r-cmd-check.yml@v1` from
 `.github/workflows/R-CMD-check.yaml` and `coverage.yml@v1` from
 `.github/workflows/coverage.yaml`; `.github/workflows/pkgdown.yaml` is
 the `r-lib/actions` pkgdown workflow.
+`.github/workflows/native-checks.yaml` calls the sanitizers, valgrind,
+lto, rchk, analyzers and cran-special, and
+`.github/workflows/gctorture.yaml` calls gctorture.
 
 Small edits get a small run. The shared workflows look at the files a
 pull request changes, compared with its merge base:
@@ -338,14 +342,12 @@ a pull request changes code, every later push to it runs every workflow.
 
 ### Quick by default, full by exception
 
-The full profile is slow. gctorture at step 20 alone has taken 36 to 107
-minutes on sibling packages. Waiting on it between roadmap stages was
-the main thing slowing roadmaps down, so:
+The full profile is slow. Waiting on it between roadmap stages was the
+main thing slowing roadmaps down, so:
 
 - **Pull requests run the quick profile.** It should finish in under
-  five minutes. If it doesn’t, raise gctorture’s `quick-step` or trim
-  `quick-containers` in the caller workflows; never cut the full
-  profile.
+  five minutes. If it doesn’t, trim `quick-containers` in the caller
+  workflows; never cut the full profile.
 - **A `full` roadmap stage takes the `full-ci` label** and merges only
   on a green full run. The roadmap gives the reason in the stage’s
   `**CI.**` line, for example first compiled code, a `PROTECT` or
@@ -357,8 +359,38 @@ the main thing slowing roadmaps down, so:
   fixed now.
 - **`Full CI` and `v0.1.0 readiness` wait** for a green full run on
   their merge commit, and the release commit always needs one.
+
+### gctorture: wide on every push, step 20 on a schedule
+
+gctorture at step 20 is the most sensitive setting and by far the
+slowest job: 36 minutes to over two hours on sibling packages. It does
+not gate merges. Its own caller, `.github/workflows/gctorture.yaml`,
+copied from r-actions’ `examples/gctorture.yml`, runs it in two ways:
+
+- **Every push and pull request runs the wide `quick-step` under a
+  10-minute budget** (`test-timeout-minutes`). Past the budget the check
+  fails red. Widen the step to get back under it; don’t skip tests to
+  fit.
+- **Step 20 runs on a schedule**: daily while the roadmap is in active
+  development, weekly once the package is released and changes slow
+  down. Changing the `cron` line is the switch. A red scheduled run
+  opens an issue labelled `gctorture`, and the next green run closes it.
+  That issue is fixed like any other defect, before the next stage
+  merges.
+- **Dispatch step 20 on the branch before merging** a change to
+  `PROTECT`s, finalizers or external-pointer handles, and before
+  `Full CI`, `v0.1.0 readiness` and the release commit:
+  `gh workflow run gctorture.yaml --ref <branch>`. A green run on that
+  commit is the evidence; a nightly run on another commit is not.
+- **Sample repetition, keep every path.** gctorture finds an unprotected
+  `SEXP` by running the path that holds it, not by running it again.
+  Under gctorture, loops that repeat one path (fuzz iterations, property
+  cases, the same input across versions) run a fixed sample. The caller
+  sets an environment variable for it, `ZUARROW_GCTORTURE=true`, and
+  `helper-gctorture.R` reads it. Every type, branch and error path still
+  runs.
 - Locally, run `gctorture(TRUE)` on the code a C change touches when it
-  is cheap; the full run is the authority.
+  is cheap; the step-20 run is the authority.
 
 ## Vendored native code
 

@@ -63,7 +63,7 @@ for the conversion and its policies.
 ``` r
 con <- DBI::dbConnect(duckdb::duckdb())
 #> duckdb keeps downloaded extensions and secrets in a temporary directory:
-#> ℹ /tmp/RtmpaHpEpc/duckdb
+#> ℹ /tmp/RtmpIc5Ew7/duckdb
 #> This is removed when the R session ends.
 #> • Extensions are re-downloaded each session.
 #> • Secrets are lost.

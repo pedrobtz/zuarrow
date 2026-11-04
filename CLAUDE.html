@@ -147,7 +147,7 @@
 </ul></div>
 <div class="section level2">
 <h2 id="definition-of-done">Definition of done<a class="anchor" aria-label="anchor" href="#definition-of-done"></a></h2>
-<p><code>devtools::document()</code> and <code>devtools::check()</code> clean, meaning 0 errors, 0 warnings and 0 notes. The one allowed note is “New submission” before the first release. <code>devtools::test(shuffle = TRUE)</code> green. CI green at the change’s tier: the quick profile for a <code>quick</code> roadmap stage or an ordinary pull request, the full profile for a <code>full</code> stage, <code>Full CI</code>, and every release. A user-facing change also needs a test, roxygen documentation and a <code>NEWS.md</code> entry.</p>
+<p><code>devtools::document()</code> and <code>devtools::check()</code> clean, meaning 0 errors, 0 warnings and 0 notes. The one allowed note is “New submission” before the first release. <code>devtools::test(shuffle = TRUE)</code> green. CI green at the change’s tier: the quick profile for a <code>quick</code> roadmap stage or an ordinary pull request, the full profile for a <code>full</code> stage, <code>Full CI</code>, and every release, plus a dispatched step-20 gctorture run where the gctorture section below asks for one. A user-facing change also needs a test, roxygen documentation and a <code>NEWS.md</code> entry.</p>
 </div>
 <div class="section level2">
 <h2 id="releasing-to-cran">Releasing to CRAN<a class="anchor" aria-label="anchor" href="#releasing-to-cran"></a></h2>
@@ -174,7 +174,7 @@
 </ul></div>
 <div class="section level2">
 <h2 id="continuous-integration">Continuous integration<a class="anchor" aria-label="anchor" href="#continuous-integration"></a></h2>
-<p>Workflows come from <code>pedrobtz/r-actions</code>. Call those reusable workflows instead of writing bespoke ones, and pin a released tag rather than <code>main</code>. Pin a workflow that holds a write token, such as <code>coverage.yml</code>, to a commit, with the tag in a comment. The <code>R-CMD-check</code> workflow must call <code>r-cmd-check.yml</code>, because a hand-rolled one does not count as the pre-submission check. This package calls <code>r-cmd-check.yml@v1</code> from <code>.github/workflows/R-CMD-check.yaml</code> and <code>coverage.yml@v1</code> from <code>.github/workflows/coverage.yaml</code>; <code>.github/workflows/pkgdown.yaml</code> is the <code>r-lib/actions</code> pkgdown workflow.</p>
+<p>Workflows come from <code>pedrobtz/r-actions</code>. Call those reusable workflows instead of writing bespoke ones, and pin a released tag rather than <code>main</code>. Pin a workflow that holds a write token, such as <code>coverage.yml</code>, to a commit, with the tag in a comment. The <code>R-CMD-check</code> workflow must call <code>r-cmd-check.yml</code>, because a hand-rolled one does not count as the pre-submission check. This package calls <code>r-cmd-check.yml@v1</code> from <code>.github/workflows/R-CMD-check.yaml</code> and <code>coverage.yml@v1</code> from <code>.github/workflows/coverage.yaml</code>; <code>.github/workflows/pkgdown.yaml</code> is the <code>r-lib/actions</code> pkgdown workflow. <code>.github/workflows/native-checks.yaml</code> calls the sanitizers, valgrind, lto, rchk, analyzers and cran-special, and <code>.github/workflows/gctorture.yaml</code> calls gctorture.</p>
 <p>Small edits get a small run. The shared workflows look at the files a pull request changes, compared with its merge base:</p>
 <ul><li>
 <strong>Markdown only</strong>, such as <code>README.md</code>, <code>NEWS.md</code> or <code>cran-comments.md</code>, skips every check. Only coverage and the pkgdown site run.</li>
@@ -185,16 +185,28 @@
 </ul><p>So put a README or <code>DESCRIPTION</code> touch-up in its own pull request. Once a pull request changes code, every later push to it runs every workflow.</p>
 <div class="section level3">
 <h3 id="quick-by-default-full-by-exception">Quick by default, full by exception<a class="anchor" aria-label="anchor" href="#quick-by-default-full-by-exception"></a></h3>
-<p>The full profile is slow. gctorture at step 20 alone has taken 36 to 107 minutes on sibling packages. Waiting on it between roadmap stages was the main thing slowing roadmaps down, so:</p>
+<p>The full profile is slow. Waiting on it between roadmap stages was the main thing slowing roadmaps down, so:</p>
 <ul><li>
-<strong>Pull requests run the quick profile.</strong> It should finish in under five minutes. If it doesn’t, raise gctorture’s <code>quick-step</code> or trim <code>quick-containers</code> in the caller workflows; never cut the full profile.</li>
+<strong>Pull requests run the quick profile.</strong> It should finish in under five minutes. If it doesn’t, trim <code>quick-containers</code> in the caller workflows; never cut the full profile.</li>
 <li>
 <strong>A <code>full</code> roadmap stage takes the <code>full-ci</code> label</strong> and merges only on a green full run. The roadmap gives the reason in the stage’s <code>**CI.**</code> line, for example first compiled code, a <code>PROTECT</code> or finalizer change, a vendored library, or a Windows-only path.</li>
 <li>
 <strong>Don’t wait on the full run a merge starts</strong> on the default branch, and cancel older full runs it supersedes. A failure that only the full set shows goes on the <code>Full CI</code> stage issue as a comment with the run link, and is fixed there. A failure the quick profile also shows is fixed now.</li>
 <li>
 <strong><code>Full CI</code> and <code>v0.1.0 readiness</code> wait</strong> for a green full run on their merge commit, and the release commit always needs one.</li>
-<li>Locally, run <code>gctorture(TRUE)</code> on the code a C change touches when it is cheap; the full run is the authority.</li>
+</ul></div>
+<div class="section level3">
+<h3 id="gctorture-wide-on-every-push-step-20-on-a-schedule">gctorture: wide on every push, step 20 on a schedule<a class="anchor" aria-label="anchor" href="#gctorture-wide-on-every-push-step-20-on-a-schedule"></a></h3>
+<p>gctorture at step 20 is the most sensitive setting and by far the slowest job: 36 minutes to over two hours on sibling packages. It does not gate merges. Its own caller, <code>.github/workflows/gctorture.yaml</code>, copied from r-actions’ <code>examples/gctorture.yml</code>, runs it in two ways:</p>
+<ul><li>
+<strong>Every push and pull request runs the wide <code>quick-step</code> under a 10-minute budget</strong> (<code>test-timeout-minutes</code>). Past the budget the check fails red. Widen the step to get back under it; don’t skip tests to fit.</li>
+<li>
+<strong>Step 20 runs on a schedule</strong>: daily while the roadmap is in active development, weekly once the package is released and changes slow down. Changing the <code>cron</code> line is the switch. A red scheduled run opens an issue labelled <code>gctorture</code>, and the next green run closes it. That issue is fixed like any other defect, before the next stage merges.</li>
+<li>
+<strong>Dispatch step 20 on the branch before merging</strong> a change to <code>PROTECT</code>s, finalizers or external-pointer handles, and before <code>Full CI</code>, <code>v0.1.0 readiness</code> and the release commit: <code>gh workflow run gctorture.yaml --ref &lt;branch&gt;</code>. A green run on that commit is the evidence; a nightly run on another commit is not.</li>
+<li>
+<strong>Sample repetition, keep every path.</strong> gctorture finds an unprotected <code>SEXP</code> by running the path that holds it, not by running it again. Under gctorture, loops that repeat one path (fuzz iterations, property cases, the same input across versions) run a fixed sample. The caller sets an environment variable for it, <code>ZUARROW_GCTORTURE=true</code>, and <code>helper-gctorture.R</code> reads it. Every type, branch and error path still runs.</li>
+<li>Locally, run <code>gctorture(TRUE)</code> on the code a C change touches when it is cheap; the step-20 run is the authority.</li>
 </ul></div>
 </div>
 <div class="section level2">
