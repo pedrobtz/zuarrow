@@ -1,6 +1,6 @@
 Package: zuarrow
 Title: Exact Conversion Between R Vectors and 'Apache Arrow' Columns
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: c(
     person("Pedro", "Baltazar", , "pedrobtz@gmail.com",
            role = c("aut", "cre", "cph")),
@@ -34,10 +34,12 @@ Imports:
 Suggests: 
     arrow,
     DBI (>= 1.2.0),
+    decimal,
     duckdb (>= 1.5.4),
     nanoarrow,
     testthat (>= 3.0.0),
-    withr
+    withr,
+    zujson
 LinkingTo: 
     zukomp (> 0.1.0)
 Remotes: 

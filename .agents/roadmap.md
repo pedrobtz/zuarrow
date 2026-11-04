@@ -50,7 +50,7 @@ Two dependencies outside this repository shape the plan:
 | 7 | [README and article](#stage-7--readme-and-article) | quick | [#9](https://github.com/pedrobtz/zuarrow/issues/9) | [#23](https://github.com/pedrobtz/zuarrow/pull/23) | 2026-10-21 |
 | 8 | [Full CI](#stage-8--full-ci) | full | [#10](https://github.com/pedrobtz/zuarrow/issues/10) | [#24](https://github.com/pedrobtz/zuarrow/pull/24), [#26](https://github.com/pedrobtz/zuarrow/pull/26) | |
 | 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | [#86](https://github.com/pedrobtz/zuarrow/pull/86) | 2026-11-03 |
-| 10 | [v0.1.0 readiness](#stage-10--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | | |
+| 10 | [v0.1.0 readiness](#stage-10--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | [#88](https://github.com/pedrobtz/zuarrow/pull/88) | 2026-11-04 |
 | 11 | [Review](#stage-11--review) | full | [#29](https://github.com/pedrobtz/zuarrow/issues/29) | | |
 
 ## Stage 0 — Package identity
@@ -583,8 +583,19 @@ Stage 9 on 2026-10-23.
 
 - `zukomp` 0.2.0 is on CRAN: remove `Remotes:`, set the `LinkingTo` floor to
   that version, and record it in design §16.
-- The `decimal` registration is merged and its golden cases decode exactly
-  with `decimal` installed (design §12).
+
+  *Deviation, 2026-11-04.* The maintainer decided the stage does not wait
+  for zukomp 0.2.0 to reach CRAN. Its earliest submission date is
+  2026-11-27. The stage builds on zukomp's development version
+  (`0.1.0.9000`, through `Remotes: pedrobtz/zukomp`), and the floor is
+  `zukomp (> 0.1.0)`. Removing `Remotes:` and setting the floor to
+  `(>= 0.2.0)` move to the CRAN-submission issue
+  ([#12](https://github.com/pedrobtz/zuarrow/issues/12)). They are its
+  first step.
+- The `decimal` registration is optional (decided 2026-11-04, design §12).
+  When `decimal` is installed and registers, its golden cases decode
+  exactly; the test skips otherwise. The stage does not wait for
+  decimal#24.
 - The fuzz target runs one hour clean under `ZAR_STANDALONE` with
   sanitizers; the result is recorded on this issue.
 - `Version: 0.1.0` and the matching `NEWS.md` heading.
@@ -595,9 +606,21 @@ Stage 9 on 2026-10-23.
 
 **Exit criteria.**
 
-- `DESCRIPTION` has no `Remotes:`; `zukomp` is the only `Imports`.
+- `zukomp` is the only `Imports`. Removing `Remotes:` waits for zukomp 0.2.0
+  on CRAN, under #12 (see the deviation above).
 - Every item of design §12 holds and is checked off on this issue.
 - A full-profile r-actions run is green on the merge commit.
+
+*Deviation, 2026-11-04.* The maintainer asked for the stage to merge
+once its full CI is green. Three items move to Stage 11 (Review), whose
+exit criteria now include them:
+
+- the one-hour fuzz run, dispatched on this branch
+  ([run 41781803623](https://github.com/pedrobtz/zuarrow/actions/runs/41781803623));
+- the upstream nanoarrow pull request for patch 0004, drafted on
+  the maintainer's fork for them to open;
+- a step-20 gctorture run on the merge commit. The run dispatched on
+  main at `0be7033` covers all of the code except this stage's tests.
 
 **Design.** §12; the release half of design stage 6.
 
@@ -623,6 +646,9 @@ itself is left.
 **Exit criteria.**
 
 - Every blocking and required review issue is closed.
+- Moved from Stage 10 (deviation, 2026-11-04): one hour of fuzzing
+  clean, the upstream nanoarrow pull request for patch 0004 open, and a
+  step-20 gctorture run green on the merge commit.
 - The `pkg-cran-review` table is clean.
 - A full-profile r-actions run is green on the merge commit, which becomes
   the release commit.

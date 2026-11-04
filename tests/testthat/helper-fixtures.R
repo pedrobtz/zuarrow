@@ -87,3 +87,86 @@ crash_outcome <- function(path) {
   )
   if (is.data.frame(result)) "data.frame" else class(result)[[1]]
 }
+
+# The exact text of each integer and decimal column of a golden case's JSON
+# twin (generated_*.json.gz), as a named list of character vectors with NA
+# for null slots. The JSON writes a decimal's unscaled integer, so its text
+# is scaled here; other columns are left out.
+golden_json_text <- function(case_path) {
+  con <- gzfile(paste0(case_path, ".json.gz"), "rb")
+  bytes <- readBin(con, "raw", 1e8)
+  close(con)
+  json <- zujson::json_parse_raw(bytes)
+  out <- list()
+  for (i in seq_along(json$schema$fields)) {
+    field <- json$schema$fields[[i]]
+    type <- field$type
+    if (!type$name %in% c("int", "decimal")) {
+      next
+    }
+    text <- unlist(lapply(json$batches, function(batch) {
+      column <- batch$columns[[i]]
+      values <- json_number_text(column$DATA)
+      valid <- as.logical(unlist(column$VALIDITY))
+      if (length(valid) == length(values)) {
+        values[!valid] <- NA
+      }
+      values
+    }))
+    if (type$name == "decimal") {
+      text <- scale_text(text, type$scale)
+    }
+    out[[field$name]] <- if (is.null(text)) character() else text
+  }
+  out
+}
+
+# JSON integers past 2^53 are strings; the others are numbers.
+json_number_text <- function(x) {
+  x <- unlist(x)
+  if (is.null(x)) {
+    return(character())
+  }
+  if (is.character(x)) x else format(x, scientific = FALSE, trim = TRUE)
+}
+
+# "-992" at scale 2 is "-9.92"; at scale 0 it is "-992".
+scale_text <- function(text, scale) {
+  if (scale <= 0) {
+    out <- paste0(text, strrep("0", -scale))
+    out[is.na(text)] <- NA
+    return(out)
+  }
+  vapply(
+    text,
+    function(t) {
+      if (is.na(t)) {
+        return(NA_character_)
+      }
+      sign <- if (startsWith(t, "-")) "-" else ""
+      digits <- sub("^-", "", t)
+      digits <- paste0(strrep("0", max(0, scale + 1 - nchar(digits))), digits)
+      n <- nchar(digits)
+      paste0(
+        sign,
+        substr(digits, 1, n - scale),
+        ".",
+        substr(digits, n - scale + 1, n)
+      )
+    },
+    "",
+    USE.NAMES = FALSE
+  )
+}
+
+# The text of a column read with lossy = "character": exact text already for
+# the columns that needed it, and the printed value for those that convert
+# exactly to integer or double.
+column_text <- function(x) {
+  if (is.character(x)) {
+    return(as.vector(x))
+  }
+  out <- format(as.vector(x), scientific = FALSE, trim = TRUE)
+  out[is.na(x)] <- NA
+  as.character(out)
+}

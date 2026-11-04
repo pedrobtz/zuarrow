@@ -29,10 +29,19 @@ overturn, and its §15 open questions are still open.
 
 ## Current state
 
-Stages 0 to 8 of `.agents/roadmap.md` are merged. Stage 9 (the DuckDB
-helper and the typed-package contract), Stage 10 (v0.1.0 readiness) and
-Stage 11 (Review) remain. The first critical review (2026-10-27, issues
-labelled `review`) has been fixed on one branch.
+Stages 0 to 9 of `.agents/roadmap.md` are merged. Stage 10 (v0.1.0
+readiness) is in progress, and Stage 11 (Review) follows it. The first
+critical review (2026-10-27, issues labelled `review`) has been fixed.
+
+The version is `0.1.0`. It builds on zukomp's development version
+through `Remotes:`. Submission waits for zukomp 0.2.0, the release with
+the codecs, to reach CRAN, which can happen 2026-11-27 at the earliest.
+The first step of the CRAN-submission issue (#12) is then to remove
+`Remotes:` and set `zukomp (>= 0.2.0)`. Stage 10 also wants an upstream
+nanoarrow pull request for vendored patch 0004.
+
+`decimal`'s registration (decimal#24) is optional. It is tested when
+`decimal` provides it, and 0.1.0 does not wait for it (design §12).
 
 ## Stage tracking
 
@@ -148,7 +157,19 @@ Design §4 names five layers. What exists so far:
   each batch's field to the handler, and the pieces are combined with
   `c()`. A `from` handler's array is moved into its slot only after the
   rest is finished, because nanoarrow's finishing walks every child's
-  `private_data` as its own.
+  `private_data` as its own. A `to` handler takes two arguments, or three
+  if it also wants the `lossy` policy. Its arity is checked at
+  registration. Keys are tried in a fixed order: an extension name, then
+  an exact format string, then a pattern (`zar_handler_for()`).
+
+- **The DuckDB helper** in `R/duckdb.R`: `arrow_duckdb()` turns on
+  `arrow_lossless_conversion`, fetches through DuckDB's Arrow stream
+  export, and converts with `arrow_to_r()`. It puts the setting back as it
+  was when it returns. `DBI`, `duckdb` and `nanoarrow` are `Suggests`
+  only. The engine tests skip on CRAN, because DuckDB's scheduler thread
+  shows in valgrind as "possibly lost" (`tools/valgrind.supp`).
+  `tools/ci-binaries.R` installs duckdb and arrow as binaries on the
+  R-devel images.
 
 - **The IPC reader** in `src/zar_ipc_read.c` holds the input in memory
   and walks the stream's messages or the file's footer blocks over
@@ -211,6 +232,13 @@ test or CI leg will catch late. Add more as stages establish them.
   `full` level. The `arrow-testing` crash corpus is the regression set.
 - **Little-endian only in v0.1.0** (D13): a big-endian schema is a
   `zuarrow_format_error`, not a silent misread.
+- **Every crash input stays in the corpus.** An input that the fuzz
+  target or the crash corpus made fail goes into `tests/testthat/data/`
+  with its fix. The fuzzer then uses it as a seed, and the tests pin its
+  outcome. A vendored fix is a numbered patch in `tools/patches/`, offered
+  upstream.
+- **DuckDB stays off CRAN.** `local_duckdb()` and the `arrow_duckdb()`
+  example skip there. A new engine test goes through `local_duckdb()`.
 
 ## Testing conventions
 
@@ -233,7 +261,11 @@ test or CI leg will catch late. Add more as stages establish them.
   correctness.
 - **Helpers live in `tests/testthat/helper-*.R`.** `tests/testthat/README.md`
   records the C error branches no test can reach, and why.
-- **Keep the suite inside the CRAN time budget.** No runtime recorded yet.
+- **Keep the suite inside the CRAN time budget.** The whole suite took
+  15 s on 2026-11-04 with the fixtures fetched and every Suggests
+  installed: `devtools::test(shuffle = TRUE)`, macOS x86_64, R 4.5.2.
+  Under gctorture it runs a sample of the repeated loops
+  (`helper-gctorture.R`).
 
 ## Definition of done
 

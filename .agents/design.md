@@ -273,6 +273,8 @@ symbol beginning `zar_` or `ZAR_`.
 - **`decimal`**: registers `decimal128` and `decimal256` and its
   `r.decimal` extension name, giving it a libarrow-free path beside the
   `arrow` one it has.
+  It is optional for zuarrow 0.1.0 (decided 2026-11-04): zuarrow tests
+  the registration when `decimal` provides it, and ships without it.
 - **`zutempo`** (RFC 0035): registers `timestamp` at every unit and zone,
   `time64`, `duration` and `date64`; its `Instant` stores nanoseconds
   exactly (RFC 0035 §4.1), which is what makes `tsn:` exact.
@@ -855,7 +857,11 @@ dependency:
    Cases whose types are lossy without the family packages are read
    with `lossy = "character"` and compared with the JSON's own text
    encoding of integers and decimals, and again exactly when `zuint`,
-   `decimal` and `zutempo` are installed. The `cpp-21.0.0` directory's
+   `decimal` and `zutempo` are installed. *2026-11-04:* the integer and
+   decimal text is compared with the `.json.gz` read by `zujson`, a
+   test-only `Suggests`, rather than by nanoarrow's integration-testing
+   reader. File-against-stream identity and the comparison with libarrow
+   cover the other types. The `cpp-21.0.0` directory's
    `binary_view`, `list_view` and `run_end_encoded` cases must decode
    (§6.7). The `union` case must raise `zuarrow_lossy_error` without
    crashing. The big-endian directory must error cleanly, since v0.1.0
@@ -966,7 +972,11 @@ profile and records the dates.
   and no `Arrow*` symbol; `DESCRIPTION` names the Apache Software
   Foundation as a copyright holder and `inst/COPYRIGHTS` states the
   nanoarrow commit.
-- `decimal` registers with zuarrow and its golden cases decode exactly.
+- Optional (decided 2026-11-04): when an installed `decimal` registers
+  with zuarrow, its golden cases decode exactly; the test skips when it
+  does not. v0.1.0 does not wait for `decimal`'s registration
+  (decimal#24). Without it, a decimal column is a `zuarrow_lossy_error`
+  naming `decimal`, or exact text under `lossy = "character"`.
 - `.agents/benchmarks.md` holds a number for every row of §10, met or
   not.
 - Seven stages. A stage that needs a second pull request moves scope to
@@ -1141,3 +1151,9 @@ whether `arrow_registry()` lists built-in rows or registered ones only;
 the wording of condition messages beyond their classes and the fields
 §6.3 requires; the `zukomp` floor version, which Stage 0 records once
 that release exists; and the article's second example.
+
+*2026-11-04:* the `zukomp` floor is the release that ships the lz4 and
+zstd codecs, 0.2.0. Until it is on CRAN, `DESCRIPTION` says
+`zukomp (> 0.1.0)` with `Remotes: pedrobtz/zukomp`, the development
+version `0.1.0.9000`. Submission sets `(>= 0.2.0)` and removes
+`Remotes:`.
