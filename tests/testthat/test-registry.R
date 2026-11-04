@@ -117,7 +117,18 @@ test_that("a registration may not make an exact type lossy", {
     arrow_register("arrow.bool8", to = function(a, s) 1, exact = FALSE),
     class = "zuarrow_registry_error"
   )
-  exact <- c("tss:", "tsm:UTC", "+w:4", "+vl", "+vL", "tss:*", "tsm*", "+v*")
+  exact <- c(
+    "tss:",
+    "tsm:UTC",
+    "tsu:UTC",
+    "tsu:*",
+    "+w:4",
+    "+vl",
+    "+vL",
+    "tss:*",
+    "tsm*",
+    "+v*"
+  )
   for (key in exact) {
     expect_error(
       arrow_register(key, to = function(a, s) 1, exact = FALSE),
@@ -126,7 +137,7 @@ test_that("a registration may not make an exact type lossy", {
     )
   }
   # Lossy defaults may still take an inexact registration.
-  for (key in c("tsn:UTC", "tsu:*", "tdm")) {
+  for (key in c("tsn:UTC", "tsn:*", "tdm")) {
     local_registration(key, to = function(a, s) 1, exact = FALSE)
     expect_true(key %in% arrow_registry()$key, info = key)
   }
