@@ -36,6 +36,8 @@ struct zar_writer {
   int codec;
   int level;
   const char *kind; /* the condition kind of a failure inside the callback */
+  struct ArrowArray *copies; /* unsliced copies of sliced batches, by batch */
+  int64_t n_copies;
 };
 
 static void zar_writer_free(struct zar_writer *w) {
@@ -47,6 +49,10 @@ static void zar_writer_free(struct zar_writer *w) {
   if (w->view_ready) ArrowArrayViewReset(&w->view);
   if (w->footer_ready) ArrowIpcFooterReset(&w->footer);
   free(w->dict_views);
+  for (int64_t i = 0; i < w->n_copies; i++) {
+    if (w->copies[i].release != NULL) ArrowArrayRelease(&w->copies[i]);
+  }
+  free(w->copies);
 }
 
 static void zar_writer_finalize(SEXP xptr) {
@@ -153,6 +159,222 @@ static void zar_fill_null_counts(struct ArrowArrayView *view) {
   if (view->dictionary != NULL) zar_fill_null_counts(view->dictionary);
 }
 
+/* ---- types the writer refuses ----------------------------------------- */
+
+/* The view layouts have no IPC encoding in the vendored encoder, and no R
+   source type writes them (section 2). Returns 0 and fills `error` for
+   the first such field. */
+static int zar_check_writable(const struct ArrowSchema *schema, struct ArrowError *error) {
+  struct ArrowSchemaView sv;
+  if (ArrowSchemaViewInit(&sv, schema, error) != NANOARROW_OK) return 0;
+  switch (sv.type) {
+    case NANOARROW_TYPE_STRING_VIEW:
+    case NANOARROW_TYPE_BINARY_VIEW:
+    case NANOARROW_TYPE_LIST_VIEW:
+    case NANOARROW_TYPE_LARGE_LIST_VIEW:
+      ArrowErrorSet(error, "field `%s` has the view layout `%s`, which cannot be written",
+                    schema->name == NULL ? "" : schema->name, schema->format);
+      return 0;
+    default:
+      break;
+  }
+  for (int64_t i = 0; i < schema->n_children; i++) {
+    if (!zar_check_writable(schema->children[i], error)) return 0;
+  }
+  if (schema->dictionary != NULL && !zar_check_writable(schema->dictionary, error)) {
+    return 0;
+  }
+  return 1;
+}
+
+/* ---- sliced batches --------------------------------------------------- */
+
+/* Whether any node of a view, dictionaries included, has an offset. The
+   IPC body has no offsets, so such a batch is copied before encoding. */
+static int zar_has_offset(const struct ArrowArrayView *view) {
+  if (view->offset != 0) return 1;
+  for (int64_t i = 0; i < view->n_children; i++) {
+    if (zar_has_offset(view->children[i])) return 1;
+  }
+  return view->dictionary != NULL && zar_has_offset(view->dictionary);
+}
+
+/* Appends bits [from, from + n) of `bits` to `dst` from bit zero, and
+   counts the zeros when `zeros` is not NULL. */
+static int zar_copy_bits(struct ArrowBuffer *dst, const uint8_t *bits, int64_t from,
+                         int64_t n, int64_t *zeros) {
+  NANOARROW_RETURN_NOT_OK(ArrowBufferAppendFill(dst, 0, (n + 7) / 8));
+  int64_t count = 0;
+  for (int64_t i = 0; i < n; i++) {
+    int8_t bit = ArrowBitGet(bits, from + i);
+    count += !bit;
+    if (bit) ArrowBitSet(dst->data, i);
+  }
+  if (zeros != NULL) *zeros = count;
+  return NANOARROW_OK;
+}
+
+/* The offsets [from, from + n] rebased to start at zero; `first` and
+   `last` are the first and last offsets read. */
+static int zar_copy_offsets(struct ArrowBuffer *dst, const struct ArrowBufferView *src,
+                            int large, int64_t from, int64_t n, int64_t *first,
+                            int64_t *last) {
+  if (large) {
+    const int64_t *off = src->data.as_int64 + from;
+    *first = off[0];
+    *last = off[n];
+    NANOARROW_RETURN_NOT_OK(ArrowBufferReserve(dst, (n + 1) * 8));
+    for (int64_t i = 0; i <= n; i++) {
+      NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt64(dst, off[i] - *first));
+    }
+  } else {
+    const int32_t *off = src->data.as_int32 + from;
+    *first = off[0];
+    *last = off[n];
+    NANOARROW_RETURN_NOT_OK(ArrowBufferReserve(dst, (n + 1) * 4));
+    for (int64_t i = 0; i <= n; i++) {
+      NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt32(dst, (int32_t)(off[i] - *first)));
+    }
+  }
+  return NANOARROW_OK;
+}
+
+/* Copies elements [start, start + n) of a validated view into `out`, an
+   array initialised from the same schema, at offset zero. Sets `*kind`
+   for a failure that is not an allocation's. */
+static int zar_copy_node(const struct ArrowArrayView *v, struct ArrowArray *out,
+                         int64_t start, int64_t n, const char **kind,
+                         struct ArrowError *error) {
+  int64_t from = v->offset + start;
+  out->offset = 0;
+  out->length = n;
+  out->null_count = 0;
+
+  if (v->layout.buffer_type[0] == NANOARROW_BUFFER_TYPE_VALIDITY &&
+      v->buffer_views[0].data.data != NULL && v->null_count != 0) {
+    struct ArrowBuffer *validity = ArrowArrayBuffer(out, 0);
+    int64_t nulls = 0;
+    NANOARROW_RETURN_NOT_OK(
+        zar_copy_bits(validity, v->buffer_views[0].data.as_uint8, from, n, &nulls));
+    if (nulls == 0) ArrowBufferReset(validity);
+    out->null_count = nulls;
+  }
+
+  int64_t first, last;
+  switch (v->storage_type) {
+    case NANOARROW_TYPE_NA:
+      out->null_count = n;
+      break;
+    case NANOARROW_TYPE_STRING:
+    case NANOARROW_TYPE_BINARY:
+    case NANOARROW_TYPE_LARGE_STRING:
+    case NANOARROW_TYPE_LARGE_BINARY: {
+      int large = v->storage_type == NANOARROW_TYPE_LARGE_STRING ||
+                  v->storage_type == NANOARROW_TYPE_LARGE_BINARY;
+      NANOARROW_RETURN_NOT_OK(zar_copy_offsets(ArrowArrayBuffer(out, 1),
+                                               &v->buffer_views[1], large, from, n,
+                                               &first, &last));
+      if (last > first) {
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(out, 2),
+                                                  v->buffer_views[2].data.as_uint8 + first,
+                                                  last - first));
+      }
+      break;
+    }
+    case NANOARROW_TYPE_LIST:
+    case NANOARROW_TYPE_MAP:
+    case NANOARROW_TYPE_LARGE_LIST:
+      NANOARROW_RETURN_NOT_OK(zar_copy_offsets(
+          ArrowArrayBuffer(out, 1), &v->buffer_views[1],
+          v->storage_type == NANOARROW_TYPE_LARGE_LIST, from, n, &first, &last));
+      NANOARROW_RETURN_NOT_OK(zar_copy_node(v->children[0], out->children[0], first,
+                                            last - first, kind, error));
+      break;
+    case NANOARROW_TYPE_FIXED_SIZE_LIST: {
+      int64_t size = v->layout.child_size_elements;
+      NANOARROW_RETURN_NOT_OK(zar_copy_node(v->children[0], out->children[0],
+                                            from * size, n * size, kind, error));
+      break;
+    }
+    case NANOARROW_TYPE_STRUCT:
+      for (int64_t i = 0; i < v->n_children; i++) {
+        NANOARROW_RETURN_NOT_OK(
+            zar_copy_node(v->children[i], out->children[i], from, n, kind, error));
+      }
+      break;
+    case NANOARROW_TYPE_SPARSE_UNION:
+    case NANOARROW_TYPE_DENSE_UNION: {
+      int dense = v->storage_type == NANOARROW_TYPE_DENSE_UNION;
+      NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(ArrowArrayBuffer(out, 0),
+                                                v->buffer_views[0].data.as_int8 + from, n));
+      if (dense) {
+        /* The offsets point into whole children, which are copied whole. */
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(
+            ArrowArrayBuffer(out, 1), v->buffer_views[1].data.as_int32 + from, n * 4));
+      }
+      for (int64_t i = 0; i < v->n_children; i++) {
+        const struct ArrowArrayView *child = v->children[i];
+        NANOARROW_RETURN_NOT_OK(zar_copy_node(child, out->children[i], dense ? 0 : from,
+                                              dense ? child->length : n, kind, error));
+      }
+      break;
+    }
+    case NANOARROW_TYPE_RUN_END_ENCODED:
+      ArrowErrorSet(error, "a sliced run-end encoded array cannot be written");
+      *kind = "type";
+      return ENOTSUP;
+    default: {
+      /* One buffer of fixed-width values: booleans, numbers, temporal
+         types, decimals, fixed-size binary and dictionary indices. */
+      int64_t bits = v->layout.element_size_bits[1];
+      if (v->layout.buffer_type[1] != NANOARROW_BUFFER_TYPE_DATA ||
+          v->layout.buffer_type[2] != NANOARROW_BUFFER_TYPE_NONE ||
+          !(bits == 1 || (bits > 0 && bits % 8 == 0))) {
+        ArrowErrorSet(error, "a sliced array of type %s cannot be written",
+                      ArrowTypeString(v->storage_type));
+        *kind = "type";
+        return ENOTSUP;
+      }
+      if (bits == 1) {
+        NANOARROW_RETURN_NOT_OK(zar_copy_bits(ArrowArrayBuffer(out, 1),
+                                              v->buffer_views[1].data.as_uint8, from, n,
+                                              NULL));
+      } else if (n > 0) {
+        int64_t width = bits / 8;
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppend(
+            ArrowArrayBuffer(out, 1), v->buffer_views[1].data.as_uint8 + from * width,
+            n * width));
+      }
+      break;
+    }
+  }
+
+  /* A dictionary is copied whole: the indices point into all of it. */
+  if (v->dictionary != NULL) {
+    NANOARROW_RETURN_NOT_OK(zar_copy_node(v->dictionary, out->dictionary, 0,
+                                          v->dictionary->length, kind, error));
+  }
+  return NANOARROW_OK;
+}
+
+/* An unsliced copy of a batch whose view has an offset somewhere, for the
+   encoder, whose message has no place for one. */
+static int zar_unslice(const struct ArrowArrayView *view, const struct ArrowSchema *schema,
+                       struct ArrowArray *out, const char **kind,
+                       struct ArrowError *error) {
+  int code = ArrowArrayInitFromSchema(out, schema, error);
+  if (code != NANOARROW_OK) {
+    *kind = "format";
+    return code;
+  }
+  code = zar_copy_node(view, out, 0, view->length, kind, error);
+  if (code == NANOARROW_OK) {
+    code = ArrowArrayFinishBuildingDefault(out, error);
+    if (code != NANOARROW_OK) *kind = "format";
+  }
+  return code;
+}
+
 /* ---- dictionaries ----------------------------------------------------- */
 
 /* Collects the dictionary views of a batch in the encoder's id order:
@@ -241,9 +463,14 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
                                : NANOARROW_IPC_COMPRESSION_TYPE_NONE;
   w->level = level == NA_INTEGER ? INT32_MIN : level; /* ZU_LEVEL_DEFAULT */
 
+  const char *kind = NULL;
+  if (!zar_check_writable(schema, &error)) {
+    SEXP fail = PROTECT(zar_write_fail("type", &error));
+    UNPROTECT(2);
+    return fail;
+  }
   int code = ArrowIpcEncoderInit(&w->encoder);
   w->encoder_ready = code == NANOARROW_OK;
-  const char *kind = NULL;
   if (code == NANOARROW_OK && file) {
     ArrowIpcFooterInit(&w->footer);
     w->footer_ready = 1;
@@ -270,6 +497,13 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   struct ArrowArrayView *views = (struct ArrowArrayView *)R_alloc(
       (size_t)(Rf_xlength(arrays) > 0 ? Rf_xlength(arrays) : 1), sizeof(struct ArrowArrayView));
   R_xlen_t n_views = 0;
+  w->copies = (struct ArrowArray *)calloc(
+      (size_t)(Rf_xlength(arrays) > 0 ? Rf_xlength(arrays) : 1), sizeof(struct ArrowArray));
+  if (w->copies == NULL || w->dict_views == NULL) {
+    ArrowErrorSet(&error, "cannot allocate the writer");
+    if (code == NANOARROW_OK) code = ENOMEM;
+  }
+  w->n_copies = w->copies == NULL ? 0 : Rf_xlength(arrays);
 
   for (R_xlen_t b = 0; code == NANOARROW_OK && b < Rf_xlength(arrays); b++) {
     struct ArrowArray *array = zar_array_from_xptr(VECTOR_ELT(arrays, b), &error);
@@ -288,6 +522,24 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       break;
     }
     zar_fill_null_counts(view);
+    if (view->null_count != 0 && ArrowArrayViewComputeNullCount(view) != 0) {
+      ArrowErrorSet(&error,
+                    "batch %ld has null rows, which an IPC record batch cannot hold",
+                    (long)(b + 1));
+      kind = "type";
+      code = EINVAL;
+      break;
+    }
+    /* A sliced batch is written as the values it holds (section 6.8). */
+    if (zar_has_offset(view)) {
+      code = zar_unslice(view, schema, &w->copies[b], &kind, &error);
+      if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(view, &w->copies[b], &error);
+      if (code != NANOARROW_OK) {
+        if (kind == NULL) kind = "format";
+        break;
+      }
+      zar_fill_null_counts(view);
+    }
 
     /* Dictionaries: written before the first batch, and again only when a
        stream's batch brings a different one. */
@@ -348,7 +600,10 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   for (R_xlen_t k = 0; k < n_views; k++) ArrowArrayViewReset(&views[k]);
   if (code != NANOARROW_OK) {
     if (error.message[0] == '\0') ArrowErrorSet(&error, "the IPC output could not be written");
+    /* The codec callback names its own failures; an allocation's is a
+       limit, and anything else the encoder refuses is malformed input. */
     if (kind == NULL) kind = w->kind;
+    if (kind == NULL) kind = code == ENOMEM ? "limit" : "format";
     SEXP fail = PROTECT(zar_write_fail(kind, &error));
     UNPROTECT(2);
     return fail;

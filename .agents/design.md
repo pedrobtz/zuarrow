@@ -658,6 +658,18 @@ tensor extensions pass through as storage with the attribute.
   encoder in a fixed field order, and codec output pinned by the `zukomp`
   version the package was checked against.
 
+*Decided 2026-11-04 (#104):* a batch with a nonzero offset at any depth
+is copied to offset zero in `zar_ipc_write.c` before it is encoded, so a
+slice is written as the values it holds; a dictionary and a dense
+union's children are copied whole. A sliced run-end encoded column is a
+`zuarrow_type_error`; unsliced unions and run-end encoded columns are
+still written as they are. The view layouts are a `zuarrow_type_error`
+before anything is encoded, and so is a batch with null rows, which a
+record batch cannot hold. Every other encoder failure is a
+`zuarrow_format_error`, an allocation failure a `zuarrow_limit_error`,
+and the codec's a `zuarrow_codec_error`. The vendored encoder is not
+patched.
+
 ### 6.9 Nulls
 
 Arrow's null is a validity bit; R's missing value is a sentinel. Both
