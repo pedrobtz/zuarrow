@@ -23,3 +23,19 @@ local_unload_hooks <- function(packages, .env = parent.frame()) {
     withr::defer(setHook(name, old, "replace"), envir = .env)
   }
 }
+
+# A handler for "d:*" that records the format it is given and returns the
+# values' exact text.
+local_decimal_text <- function(.env = parent.frame()) {
+  seen <- new.env()
+  seen$formats <- character()
+  local_registration(
+    "d:*",
+    to = function(array, schema) {
+      seen$formats <- c(seen$formats, format(schema))
+      as.vector(arrow_to_r(array, lossy = "character"))
+    },
+    .env = .env
+  )
+  seen
+}

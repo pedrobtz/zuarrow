@@ -760,6 +760,158 @@ SEXP zar_c_array_slice(SEXP x, SEXP r_start, SEXP r_n) {
   return out;
 }
 
+/* The values of a dictionary or run-end encoded array, one per row, as a
+   plain array of the value type (section 6.10). A registered handler for
+   the value type receives this array, never the indices or the run ends.
+   The schema is the value type's, named and annotated as the encoded
+   field is. Fixed-width values and binary or string values are copied;
+   any other value layout is a type failure. */
+SEXP zar_c_array_decode(SEXP x) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  SEXP tag = zar_array_schema_xptr(x, &error);
+  if (tag == NULL) return zar_failure_from_error("handle", &error);
+  struct ArrowSchema *schema = zar_schema_from_xptr(tag, &error);
+  if (schema == NULL) return zar_failure_from_error("handle", &error);
+
+  struct ArrowArrayView view;
+  if (ArrowArrayViewInitFromSchema(&view, schema, &error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &error);
+  }
+  if (ArrowArrayViewSetArray(&view, array, &error) != NANOARROW_OK) {
+    ArrowArrayViewReset(&view);
+    return zar_failure_from_error("format", &error);
+  }
+  int ree = view.storage_type == NANOARROW_TYPE_RUN_END_ENCODED;
+  if (schema->dictionary == NULL && !ree) {
+    ArrowArrayViewReset(&view);
+    return zar_failure("handle",
+                       "the array is not dictionary or run-end encoded");
+  }
+  struct ArrowSchema *value_schema =
+      ree ? schema->children[1] : schema->dictionary;
+  struct ArrowArrayView *values = ree ? view.children[1] : view.dictionary;
+  struct ArrowArrayView *ends = ree ? view.children[0] : NULL;
+
+  int64_t bits = values->layout.element_size_bits[1];
+  int fixed = value_schema->dictionary == NULL &&
+              value_schema->n_children == 0 &&
+              values->layout.buffer_type[0] == NANOARROW_BUFFER_TYPE_VALIDITY &&
+              values->layout.buffer_type[1] == NANOARROW_BUFFER_TYPE_DATA &&
+              values->layout.buffer_type[2] == NANOARROW_BUFFER_TYPE_NONE &&
+              (bits == 1 || (bits > 0 && bits % 8 == 0));
+  int bytes = value_schema->dictionary == NULL &&
+              (values->storage_type == NANOARROW_TYPE_STRING ||
+               values->storage_type == NANOARROW_TYPE_LARGE_STRING ||
+               values->storage_type == NANOARROW_TYPE_BINARY ||
+               values->storage_type == NANOARROW_TYPE_LARGE_BINARY);
+  if (!fixed && !bytes) {
+    ArrowArrayViewReset(&view);
+    return zar_failure(
+        "type",
+        "a registered handler can't read this column: its encoded values "
+        "are not of a fixed width, binary or string");
+  }
+
+  SEXP out_schema = PROTECT(zar_schema_owning_xptr());
+  struct ArrowSchema *dst_schema =
+      (struct ArrowSchema *)R_ExternalPtrAddr(out_schema);
+  int code = ArrowSchemaDeepCopy(value_schema, dst_schema);
+  if (code == NANOARROW_OK) code = ArrowSchemaSetName(dst_schema, schema->name);
+  if (code == NANOARROW_OK && schema->metadata != NULL) {
+    code = ArrowSchemaSetMetadata(dst_schema, schema->metadata);
+  }
+  if (code != NANOARROW_OK) {
+    ArrowArrayViewReset(&view);
+    UNPROTECT(1);
+    return zar_failure("handle", "the value schema could not be copied");
+  }
+  SEXP out = PROTECT(zar_array_owning_xptr(out_schema));
+  struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
+  if (ArrowArrayInitFromSchema(dst, dst_schema, &error) != NANOARROW_OK) {
+    ArrowArrayViewReset(&view);
+    UNPROTECT(2);
+    return zar_failure_from_error("format", &error);
+  }
+
+  int64_t n = array->length;
+  int64_t run = 0;
+  int64_t nulls = 0;
+  struct ArrowBitmap *bitmap = ArrowArrayValidityBitmap(dst);
+  struct ArrowBuffer *data = ArrowArrayBuffer(dst, 1);
+  if (fixed) {
+    code = ArrowBitmapReserve(bitmap, n);
+    if (code == NANOARROW_OK) {
+      code = bits == 1 ? ArrowBufferAppendFill(data, 0, (n + 7) / 8)
+                       : ArrowBufferAppendFill(data, 0, n * (bits / 8));
+    }
+  } else {
+    code = ArrowArrayStartAppending(dst);
+  }
+  const char *failure = NULL;
+  for (int64_t i = 0; code == NANOARROW_OK && i < n; i++) {
+    int64_t j;
+    if (ree) {
+      /* Run ends are strictly increasing and validated above. */
+      int64_t logical = view.offset + i;
+      while (run < ends->length &&
+             ArrowArrayViewGetIntUnsafe(ends, run) <= logical) {
+        run++;
+      }
+      if (run >= ends->length) {
+        failure = "a run-end encoding ends before its last row";
+        break;
+      }
+      j = run;
+    } else if (ArrowArrayViewIsNull(&view, i)) {
+      j = -1;
+    } else {
+      j = ArrowArrayViewGetIntUnsafe(&view, i);
+      if (j < 0 || j >= values->length) {
+        failure = "a dictionary index is outside its dictionary";
+        break;
+      }
+    }
+    int valid = j >= 0 && !ArrowArrayViewIsNull(values, j);
+    nulls += !valid;
+    if (fixed) {
+      ArrowBitmapAppendUnsafe(bitmap, (uint8_t)valid, 1);
+      if (!valid) continue;
+      const uint8_t *src = values->buffer_views[1].data.as_uint8;
+      int64_t at = values->offset + j;
+      if (bits == 1) {
+        ArrowBitSetTo(data->data, i, ArrowBitGet(src, at));
+      } else {
+        int64_t width = bits / 8;
+        memcpy(data->data + i * width, src + at * width, (size_t)width);
+      }
+    } else if (!valid) {
+      code = ArrowArrayAppendNull(dst, 1);
+    } else {
+      struct ArrowBufferView value = ArrowArrayViewGetBytesUnsafe(values, j);
+      code = ArrowArrayAppendBytes(dst, value);
+    }
+  }
+  ArrowArrayViewReset(&view);
+  if (failure != NULL) {
+    UNPROTECT(2);
+    return zar_failure("format", failure);
+  }
+  if (fixed && code == NANOARROW_OK) {
+    dst->length = n;
+    dst->null_count = nulls;
+    if (nulls == 0) ArrowBitmapReset(bitmap);
+  }
+  if (code == NANOARROW_OK) code = ArrowArrayFinishBuildingDefault(dst, &error);
+  UNPROTECT(2);
+  if (code != NANOARROW_OK) {
+    return zar_failure("format", "the encoded values could not be copied");
+  }
+  return out;
+}
+
 /* Which rows of an array are null by its own validity bitmap, as a
    logical vector; NULL when it has no bitmap. Registered handlers get a
    struct's fields through zar_c_array_child(), which leaves the struct's

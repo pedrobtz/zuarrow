@@ -314,6 +314,7 @@ zar_convert <- function(
     if (codes[[k]] == 9L) {
       proto <- if (frame) to[[names[[k]]]] else zar_single_prototype(to)
       h <- zar_handler_for_prototype(proto)
+      h$decode <- !is.null(zar_encoded_values(fields[[k]]))
       if (!h$exact && lossy %in% c("error", "character")) {
         zar_abort(
           "type",
@@ -411,8 +412,21 @@ zar_convert <- function(
 # The handler for a field, or list(nested = TRUE) for a struct one of
 # whose fields, at any depth, has a handler; NULL otherwise.
 zar_field_handler <- function(field, lossy) {
-  h <- zar_handler_for(field$format, zar_extension_name(field))
+  # A dictionary or run-end encoded field is looked up by its value type,
+  # never by its index or run-end type, and its handler gets the decoded
+  # values (#93).
+  values <- zar_encoded_values(field)
+  h <- if (is.null(values)) {
+    zar_handler_for(field$format, zar_extension_name(field))
+  } else {
+    extension <- zar_extension_name(field)
+    if (!nzchar(extension)) {
+      extension <- zar_extension_name(values)
+    }
+    zar_handler_for(values$format, extension)
+  }
   if (!is.null(h) && (h$exact || !lossy %in% c("error", "character"))) {
+    h$decode <- !is.null(values)
     return(h)
   }
   if (identical(field$format, "+s")) {
@@ -421,6 +435,18 @@ zar_field_handler <- function(field, lossy) {
         return(list(key = field$format, nested = TRUE, exact = TRUE))
       }
     }
+  }
+  NULL
+}
+
+# The spec of the values of a dictionary or run-end encoded field, or NULL
+# for any other field.
+zar_encoded_values <- function(field) {
+  if (!is.null(field$dictionary)) {
+    return(field$dictionary)
+  }
+  if (identical(field$format, "+r")) {
+    return(field$children[[2L]])
   }
   NULL
 }
@@ -511,6 +537,11 @@ zar_apply_handler <- function(
     })
   } else {
     arrays
+  }
+  if (isTRUE(handler$decode)) {
+    columns <- lapply(columns, function(a) {
+      zar_check(.Call(zar_c_array_decode, a), call = call)
+    })
   }
   active <- zar_registry$active
   zar_registry$active <- c(active, handler$key)
