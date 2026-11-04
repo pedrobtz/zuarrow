@@ -141,3 +141,50 @@ ext_schema <- function(format, name, metadata = raw()) {
 test_failing_stream <- function(schema) {
   .Call(zuarrow:::zar_c_test_failing_stream, schema)
 }
+
+# Validity bytes for `valid`, a logical vector.
+test_validity <- function(valid) {
+  packBits(c(valid, logical((-length(valid)) %% 8L)), "raw")
+}
+
+# A dictionary<int32, format> array. `indices` are 0-based, NA for a null
+# row; `values` is the dictionary's array spec.
+test_dict_array <- function(format, indices, values) {
+  schema <- test_schema(list(
+    format = "i",
+    name = "",
+    flags = 2L,
+    metadata = NULL,
+    children = list(),
+    dictionary = zspec(format)
+  ))
+  nulls <- is.na(indices)
+  test_array(
+    schema,
+    length(indices),
+    list(
+      if (any(nulls)) test_validity(!nulls),
+      le_int(ifelse(nulls, 0, indices), 4L)
+    ),
+    null_count = sum(nulls),
+    dictionary = values
+  )
+}
+
+# A run_end_encoded<int32, format> array; `values` is the values child's
+# array spec.
+test_ree_array <- function(format, run_ends, values) {
+  schema <- test_schema(zspec(
+    "+r",
+    children = list(zspec("i", "run_ends", flags = 0L), zspec(format, "values"))
+  ))
+  test_array(
+    schema,
+    run_ends[length(run_ends)],
+    list(),
+    children = list(
+      test_array_spec(length(run_ends), list(NULL, le_int(run_ends, 4L))),
+      values
+    )
+  )
+}

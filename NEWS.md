@@ -99,6 +99,11 @@
 
 ## Fixes
 
+* A lossy value in a dictionary or run-end encoded column is checked as
+  the rows read it. The `zuarrow_lossy_error` names its row, and a value
+  that no row reads, or that only null rows read, is not lossy. Before,
+  any such value in the dictionary or the runs raised an error with no
+  row (#107).
 * `arrow_read()` applies a delta dictionary batch that extends a
   dictionary already holding values, for fixed-width, binary and string
   values. Before, the bundled decoder refused it with a
