@@ -45,6 +45,17 @@ reader over a cut stream, and `test-stream.R` tests it.
 "a malformed list column" in `zar_build_list()` guards the shape of what
 `zar_prepare()` hands to C. R always builds that list whole.
 
+Two branches of `zar_c_array_decode()` in `zar_xptr.c` guard what its R
+caller and nanoarrow have already settled:
+
+- "the array is not dictionary or run-end encoded". R calls the decoder
+  only for a field whose handler was found through its encoded values
+  (`zar_field_handler()` sets `decode`).
+- "a run-end encoding ends before its last row". `ArrowArrayViewSetArray()`
+  validates at nanoarrow's default level first, which already rejects a
+  last run end short of the array's offset plus length as a
+  `zuarrow_format_error`. `test-registry.R` tests that input.
+
 ## No interrupt checks
 
 No first-party loop calls `R_CheckUserInterrupt()`. An interrupt longjmps
