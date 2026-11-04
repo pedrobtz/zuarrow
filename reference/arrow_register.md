@@ -97,7 +97,13 @@ from it.
 A registration declares whether it is exact. One that is not is used
 only under `lossy = "warn"` or `"allow"`, and may not replace a type
 whose built-in conversion is exact. Registering a key again replaces the
-earlier registration, with a message naming both packages.
+earlier registration, with a message naming both packages when another
+package owned it.
+
+A dictionary or run-end encoded column is matched by its value type, not
+its index or run-end type, and `to` receives an array of its decoded
+values, one per row. Values of a fixed width, binary or string decode;
+any other layout is a `zuarrow_type_error`.
 
 Registered handlers apply to the top-level columns of a data frame and
 to the fields of nested data frames, at any depth, not to the items of a

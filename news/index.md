@@ -138,6 +138,26 @@
 
 ### Fixes
 
+- A registered `from` handler is called once on the whole column, and
+  the column takes the type of the array it returns. So a handler may
+  choose the type from the values, as `decimal` chooses a precision, and
+  [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  and
+  [`arrow_stream()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
+  write the column in batches of that type
+  ([\#91](https://github.com/pedrobtz/zuarrow/issues/91)).
+
+- A dictionary or run-end encoded column goes to the handler registered
+  for its value type, which receives the decoded values. Before, the
+  handler for the index type received the dictionary, so a dictionary
+  with `int64` indices went to an `int64` registration and was read
+  wrong, and a dictionary of decimals did not reach decimal’s
+  ([\#93](https://github.com/pedrobtz/zuarrow/issues/93)).
+
+- A package that registers a key it already owns, as on every reload,
+  does so without a message
+  ([\#92](https://github.com/pedrobtz/zuarrow/issues/92)).
+
 - `arrow_metadata<-` raises `zuarrow_type_error` for a key that is not
   valid UTF-8 or a value that is not raw. Before, it raised a plain
   `zuarrow_error`.
