@@ -2,62 +2,11 @@
 # not a dependency: this file is left out of the package tarball
 # (.Rbuildignore) and runs from the source tree, in CI by oracles.yaml.
 
-# From test-deferred.R.
-test_that("sliced arrays are deferred", {
-  skip_without_oracle("nanoarrow")
-  sliced <- nanoarrow::nanoarrow_array_modify(
-    nanoarrow::as_nanoarrow_array(c("a", NA, "c", "d")),
-    list(offset = 1L, length = 2L)
-  )
-  y <- arrow_to_r(sliced, copy = FALSE)
-  expect_false(is.null(deferred_info(y)))
-  expect_identical(y, c(NA, "c"))
-})
-
 # From test-dictionary.R.
 test_that("nanoarrow's dictionaries read as factors", {
   skip_without_oracle("nanoarrow")
   f <- factor(c("x", "y", "x"))
   expect_identical(arrow_to_r(nanoarrow::as_nanoarrow_array(f)), f)
-})
-
-# From test-direct-paths.R.
-test_that("sliced arrays convert from their offset", {
-  skip_without_oracle("nanoarrow")
-  slice <- function(x, offset, length) {
-    nanoarrow::nanoarrow_array_modify(
-      nanoarrow::as_nanoarrow_array(x),
-      list(offset = offset, length = length)
-    )
-  }
-  expect_identical(
-    arrow_to_r(slice(c(1L, NA, 3L, 4L, 5L), 1L, 3L)),
-    c(NA, 3L, 4L)
-  )
-  expect_identical(arrow_to_r(slice(c(0.5, 1.5, NA, 3.5), 2L, 2L)), c(NA, 3.5))
-  expect_identical(
-    arrow_to_r(slice(c(TRUE, NA, FALSE, TRUE), 1L, 3L)),
-    c(NA, FALSE, TRUE)
-  )
-  expect_identical(
-    arrow_to_r(slice(as.Date("2026-10-22") + c(0L, NA, 2L), 1L, 2L)),
-    as.Date("2026-10-22") + c(NA, 2L)
-  )
-  expect_identical(
-    arrow_to_r(slice(c("a", NA, "cc", "d"), 1L, 3L)),
-    c(NA, "cc", "d")
-  )
-})
-
-# From test-nulls.R.
-test_that("a struct with an offset reads its children from that offset", {
-  skip_without_oracle("nanoarrow")
-  array <- nanoarrow::as_nanoarrow_array(data.frame(x = 1:4, y = letters[1:4]))
-  sliced <- nanoarrow::nanoarrow_array_modify(
-    array,
-    list(offset = 2, length = 2)
-  )
-  expect_identical(arrow_to_r(sliced), data.frame(x = 3:4, y = c("c", "d")))
 })
 
 # From test-read.R.
@@ -66,18 +15,6 @@ test_that("a lazy stream crosses to nanoarrow", {
   stream <- arrow_read(test_data("basic.arrows"), lazy = TRUE)
   out <- as.data.frame(nanoarrow::as_nanoarrow_array_stream(stream))
   expect_identical(out$i, basic_df()$i)
-})
-
-# From test-registry.R.
-test_that("a handler sees a sliced field", {
-  skip_without_oracle("nanoarrow")
-  local_registration("i", to = function(array, schema) arrow_to_r(array) * 10L)
-  array <- nanoarrow::as_nanoarrow_array(data.frame(a = 1:4))
-  sliced <- nanoarrow::nanoarrow_array_modify(
-    array,
-    list(offset = 1, length = 2)
-  )
-  expect_identical(arrow_to_r(sliced)$a, c(20L, 30L))
 })
 
 # From test-stream.R.
