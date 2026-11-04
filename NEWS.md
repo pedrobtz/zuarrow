@@ -99,6 +99,12 @@
 
 ## Fixes
 
+* `arrow_array()` refuses a list column of data frames whose elements
+  differ in column names, column order, or a column's class, type or
+  attributes, with a `zuarrow_type_error` naming the column. It used to
+  let `rbind()` coerce an integer column to character. A plain factor
+  column's levels may still differ; an ordered factor's may not (#103).
+
 * `arrow_read()` applies a delta dictionary batch that extends a
   dictionary already holding values, for fixed-width, binary and string
   values. Before, the bundled decoder refused it with a
