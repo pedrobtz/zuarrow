@@ -30,6 +30,10 @@ jobs:
       # Inverted, because `cond && 0 || 10` is always 10: an expression
       # treats 0 as false.
       test-timeout-minutes: ${{ (github.event_name != 'schedule' && github.event_name != 'workflow_dispatch') && 10 || 0 }}
+      # 2026-11-05: the review fixes took the suite from about 1850 to 2400
+      # tests, and step 500 ran 10 minutes, just over the budget. Cost
+      # scales as about 1/step, so 1000 is about 5 minutes.
+      quick-step: 1000
       timeout-minutes: 240
       # ZUARROW_GCTORTURE makes the loops that repeat one path run a fixed
       # sample (helper-gctorture.R); every path still runs.
