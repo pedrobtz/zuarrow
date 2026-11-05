@@ -207,6 +207,20 @@ test_that("setting an element in place makes the others first", {
   expect_identical(x, c("a", "z", "c"))
 })
 
+test_that("setting an element out of range is an error, not a write", {
+  x <- arrow_to_r(arrow_array(c("a", "b", "c")), copy = FALSE)
+  for (i in c(0L, 4L, -1L, NA_integer_)) {
+    expect_error(deferred_probe(x, "set", i, "z"), class = "zuarrow_type_error")
+  }
+  expect_error(deferred_probe(x, "set", 1L, 1L), class = "zuarrow_type_error")
+  expect_error(
+    deferred_probe(x, "set", 1L, character()),
+    class = "zuarrow_type_error"
+  )
+  expect_identical(deferred_info(x)$made, 0)
+  expect_identical(x, c("a", "b", "c"))
+})
+
 test_that("no_na is true only for batches without a validity bitmap", {
   x <- arrow_to_r(arrow_array(c("a", "b")), copy = FALSE)
   expect_true(deferred_probe(x, "no_na"))

@@ -931,6 +931,14 @@ same class from every consumer (`arrow_next()`, `arrow_to_r()`,
 reader names the kind of its failure (`format`, `limit` or `codec`), and
 any other producer's failure is a `zuarrow_handle_error`.
 
+*Decided 2026-11-05 (#126):* every `.Call()` whose routine can return a
+`zar_failure` goes through `zar_check()`, internal helpers included, even
+where the handle was checked earlier on the same path. A released handle
+is then a `zuarrow_handle_error` wherever it is first touched, never a
+base error from reading `$length` of a failure. A spec that cannot become
+a schema is a `zuarrow_type_error` (#132); only a failed allocation is a
+bare `zuarrow_error`.
+
 ## 9. Testing
 
 `testthat` 3e. One file per subsection of §6. Four oracles, none a

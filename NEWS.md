@@ -183,6 +183,8 @@
   wrong, and a dictionary of decimals did not reach decimal's (#93).
 * A package that registers a key it already owns, as on every reload,
   does so without a message (#92).
+* A registered `from` handler that returns a released array raises a
+  `zuarrow_handle_error`. Before, it raised a base error (#126).
 * `arrow_to_r()` and `arrow_equal()` check every offset of an array from
   another producer before reading it. A string, binary or list offset that
   decreases or points past its data is a `zuarrow_format_error`, and so is

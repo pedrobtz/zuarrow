@@ -61,6 +61,24 @@ test_that("an invalid or incomplete format string is a format error", {
   expect_error(arrow_schema("d:10"), class = "zuarrow_format_error")
 })
 
+test_that("a spec that cannot become a schema is a type error", {
+  from_spec <- function(spec) zuarrow:::zar_check(test_schema(spec))
+  expect_error(from_spec(list(format = 1L)), class = "zuarrow_type_error")
+  expect_error(from_spec(list(name = "x")), class = "zuarrow_type_error")
+  expect_error(
+    from_spec(list(format = "i", metadata = list(k = 1L))),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    from_spec(list(format = "+s", children = list(list(format = NULL)))),
+    class = "zuarrow_type_error"
+  )
+  expect_error(
+    from_spec(list(format = "i", name = rawToChar(as.raw(0xff)))),
+    class = "zuarrow_type_error"
+  )
+})
+
 test_that("arrow_schema() infers the type an R object is written with", {
   spec <- function(x) .Call(zuarrow:::zar_c_schema_to_spec, arrow_schema(x))
   expect_identical(spec(c(TRUE, NA))$format, "b")

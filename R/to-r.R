@@ -503,7 +503,8 @@ zar_struct_nulls <- function(arrays, call) {
   }
   unlist(Map(
     function(piece, a) {
-      piece %||% logical(.Call(zar_c_array_info, a)$length)
+      piece %||%
+        logical(zar_check(.Call(zar_c_array_info, a), call = call)$length)
     },
     pieces,
     arrays

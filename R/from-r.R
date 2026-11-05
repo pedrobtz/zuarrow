@@ -160,7 +160,7 @@ zar_prebuild <- function(x, call = NULL) {
 
 zar_nrow <- function(x) {
   if (inherits(x, "zar_prebuilt")) {
-    return(.Call(zar_c_array_info, x$array)$length)
+    return(zar_check(.Call(zar_c_array_info, x$array))$length)
   }
   if (is.data.frame(x)) {
     .row_names_info(x, 2L)
