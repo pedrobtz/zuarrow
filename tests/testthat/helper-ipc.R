@@ -222,11 +222,12 @@ ipc_utf8_dictionary <- function(id, values, is_delta = FALSE) {
   )
 }
 
-# A stream of one column `x`, int32 indices `codes` into an int32
-# dictionary of `values`.
-int_dictionary_stream <- function(codes, values) {
+# A stream of one column `x`, int32 indices `codes` into a dictionary
+# whose values have the type of `value_spec` (a zspec()) and the buffers of
+# `values` (a test_array_spec()).
+dictionary_stream <- function(codes, value_spec, values) {
   spec <- zspec("i", "x")
-  spec$dictionary <- zspec("i")
+  spec$dictionary <- value_spec
   array <- test_array(
     test_schema(zspec("+s", children = list(spec))),
     length(codes),
@@ -234,13 +235,58 @@ int_dictionary_stream <- function(codes, values) {
     children = list(test_array_spec(
       length(codes),
       list(NULL, le_int(codes, 4L)),
-      dictionary = test_array_spec(
-        length(values),
-        list(NULL, le_int(values, 4L))
-      )
+      dictionary = values
     ))
   )
   arrow_write(array, NULL, format = "stream")
+}
+
+# A stream of one column `x`, int32 indices `codes` into an int32
+# dictionary of `values`.
+int_dictionary_stream <- function(codes, values) {
+  dictionary_stream(
+    codes,
+    zspec("i"),
+    test_array_spec(length(values), list(NULL, le_int(values, 4L)))
+  )
+}
+
+# The record batch of a dictionary_stream() with indices `codes`, to follow
+# a hand-built dictionary batch.
+ipc_dictionary_codes <- function(codes) {
+  bytes <- int_dictionary_stream(codes, seq_len(max(codes) + 1))
+  ipc_message_bytes(bytes, ipc_messages(bytes)[[3]])
+}
+
+# A validity bitmap of `valid`, or NULL when every value is valid.
+ipc_validity <- function(valid) {
+  if (all(valid)) NULL else ipc_bits(valid)
+}
+
+# The bits of a logical vector, least significant first.
+ipc_bits <- function(x) {
+  packBits(c(x, logical((8 - length(x) %% 8) %% 8)), "raw")
+}
+
+# A dictionary batch of `length` values whose field nodes are `nodes`, a
+# list of c(length, null_count), and whose buffers are `buffers`, a list of
+# raw vectors in schema order (NULL for an absent validity buffer). Each
+# buffer is padded to 8 bytes in the body.
+ipc_buffers_dictionary <- function(id, length, nodes, buffers, is_delta) {
+  pad <- function(x) c(x, raw((8 - length(x) %% 8) %% 8))
+  at <- 0
+  body <- raw()
+  ranges <- vector("list", length(buffers))
+  for (k in seq_along(buffers)) {
+    x <- buffers[[k]]
+    if (is.null(x)) {
+      x <- raw()
+    }
+    ranges[[k]] <- c(at, length(x))
+    body <- c(body, pad(x))
+    at <- length(body)
+  }
+  ipc_dictionary_message(id, length, nodes, ranges, body, is_delta = is_delta)
 }
 
 # A dictionary batch of int32 values, NA as a null, as

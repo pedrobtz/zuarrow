@@ -99,6 +99,12 @@
 
 ## Fixes
 
+* A lossy value in a dictionary or run-end encoded column is checked as
+  the rows read it. The `zuarrow_lossy_error` names its row, and a value
+  that no row reads, or that only null rows read, is not lossy. Before,
+  any such value in the dictionary or the runs raised an error with no
+  row (#107).
+
 * `arrow_array()` refuses a list column of data frames whose elements
   differ in column names, column order, or a column's class, type or
   attributes, with a `zuarrow_type_error` naming the column. It used to
@@ -117,6 +123,10 @@
   dictionary already holding values, for fixed-width, binary and string
   values. Before, the bundled decoder refused it with a
   `zuarrow_format_error` (#81).
+* `arrow_write()` writes a dictionary of struct or list values with the
+  value type's children in the schema. Before, the bundled encoder dropped
+  them, so the output could not be read back (#140).
+
 * `arrow_read()` bounds what delta dictionaries build. Each delta copies
   the whole dictionary, so many small deltas could take memory and time
   quadratic in their number. A dictionary that deltas extend is now held to
@@ -147,6 +157,13 @@
   wrong, and a dictionary of decimals did not reach decimal's (#93).
 * A package that registers a key it already owns, as on every reload,
   does so without a message (#92).
+* `arrow_to_r()` and `arrow_equal()` check every offset of an array from
+  another producer before reading it. A string, binary or list offset that
+  decreases or points past its data is a `zuarrow_format_error`, and so is
+  a string view outside its buffers in `arrow_equal()`. Before,
+  `arrow_to_r()` read past the buffer or raised an unclassed error, and
+  `arrow_equal()` could crash R (#102).
+
 * `arrow_write()` writes a sliced batch, one with a nonzero offset at any
   depth, as the values it holds, as `arrow`, DuckDB and 'nanoarrow' slices
   produce. Every writer failure now has a class: a view layout, a sliced

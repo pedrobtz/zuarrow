@@ -74,18 +74,14 @@ test_that("a delta dictionary batch extends the dictionary", {
 test_that("deltas extend a fixed-width dictionary, nulls included", {
   first <- int_dictionary_stream(c(0, 1), c(10, 20))
   m <- ipc_messages(first)
-  batch <- function(codes) {
-    bytes <- int_dictionary_stream(codes, seq_len(max(codes) + 1))
-    ipc_message_bytes(bytes, ipc_messages(bytes)[[3]])
-  }
   stream <- c(
     ipc_message_bytes(first, m[[1]]),
     ipc_message_bytes(first, m[[2]]),
     ipc_message_bytes(first, m[[3]]),
     ipc_int32_dictionary(0, c(30, NA), is_delta = TRUE),
-    batch(c(2, 3)),
+    ipc_dictionary_codes(c(2, 3)),
     ipc_int32_dictionary(0, 40, is_delta = TRUE),
-    batch(c(4, 0)),
+    ipc_dictionary_codes(c(4, 0)),
     ipc_eos()
   )
   expect_identical(arrow_read(stream)$x, c(10L, 20L, 30L, NA, 40L, 10L))
@@ -243,4 +239,96 @@ test_that("a compressed buffer must decode to its length prefix", {
       class = "zuarrow_codec_error"
     )
   }
+})
+
+test_that("a delta extends a large_utf8 dictionary", {
+  first <- dictionary_stream(
+    c(0, 1),
+    zspec("U"),
+    test_array_spec(2, list(NULL, le_int(c(0, 1, 2), 8L), charToRaw("ab")))
+  )
+  m <- ipc_messages(first)
+  # 64-bit offsets that start past the data's first byte, so the delta's
+  # offsets must be rebased onto the end of the dictionary's data.
+  delta <- ipc_buffers_dictionary(
+    0,
+    2,
+    nodes = list(c(2, 0)),
+    buffers = list(NULL, le_int(c(1, 3, 4), 8L), charToRaw("xccd")),
+    is_delta = TRUE
+  )
+  stream <- c(
+    ipc_message_bytes(first, m[[1]]),
+    ipc_message_bytes(first, m[[2]]),
+    ipc_message_bytes(first, m[[3]]),
+    delta,
+    ipc_dictionary_codes(c(2, 3, 0)),
+    ipc_eos()
+  )
+  expect_identical(
+    arrow_read(stream)$x,
+    factor(c("a", "b", "cc", "d", "a"), levels = c("a", "b", "cc", "d"))
+  )
+})
+
+test_that("a delta extends a bool dictionary across a byte boundary", {
+  values <- c(TRUE, FALSE, TRUE, TRUE, FALSE, FALSE, TRUE)
+  first <- dictionary_stream(
+    c(0, 6),
+    zspec("b"),
+    test_array_spec(7, list(NULL, ipc_bits(values)))
+  )
+  m <- ipc_messages(first)
+  added <- c(FALSE, NA, TRUE)
+  delta <- ipc_buffers_dictionary(
+    0,
+    3,
+    nodes = list(c(3, 1)),
+    buffers = list(ipc_validity(!is.na(added)), ipc_bits(added %in% TRUE)),
+    is_delta = TRUE
+  )
+  stream <- c(
+    ipc_message_bytes(first, m[[1]]),
+    ipc_message_bytes(first, m[[2]]),
+    ipc_message_bytes(first, m[[3]]),
+    delta,
+    ipc_dictionary_codes(0:9),
+    ipc_eos()
+  )
+  expect_identical(arrow_read(stream)$x, c(TRUE, TRUE, values, added))
+})
+
+test_that("a delta onto a struct-valued dictionary is a format error", {
+  struct <- function(n, a) {
+    test_array_spec(
+      n,
+      list(NULL),
+      children = list(test_array_spec(n, list(NULL, le_int(a, 4L))))
+    )
+  }
+  first <- dictionary_stream(
+    c(0, 1),
+    zspec("+s", children = list(zspec("i", "a"))),
+    struct(2, c(5, 6))
+  )
+  m <- ipc_messages(first)
+  head <- c(
+    ipc_message_bytes(first, m[[1]]),
+    ipc_message_bytes(first, m[[2]]),
+    ipc_message_bytes(first, m[[3]])
+  )
+  # The stream reads without the delta.
+  expect_identical(
+    arrow_read(c(head, ipc_eos()))$x,
+    data.frame(a = c(5L, 6L))
+  )
+  delta <- ipc_buffers_dictionary(
+    0,
+    1,
+    nodes = list(c(1, 0), c(1, 0)),
+    buffers = list(NULL, NULL, le_int(7, 4L)),
+    is_delta = TRUE
+  )
+  stream <- c(head, delta, ipc_dictionary_codes(c(2, 0)), ipc_eos())
+  expect_error(arrow_read(stream), class = "zuarrow_format_error")
 })

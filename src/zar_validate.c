@@ -404,7 +404,9 @@ static int zar_arrays_equal(const struct ArrowSchema *schema,
   }
   int equal = -1;
   if (ArrowArrayViewSetArray(&vx, x, error) == NANOARROW_OK &&
-      ArrowArrayViewSetArray(&vy, y, error) == NANOARROW_OK) {
+      ArrowArrayViewSetArray(&vy, y, error) == NANOARROW_OK &&
+      zar_view_check_read(&vx, error) == NANOARROW_OK &&
+      zar_view_check_read(&vy, error) == NANOARROW_OK) {
     if (vx.length != vy.length) {
       ArrowErrorSet(reason, "length %ld differs from %ld", (long)vx.length,
                     (long)vy.length);

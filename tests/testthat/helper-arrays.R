@@ -54,6 +54,23 @@ test_utf8 <- function(offsets, data) {
   )
 }
 
+# A bitmap, least significant bit first, from a logical vector: a validity
+# buffer, or a boolean array's values.
+test_bits <- function(x) {
+  packBits(c(as.logical(x), rep(FALSE, (-length(x)) %% 8L)), "raw")
+}
+
+# The offsets and data buffers of a string array holding `x`, NA as "".
+test_string_buffers <- function(x, large = FALSE) {
+  x[is.na(x)] <- ""
+  ends <- cumsum(nchar(x, type = "bytes"))
+  offsets <- c(0, ends)
+  list(
+    if (large) le_int(offsets, 8L) else le_int(offsets, 4L),
+    charToRaw(paste0(x, collapse = ""))
+  )
+}
+
 test_stream <- function(schema, arrays) {
   if (is.character(schema)) {
     schema <- arrow_schema(schema)
@@ -140,4 +157,58 @@ ext_schema <- function(format, name, metadata = raw()) {
 # always fails. With `schema_fails = TRUE` its get_schema() fails too.
 test_failing_stream <- function(schema, schema_fails = FALSE) {
   .Call(zuarrow:::zar_c_test_failing_stream, schema, schema_fails)
+}
+
+# Validity bytes for `valid`, a logical vector.
+test_validity <- function(valid) {
+  packBits(c(valid, logical((-length(valid)) %% 8L)), "raw")
+}
+
+# A dictionary<int32, format> array. `indices` are 0-based, NA for a null
+# row; `values` is the dictionary's array spec.
+test_dict_array <- function(format, indices, values) {
+  schema <- test_schema(list(
+    format = "i",
+    name = "",
+    flags = 2L,
+    metadata = NULL,
+    children = list(),
+    dictionary = zspec(format)
+  ))
+  nulls <- is.na(indices)
+  test_array(
+    schema,
+    length(indices),
+    list(
+      if (any(nulls)) test_validity(!nulls),
+      le_int(ifelse(nulls, 0, indices), 4L)
+    ),
+    null_count = sum(nulls),
+    dictionary = values
+  )
+}
+
+# A run_end_encoded<int32, format> array; `values` is the values child's
+# array spec.
+test_ree_array <- function(format, run_ends, values) {
+  schema <- test_schema(zspec(
+    "+r",
+    children = list(zspec("i", "run_ends", flags = 0L), zspec(format, "values"))
+  ))
+  test_array(
+    schema,
+    run_ends[length(run_ends)],
+    list(),
+    children = list(
+      test_array_spec(length(run_ends), list(NULL, le_int(run_ends, 4L))),
+      values
+    )
+  )
+}
+
+# Releases a handle in place, as another consumer or nanoarrow's
+# nanoarrow_pointer_release() would. With `schema = TRUE` it releases an
+# array's own schema, the handle's tag.
+test_release <- function(x, schema = FALSE) {
+  invisible(.Call(zuarrow:::zar_c_test_release, x, schema))
 }
