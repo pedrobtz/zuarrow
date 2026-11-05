@@ -139,6 +139,11 @@
   the type from the values, as `decimal` chooses a precision, and
   `arrow_write()` and `arrow_stream()` write the column in batches of that
   type (#91).
+* A registered `from` handler that builds a batch whose nested type
+  differs from the column's, such as `list<int32>` in a `list<int64>`
+  column, raises a `zuarrow_registry_error`. Before, only the top-level
+  format was compared, so the batch's bytes were read as the wrong type
+  (#100).
 * A dictionary or run-end encoded column goes to the handler registered
   for its value type, which receives the decoded values. Before, the
   handler for the index type received the dictionary, so a dictionary
@@ -146,6 +151,12 @@
   wrong, and a dictionary of decimals did not reach decimal's (#93).
 * A package that registers a key it already owns, as on every reload,
   does so without a message (#92).
+* `arrow_write()` writes a sliced batch, one with a nonzero offset at any
+  depth, as the values it holds, as `arrow`, DuckDB and 'nanoarrow' slices
+  produce. Every writer failure now has a class: a view layout, a sliced
+  run-end encoded column and a batch with null rows are a
+  `zuarrow_type_error`, and a malformed batch is a `zuarrow_format_error`.
+  Before, these raised an unclassed `zuarrow_error` (#104).
 
 * `arrow_metadata<-` raises `zuarrow_type_error` for a key that is not
   valid UTF-8 or a value that is not raw. Before, it raised a plain
