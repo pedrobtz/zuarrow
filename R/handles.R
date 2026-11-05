@@ -477,9 +477,9 @@ zar_from_handler <- function(handler, x, call = NULL) {
       call = call
     )
   }
-  # A handler builds one value per element, at the top level as in a data
-  # frame (#123).
-  n <- .Call(zar_c_array_info, array)$length
+  # A handler builds a live array of one value per element, at the top level
+  # as in a data frame (#123). A released array is a handle error.
+  n <- zar_check(.Call(zar_c_array_info, array), call = call)$length
   if (n != length(x)) {
     zar_abort(
       "registry",

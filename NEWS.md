@@ -129,7 +129,8 @@
   pattern's place among overlapping patterns. It used to move last (#115).
 * `arrow_array()` of a registered vector is a `zuarrow_registry_error`
   when the `from` handler builds an array of another length, as it is for
-  a data frame column (#123).
+  a data frame column, and a `zuarrow_handle_error` when the handler
+  returns a released array (#123).
 * An extension whose storage type converts exactly stays exact. An
   inexact registration for `arrow.json` or `arrow.uuid` is refused, and
   one for another extension name is a `zuarrow_registry_error` when it

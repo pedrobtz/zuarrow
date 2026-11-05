@@ -997,6 +997,23 @@ test_that("arrow_array() checks the length a from handler builds (#123)", {
   expect_error(arrow_schema(x), class = "zuarrow_registry_error")
 })
 
+test_that("a from handler that returns a released array is a handle error", {
+  local_registration(
+    "i",
+    from = function(x) {
+      array <- arrow_array(unclass(x))
+      test_release(array)
+      array
+    },
+    class = "fake_int"
+  )
+  x <- structure(1:3, class = "fake_int")
+  expect_error(arrow_array(x), class = "zuarrow_handle_error")
+  df <- data.frame(n = 1:3)
+  df$x <- x
+  expect_error(arrow_array(df), class = "zuarrow_handle_error")
+})
+
 test_that("an extension over an exact storage type stays exact (#133)", {
   for (key in c("arrow.json", "arrow.uuid")) {
     expect_error(
