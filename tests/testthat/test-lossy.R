@@ -36,8 +36,11 @@ test_that("a lossy value read through a dictionary names its row (#107)", {
   int64 <- test_dict_array("l", c(0, 0, 1), test_array_spec(2, list(NULL, big)))
   err <- expect_error(arrow_to_r(int64), class = "zuarrow_lossy_error")
   expect_identical(err$row, 3)
-  # The error names the column's format, the index type's.
+  # The error names the column's format, the index type's, and the target
+  # its value type has (#144).
   expect_identical(err$arrow_type, "i")
+  expect_identical(err$target, "zuint")
+  expect_snapshot(arrow_to_r(int64), error = TRUE)
 
   uint64 <- test_dict_array("L", c(1, 0), test_array_spec(2, list(NULL, big)))
   err <- expect_error(arrow_to_r(uint64), class = "zuarrow_lossy_error")

@@ -6,6 +6,14 @@
       Error in `arrow_to_r()`:
       ! Column `x` (Arrow format `l`) can't be converted to R exactly: row 2 holds 9007199254740994. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
 
+# a lossy value read through a dictionary names its row (#107)
+
+    Code
+      arrow_to_r(int64)
+    Condition
+      Error in `arrow_to_r()`:
+      ! Column 1 (Arrow format `i`) can't be converted to R exactly: row 3 holds 9007199254740993. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
+
 # an embedded NUL is lossy with no text form
 
     Code

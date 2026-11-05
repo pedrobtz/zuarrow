@@ -113,9 +113,10 @@ static void zar_scratch_finalize(SEXP xptr) {
 
 static SEXP zar_column_failure(const char *kind, const char *message,
                                int column, double row, const char *format,
-                               const char *name, int no_text) {
-  const char *names[] = {"kind",   "message", "column", "row",
-                         "format", "name",    "text",   ""};
+                               const char *name, int no_text,
+                               const char *value_format) {
+  const char *names[] = {"kind", "message", "column",       "row", "format",
+                         "name", "text",    "value_format", ""};
   SEXP out = PROTECT(Rf_mkNamed(VECSXP, names));
   SET_VECTOR_ELT(out, 0, Rf_mkString(kind));
   SET_VECTOR_ELT(out, 1, zar_scalar_utf8(message));
@@ -124,6 +125,7 @@ static SEXP zar_column_failure(const char *kind, const char *message,
   SET_VECTOR_ELT(out, 4, zar_scalar_utf8(format == NULL ? "" : format));
   SET_VECTOR_ELT(out, 5, zar_scalar_utf8(name == NULL ? "" : name));
   SET_VECTOR_ELT(out, 6, Rf_ScalarLogical(!no_text));
+  SET_VECTOR_ELT(out, 7, zar_scalar_utf8(value_format == NULL ? "" : value_format));
   SEXP cls = PROTECT(Rf_mkString("zar_failure"));
   Rf_setAttrib(out, R_ClassSymbol, cls);
   UNPROTECT(2);
@@ -137,6 +139,8 @@ struct zar_err {
   const char *kind;
   int64_t row; /* 0-based top-level row, or -1 */
   const char *format;
+  const char *value_format; /* a dictionary's values' format, which names
+                               the exact target (#144), or NULL */
   int copy;    /* FALSE: string columns may be deferred (zar_altrep.c) */
   int in_list; /* building a list element, which is never deferred */
   int no_text; /* a lossy failure that lossy = "character" cannot fix */
@@ -971,7 +975,10 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
         if (code != NANOARROW_OK) {
           /* A dictionary's values are part of the column: name its format,
              not the values' format. */
-          if (child == p->dict) e->format = p->schema->format;
+          if (child == p->dict) {
+            if (e->value_format == NULL) e->value_format = e->format;
+            e->format = p->schema->format;
+          }
           return code;
         }
       }
@@ -2103,7 +2110,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       return zar_column_failure(e.kind == NULL ? "type" : e.kind, e.error.message,
                                 (int)c + 1, e.row >= 0 ? (double)(e.row + 1) : NA_REAL,
                                 e.format == NULL ? cs->format : e.format, cs->name,
-                                e.no_text);
+                                e.no_text, e.value_format);
     }
   }
 
@@ -2118,7 +2125,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       UNPROTECT(3);
       return zar_column_failure(e.kind, e.error.message, (int)c + 1, NA_REAL,
                                 e.format == NULL ? p->schema->format : e.format,
-                                p->schema->name, e.no_text);
+                                p->schema->name, e.no_text, e.value_format);
     }
     SET_VECTOR_ELT(columns, (R_xlen_t)c, col);
   }
