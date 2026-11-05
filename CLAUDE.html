@@ -139,7 +139,7 @@
 <li>
 <strong>Assert on condition classes, never message text.</strong> Use <code>expect_error(..., class = "&lt;pkg&gt;_&lt;kind&gt;_error")</code>. Wording belongs in snapshot tests.</li>
 <li>
-<strong>Order independence.</strong> <code>devtools::test(shuffle = TRUE)</code> is part of the definition of done.</li>
+<strong>Order independence.</strong> <code>devtools::test(shuffle = TRUE)</code> is part of the definition of done. It rewrites <code>_snaps/*.md</code> in the order the tests ran even when every snapshot matches (r-lib/testthat#2364). Discard a diff that only moves sections, <code>git checkout -- tests/testthat/_snaps</code>, and never commit one.</li>
 <li>
 <strong>Borrow a conformance suite before writing one.</strong> Mainstream implementations in Python, Java, Go or Node usually ship a test corpus. Use it as an oracle rather than inventing cases by hand. The design (§9) names four oracles: <code>apache/arrow-testing</code>‘s IPC golden files and crash corpus, fetched at a pinned commit into <code>tests/testthat/fixtures/</code>, plus <code>nanoarrow</code> and <code>arrow</code> for interchange. The golden files do not cover big-endian reading or the codecs’ own correctness.</li>
 <li>

@@ -277,7 +277,10 @@ test or CI leg will catch late. Add more as stages establish them.
   `expect_error(..., class = "<pkg>_<kind>_error")`. Wording belongs in
   snapshot tests.
 - **Order independence.** `devtools::test(shuffle = TRUE)` is part of
-  the definition of done.
+  the definition of done. It rewrites `_snaps/*.md` in the order the
+  tests ran even when every snapshot matches (r-lib/testthat#2364).
+  Discard a diff that only moves sections,
+  `git checkout -- tests/testthat/_snaps`, and never commit one.
 - **Borrow a conformance suite before writing one.** Mainstream
   implementations in Python, Java, Go or Node usually ship a test
   corpus. Use it as an oracle rather than inventing cases by hand. The
