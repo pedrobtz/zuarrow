@@ -130,6 +130,12 @@
 
 ### Fixes
 
+- A lossy value in a dictionary or run-end encoded column is checked as
+  the rows read it. The `zuarrow_lossy_error` names its row, and a value
+  that no row reads, or that only null rows read, is not lossy. Before,
+  any such value in the dictionary or the runs raised an error with no
+  row ([\#107](https://github.com/pedrobtz/zuarrow/issues/107)).
+
 - [`arrow_array()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
   refuses a list column of data frames whose elements differ in column
   names, column order, or a column’s class, type or attributes, with a
@@ -153,6 +159,12 @@
   holding values, for fixed-width, binary and string values. Before, the
   bundled decoder refused it with a `zuarrow_format_error`
   ([\#81](https://github.com/pedrobtz/zuarrow/issues/81)).
+
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  writes a dictionary of struct or list values with the value type’s
+  children in the schema. Before, the bundled encoder dropped them, so
+  the output could not be read back
+  ([\#140](https://github.com/pedrobtz/zuarrow/issues/140)).
 
 - [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
   bounds what delta dictionaries build. Each delta copies the whole
@@ -199,6 +211,21 @@
 - A package that registers a key it already owns, as on every reload,
   does so without a message
   ([\#92](https://github.com/pedrobtz/zuarrow/issues/92)).
+
+- [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  and
+  [`arrow_equal()`](https://pedrobtz.github.io/zuarrow/reference/arrow_equal.md)
+  check every offset of an array from another producer before reading
+  it. A string, binary or list offset that decreases or points past its
+  data is a `zuarrow_format_error`, and so is a string view outside its
+  buffers in
+  [`arrow_equal()`](https://pedrobtz.github.io/zuarrow/reference/arrow_equal.md).
+  Before,
+  [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  read past the buffer or raised an unclassed error, and
+  [`arrow_equal()`](https://pedrobtz.github.io/zuarrow/reference/arrow_equal.md)
+  could crash R
+  ([\#102](https://github.com/pedrobtz/zuarrow/issues/102)).
 
 - [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
   writes a sliced batch, one with a nonzero offset at any depth, as the
