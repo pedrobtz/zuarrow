@@ -32,18 +32,21 @@ A single string longer than 2^31 - 1 bytes can't become an R string:
 "longer than R's string limit" in `zar_string_bytes()` of `zar_to_r.c`.
 Reaching it takes a 2 GiB value.
 
-## A stream whose `get_schema()` fails
-
-`arrow_validate()`, `arrow_equal()` and `arrow_schema()` check the code a
-stream's `get_schema()` returns. zuarrow's own streams, and nanoarrow's,
-answer it from a schema they already hold, so no producer available to
-the tests fails there. A failing `get_next()` is reachable, through a lazy
-reader over a cut stream, and `test-stream.R` tests it.
-
 ## Internal consistency checks
 
 "a malformed list column" in `zar_build_list()` guards the shape of what
 `zar_prepare()` hands to C. R always builds that list whole.
+
+Two branches of `zar_c_array_decode()` in `zar_xptr.c` guard what its R
+caller and nanoarrow have already settled:
+
+- "the array is not dictionary or run-end encoded". R calls the decoder
+  only for a field whose handler was found through its encoded values
+  (`zar_field_handler()` sets `decode`).
+- "a run-end encoding ends before its last row". `ArrowArrayViewSetArray()`
+  validates at nanoarrow's default level first, which already rejects a
+  last run end short of the array's offset plus length as a
+  `zuarrow_format_error`. `test-registry.R` tests that input.
 
 ## No interrupt checks
 

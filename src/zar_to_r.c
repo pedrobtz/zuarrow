@@ -57,6 +57,7 @@ enum zar_scan {
   ZAR_SCAN_NONE,
   ZAR_SCAN_INT53,    /* |v| > 2^53: a double cannot hold it */
   ZAR_SCAN_UINT53,   /* v > 2^53 */
+  ZAR_SCAN_UNIT,     /* v / per_second does not round back to v */
   ZAR_SCAN_INT32MIN, /* INT_MIN: R's NA_integer_ */
   ZAR_SCAN_INT32,    /* outside int32 without INT_MIN, for to = integer() */
   ZAR_SCAN_NUL       /* an embedded NUL in a string */
@@ -538,9 +539,15 @@ static int zar_plan_init(struct zar_plan *p, const struct ArrowSchema *schema,
       p->per_second = zar_units_per_second(p->sv.time_unit);
       p->target = ZAR_T_POSIXCT;
       p->lossy_target = ZAR_T_POSIXCT;
-      if (p->sv.time_unit == NANOARROW_TIME_UNIT_SECOND ||
-          p->sv.time_unit == NANOARROW_TIME_UNIT_MILLI) {
+      /* Exact by value (design section 6.3): seconds divide by 1, so a
+         value is exact within 2^53; milli- and microseconds are exact when
+         the double of seconds rounds back to the same integer, which no
+         magnitude bound captures. Nanoseconds are zutempo's. */
+      if (p->sv.time_unit == NANOARROW_TIME_UNIT_SECOND) {
         p->scan = ZAR_SCAN_INT53;
+      } else if (p->sv.time_unit == NANOARROW_TIME_UNIT_MILLI ||
+                 p->sv.time_unit == NANOARROW_TIME_UNIT_MICRO) {
+        p->scan = ZAR_SCAN_UNIT;
       } else {
         p->lossy_by_schema = 1;
       }
@@ -726,6 +733,15 @@ static int zar_strings_clean(const struct zar_slice *s) {
          zar_utf8_invalid_at(data, hi - lo) < 0;
 }
 
+/* Whether a count of 1/scale seconds fails to survive the trip to a double
+   of seconds and back, rounded as export rounds it (zar_build_numeric).
+   The range test keeps the cast defined. */
+static inline int zar_unit_inexact(int64_t v, double scale) {
+  double back = nearbyint(((double)v / scale) * scale);
+  if (!(back >= -9223372036854775808.0 && back < 9223372036854775808.0)) return 1;
+  return (int64_t)back != v;
+}
+
 /* The integer scans of a direct slice, one loop over the typed buffer: the
    first element that is not null and that the scan looks for, or -1.
    Returns -2 when the slice or its storage has no fast path. */
@@ -772,6 +788,21 @@ static int64_t zar_scan_direct(const struct zar_plan *p, const struct zar_slice 
       }
       return -1;
     }
+    case ZAR_SCAN_UNIT: {
+      if (v->storage_type != NANOARROW_TYPE_INT64) return -2;
+      const int64_t *src = v->buffer_views[1].data.as_int64 + d.first;
+      double scale = p->per_second;
+      for (int64_t base = 0; base < n; base += 64) {
+        int64_t end = base + 64 < n ? base + 64 : n;
+        int hit = 0;
+        for (int64_t i = base; i < end; i++) hit |= zar_unit_inexact(src[i], scale);
+        if (!hit) continue;
+        for (int64_t i = base; i < end; i++) {
+          if (zar_unit_inexact(src[i], scale) && !zar_direct_null(&d, i)) return i;
+        }
+      }
+      return -1;
+    }
     case ZAR_SCAN_UINT53: {
       if (v->storage_type != NANOARROW_TYPE_UINT64) return -2;
       const uint64_t *src = v->buffer_views[1].data.as_uint64 + d.first;
@@ -812,6 +843,11 @@ static int64_t zar_scan_slice(const struct zar_plan *p,
         if (v > 9007199254740992LL || v < -9007199254740992LL) return i;
         break;
       }
+      case ZAR_SCAN_UNIT:
+        if (zar_unit_inexact(ArrowArrayViewGetIntUnsafe(s->view, j), p->per_second)) {
+          return i;
+        }
+        break;
       case ZAR_SCAN_UINT53: {
         uint64_t v = ArrowArrayViewGetUIntUnsafe(s->view, j);
         if (v > 9007199254740992ULL) return i;

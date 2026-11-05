@@ -11,6 +11,13 @@
 #' @param max_depth The deepest nesting a schema may have.
 #' @param max_batch_rows The most rows one record batch may hold.
 #' @param max_bytes The most bytes of input in all.
+#' @param max_dictionary The most bytes that delta dictionary batches may
+#'   build in all. A delta onto a dictionary that holds values copies the
+#'   whole dictionary into a new one, and every copy counts, so many small
+#'   deltas cannot build a large amount of memory from a small input. A
+#'   dictionary that deltas extend is also held to `max_batch_rows` values
+#'   and `max_message` bytes. The default, 2^28 bytes (256 MiB), is far above
+#'   what real deltas build and stops a hostile stream early.
 #' @returns A list of class `zuarrow_limits`.
 #' @export
 #' @examples
@@ -19,14 +26,16 @@ arrow_limits <- function(
   max_message = 2^31 - 1,
   max_depth = 64L,
   max_batch_rows = 2^31 - 1,
-  max_bytes = Inf
+  max_bytes = Inf,
+  max_dictionary = 2^28
 ) {
   call <- sys.call()
   values <- list(
     max_message = max_message,
     max_depth = max_depth,
     max_batch_rows = max_batch_rows,
-    max_bytes = max_bytes
+    max_bytes = max_bytes,
+    max_dictionary = max_dictionary
   )
   for (name in names(values)) {
     v <- values[[name]]
@@ -138,7 +147,13 @@ arrow_read <- function(
 # A reader over one source, with only `columns` decoded.
 zar_open_reader <- function(x, columns, lazy, limits, call) {
   source <- zar_read_source(x, limits, call)
-  bounds <- limits[c("max_message", "max_depth", "max_batch_rows", "max_bytes")]
+  bounds <- limits[c(
+    "max_message",
+    "max_depth",
+    "max_batch_rows",
+    "max_bytes",
+    "max_dictionary"
+  )]
   stream <- zar_check(
     .Call(
       zar_c_reader_open,
