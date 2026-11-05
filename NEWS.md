@@ -99,6 +99,12 @@
 
 ## Fixes
 
+* `arrow_array()` refuses a list column of data frames whose elements
+  differ in column names, column order, or a column's class, type or
+  attributes, with a `zuarrow_type_error` naming the column. It used to
+  let `rbind()` coerce an integer column to character. A plain factor
+  column's levels may still differ; an ordered factor's may not (#103).
+
 * A `POSIXct` round-trips through Arrow under the default policy.
   Millisecond and microsecond timestamps are exact by value: a value is
   exact when its double of seconds rounds back to the same integer, and

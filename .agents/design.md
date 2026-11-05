@@ -556,6 +556,16 @@ list column by default, and as an `n`-column matrix when
 and `value`, in the map's order, with the `keys_sorted` flag kept as an
 attribute. Nesting depth is bounded by `max_depth` (§6.7).
 
+*2026-11-04 (#103):* the data frame elements of a list column (and the
+entries of a map) must have the same column names in the same order, and
+each column the same class, storage type and attributes, recursively
+through nested data frame columns; otherwise `zuarrow_type_error`. A
+struct's fields are ordered, so a different order is a different type.
+A plain factor column's levels may differ between elements, as a
+dictionary may between batches, and export writes their union; an
+ordered factor's levels must be identical, because a union would invent
+an order.
+
 ### 6.5 Dictionaries
 
 A `dictionary<index, utf8>` whose dictionary has at most 2³¹ − 1 entries
