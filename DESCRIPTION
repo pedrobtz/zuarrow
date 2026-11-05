@@ -1,6 +1,6 @@
 Package: zuarrow
 Title: Exact Conversion Between R Vectors and 'Apache Arrow' Columns
-Version: 0.1.0
+Version: 0.0.0.9000
 Authors@R: c(
     person("Pedro", "Baltazar", , "pedrobtz@gmail.com",
            role = c("aut", "cre", "cph")),

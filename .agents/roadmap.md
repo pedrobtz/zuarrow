@@ -598,7 +598,10 @@ Stage 9 on 2026-10-23.
   decimal#24.
 - The fuzz target runs one hour clean under `ZAR_STANDALONE` with
   sanitizers; the result is recorded on this issue.
-- `Version: 0.1.0` and the matching `NEWS.md` heading.
+- `Version: 0.1.0` and the matching `NEWS.md` heading. Deviation
+  (2026-11-05): the version stays at `0.0.0.9000`, with a development
+  heading, until submission. Setting `0.1.0` moves to the CRAN-submission
+  issue (#12), with the `Remotes:` removal.
 - `cran-comments.md` listing the r-actions CI legs as test environments.
 - `urlchecker::url_check()` and `spelling::spell_check_package()` clean.
 - `CLAUDE.md`'s current-state, architecture and invariants sections brought
