@@ -1,4 +1,4 @@
-# zuarrow (development version)
+# zuarrow 0.0.0.9000
 
 * Initial CRAN submission.
 
@@ -164,7 +164,7 @@
   `arrow_to_r()` read past the buffer or raised an unclassed error, and
   `arrow_equal()` could crash R (#102).
 
-* `arrow_write()` writes a sliced batch, one with a nonzero offset at any
+* `arrow_write()` writes a sliced batch, one with a non-zero offset at any
   depth, as the values it holds, as `arrow`, DuckDB and 'nanoarrow' slices
   produce. Every writer failure now has a class: a view layout, a sliced
   run-end encoded column and a batch with null rows are a
