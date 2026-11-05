@@ -723,6 +723,31 @@ test_that("a `from` handler that returns no array is a registry error", {
   expect_error(arrow_array(x), class = "zuarrow_registry_error")
 })
 
+test_that("a handler whose nested type differs per batch is refused", {
+  # list<int32> when every value fits, list<int64> otherwise: the top-level
+  # format is "+l" either way, so only the child tells them apart (#100).
+  local_registration(
+    "+l",
+    from = function(x) {
+      v <- unclass(x)
+      item <- if (all(abs(v) < 2^31)) "i" else "l"
+      spec <- zspec("+l", children = list(zspec(item, "item")))
+      arrow_array(as.list(v), schema = test_schema(spec))
+    },
+    class = "fake_nested"
+  )
+  df <- data.frame(id = 1:4)
+  df$x <- structure(c(1, 2, 3e12, 4), class = "fake_nested")
+  expect_error(
+    arrow_to_r(arrow_stream(df, batch = 2), lossy = "allow"),
+    class = "zuarrow_registry_error"
+  )
+  expect_error(
+    arrow_write(df, NULL, format = "stream", batch = 2),
+    class = "zuarrow_registry_error"
+  )
+})
+
 test_that("a string dictionary's handler gets its decoded values", {
   seen <- new.env()
   local_registration("u", to = function(array, schema) {

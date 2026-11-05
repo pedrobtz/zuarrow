@@ -99,6 +99,12 @@
 
 ## Fixes
 
+* `arrow_array()` refuses a list column of data frames whose elements
+  differ in column names, column order, or a column's class, type or
+  attributes, with a `zuarrow_type_error` naming the column. It used to
+  let `rbind()` coerce an integer column to character. A plain factor
+  column's levels may still differ; an ordered factor's may not (#103).
+
 * A `POSIXct` round-trips through Arrow under the default policy.
   Millisecond and microsecond timestamps are exact by value: a value is
   exact when its double of seconds rounds back to the same integer, and
@@ -111,6 +117,13 @@
   dictionary already holding values, for fixed-width, binary and string
   values. Before, the bundled decoder refused it with a
   `zuarrow_format_error` (#81).
+* `arrow_read()` bounds what delta dictionaries build. Each delta copies
+  the whole dictionary, so many small deltas could take memory and time
+  quadratic in their number. A dictionary that deltas extend is now held to
+  `max_batch_rows` values and `max_message` bytes, and every byte the
+  copies build counts against the new `max_dictionary` limit of
+  `arrow_limits()`, 256 MiB by default. Going over one is a
+  `zuarrow_limit_error` (#101).
 * A stream whose next batch fails raises the same class from every
   function: a `zuarrow_format_error`, `zuarrow_limit_error` or
   `zuarrow_codec_error` from zuarrow's IPC reader, and a
@@ -122,6 +135,11 @@
   the type from the values, as `decimal` chooses a precision, and
   `arrow_write()` and `arrow_stream()` write the column in batches of that
   type (#91).
+* A registered `from` handler that builds a batch whose nested type
+  differs from the column's, such as `list<int32>` in a `list<int64>`
+  column, raises a `zuarrow_registry_error`. Before, only the top-level
+  format was compared, so the batch's bytes were read as the wrong type
+  (#100).
 * A dictionary or run-end encoded column goes to the handler registered
   for its value type, which receives the decoded values. Before, the
   handler for the index type received the dictionary, so a dictionary
@@ -129,6 +147,12 @@
   wrong, and a dictionary of decimals did not reach decimal's (#93).
 * A package that registers a key it already owns, as on every reload,
   does so without a message (#92).
+* `arrow_write()` writes a sliced batch, one with a nonzero offset at any
+  depth, as the values it holds, as `arrow`, DuckDB and 'nanoarrow' slices
+  produce. Every writer failure now has a class: a view layout, a sliced
+  run-end encoded column and a batch with null rows are a
+  `zuarrow_type_error`, and a malformed batch is a `zuarrow_format_error`.
+  Before, these raised an unclassed `zuarrow_error` (#104).
 
 * `arrow_metadata<-` raises `zuarrow_type_error` for a key that is not
   valid UTF-8 or a value that is not raw. Before, it raised a plain

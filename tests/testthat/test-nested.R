@@ -72,6 +72,72 @@ test_that("a list of data frames keeps every row of every element", {
   expect_identical(as.data.frame(arrow_stream(df, batch = 2)), df)
 })
 
+test_that("data frame elements whose column types differ are refused", {
+  x <- list(data.frame(a = 1L), data.frame(a = "x"))
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  x <- list(data.frame(a = 1L), data.frame(a = 1.5))
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  x <- list(data.frame(a = Sys.Date()), data.frame(a = 1))
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  utc <- as.POSIXct(0, tz = "UTC")
+  paris <- as.POSIXct(0, tz = "Europe/Paris")
+  x <- list(data.frame(a = utc), data.frame(a = paris))
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+})
+
+test_that("data frame elements whose column names differ are refused", {
+  x <- list(data.frame(a = 1L), data.frame(b = 1L))
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  x <- list(data.frame(a = 1L), data.frame(a = 1L, b = 2L))
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  # rbind() would match by name; a struct's fields are ordered, so a
+  # different order is a different type.
+  x <- list(data.frame(a = 1L, b = 2L), data.frame(b = 3L, a = 4L))
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+})
+
+test_that("nested data frame columns of the elements must match too", {
+  one <- data.frame(id = 1L)
+  one$s <- data.frame(x = 1L)
+  two <- data.frame(id = 2L)
+  two$s <- data.frame(x = "a")
+  expect_error(arrow_array(list(one, two)), class = "zuarrow_type_error")
+  two$s <- data.frame(y = 1L)
+  expect_error(arrow_array(list(one, two)), class = "zuarrow_type_error")
+  two$s <- data.frame(x = 2L)
+  x <- list(one, NULL, two[0, , drop = FALSE], two)
+  expect_identical(arrow_to_r(arrow_array(x)), x)
+})
+
+test_that("matching data frame elements with zero rows round-trip", {
+  x <- list(data.frame(a = integer(), b = character()), NULL)
+  x[[3]] <- data.frame(a = 1:2, b = c("x", NA))
+  expect_identical(arrow_to_r(arrow_array(x)), x)
+})
+
+test_that("factor columns of data frame elements may differ in levels", {
+  # A factor is a dictionary column, and the reader decodes batches with
+  # different dictionaries to the union of their levels.
+  x <- list(
+    data.frame(f = factor("a", levels = c("a", "b"))),
+    data.frame(f = factor("c"))
+  )
+  out <- arrow_to_r(arrow_array(x))
+  expect_identical(as.character(out[[1]]$f), "a")
+  expect_identical(as.character(out[[2]]$f), "c")
+  # An ordered factor's union would invent an order between levels.
+  x <- list(
+    data.frame(f = factor("a", levels = c("a", "b"), ordered = TRUE)),
+    data.frame(f = factor("c", ordered = TRUE))
+  )
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  x <- list(
+    data.frame(f = factor("a", levels = c("a", "b"))),
+    data.frame(f = factor("b", levels = c("a", "b"), ordered = TRUE))
+  )
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+})
+
 test_that("a list column whose values outnumber its offsets is refused", {
   schema <- arrow_schema(list(1:2))
   prep <- structure(

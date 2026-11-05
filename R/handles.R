@@ -364,6 +364,9 @@ zar_flatten <- function(x, call = NULL) {
     )
   }
   if (is.data.frame(first)) {
+    for (e in present[-1L]) {
+      zar_check_same_frame(first, e, "", call)
+    }
     return(do.call(rbind, present))
   }
   # Plain atomic vectors concatenate in one call; classed ones, such as
@@ -372,6 +375,74 @@ zar_flatten <- function(x, call = NULL) {
     return(unlist(present, use.names = FALSE))
   }
   do.call(c, present)
+}
+
+# The data frame elements of a list column become one struct type, so they
+# must have the same column names in the same order, and each column the
+# same class, storage type and attributes; rbind() would coerce or reorder
+# instead (section 6.4). A plain factor's levels may differ, as a
+# dictionary's may between batches; an ordered factor's may not, because
+# their union would invent an order.
+zar_check_same_frame <- function(a, b, prefix, call = NULL) {
+  if (!identical(names(a), names(b))) {
+    zar_abort(
+      "type",
+      sprintf(
+        paste(
+          "The data frame elements of a list column must have the same",
+          "columns%s: found (%s) and (%s)."
+        ),
+        if (nzchar(prefix)) sprintf(" in `%s`", prefix) else "",
+        paste(names(a), collapse = ", "),
+        paste(names(b), collapse = ", ")
+      ),
+      call = call
+    )
+  }
+  for (i in seq_along(a)) {
+    name <- paste0(prefix, if (nzchar(prefix)) "$", names(a)[[i]])
+    x <- a[[i]]
+    y <- b[[i]]
+    if (is.data.frame(x) && is.data.frame(y)) {
+      zar_check_same_frame(x, y, name, call)
+      next
+    }
+    if (!identical(zar_column_shape(x), zar_column_shape(y))) {
+      zar_abort(
+        "type",
+        sprintf(
+          paste(
+            "Column `%s` of the data frame elements of a list column has",
+            "<%s> in one element and <%s> in another."
+          ),
+          name,
+          paste(class(x), collapse = "/"),
+          paste(class(y), collapse = "/")
+        ),
+        call = call
+      )
+    }
+  }
+  invisible()
+}
+
+# What of a column must agree between elements: its storage type and every
+# attribute but those that follow the values (names, a matrix's row count)
+# and a plain factor's levels.
+zar_column_shape <- function(x) {
+  attrs <- attributes(x)
+  if (is.null(attrs)) {
+    return(list(typeof(x), NULL))
+  }
+  attrs$names <- NULL
+  if (!is.null(attrs$dim)) {
+    attrs$dim <- attrs$dim[-1L]
+  }
+  attrs$dimnames <- NULL
+  if (is.factor(x) && !is.ordered(x)) {
+    attrs$levels <- NULL
+  }
+  list(typeof(x), if (length(attrs)) attrs[order(names(attrs))])
 }
 
 zar_from_handler <- function(handler, x, call = NULL) {
