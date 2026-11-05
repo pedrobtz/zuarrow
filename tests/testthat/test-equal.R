@@ -169,3 +169,34 @@ test_that("a dictionary on one side only is a difference", {
   expect_false(out)
   expect_type(attr(out, "reason"), "character")
 })
+
+test_that("bad offsets are a format error, never a crash (#102)", {
+  past <- test_utf8(c(0L, 4000L, 5L), charToRaw("abcde"))
+  expect_error(arrow_equal(past, past), class = "zuarrow_format_error")
+  back <- test_utf8(c(0L, 3L, 1L, 5L), charToRaw("abcde"))
+  expect_error(arrow_equal(back, back), class = "zuarrow_format_error")
+  large <- test_array(
+    "U",
+    2,
+    list(NULL, le_int(c(0, 4000, 5)), charToRaw("abcde"))
+  )
+  expect_error(arrow_equal(large, large), class = "zuarrow_format_error")
+  list32 <- test_array(
+    test_schema(zspec("+l", children = list(zspec("i", "item")))),
+    2,
+    list(NULL, le_int(c(0, 3, 1), 4L)),
+    children = list(test_array_spec(3, list(NULL, le_int(1:3, 4L))))
+  )
+  expect_error(arrow_equal(list32, list32), class = "zuarrow_format_error")
+})
+
+test_that("a string view outside its buffers is a format error (#102)", {
+  views <- c(le_int(20, 4L), charToRaw("abcd"), le_int(c(0, 0), 4L))
+  bad <- test_array("vu", 1, list(NULL, views))
+  expect_error(arrow_equal(bad, bad), class = "zuarrow_format_error")
+  negative <- test_array("vu", 1, list(NULL, c(le_int(-1, 4L), raw(12))))
+  expect_error(
+    arrow_equal(negative, negative),
+    class = "zuarrow_format_error"
+  )
+})

@@ -151,6 +151,13 @@
   wrong, and a dictionary of decimals did not reach decimal's (#93).
 * A package that registers a key it already owns, as on every reload,
   does so without a message (#92).
+* `arrow_to_r()` and `arrow_equal()` check every offset of an array from
+  another producer before reading it. A string, binary or list offset that
+  decreases or points past its data is a `zuarrow_format_error`, and so is
+  a string view outside its buffers in `arrow_equal()`. Before,
+  `arrow_to_r()` read past the buffer or raised an unclassed error, and
+  `arrow_equal()` could crash R (#102).
+
 * `arrow_write()` writes a sliced batch, one with a nonzero offset at any
   depth, as the values it holds, as `arrow`, DuckDB and 'nanoarrow' slices
   produce. Every writer failure now has a class: a view layout, a sliced

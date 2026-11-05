@@ -79,6 +79,77 @@ test_that("invalid UTF-8 in a string column is a format error", {
   )
 })
 
+test_that("string offsets past the data are a format error (#102)", {
+  bad <- test_utf8(c(0L, 4000L, 5L), charToRaw("abcde"))
+  expect_error(arrow_to_r(bad), class = "zuarrow_format_error")
+  expect_error(arrow_to_r(bad, copy = FALSE), class = "zuarrow_format_error")
+  large <- test_array(
+    "U",
+    2,
+    list(NULL, le_int(c(0, 4000, 5)), charToRaw("abcde"))
+  )
+  expect_error(arrow_to_r(large), class = "zuarrow_format_error")
+  blob <- test_array(
+    "z",
+    2,
+    list(NULL, le_int(c(0, 4000, 5), 4L), charToRaw("abcde"))
+  )
+  expect_error(arrow_to_r(blob), class = "zuarrow_format_error")
+})
+
+test_that("decreasing string offsets are a format error (#102)", {
+  bad <- test_utf8(c(0L, 3L, 1L, 5L), charToRaw("abcde"))
+  expect_error(arrow_to_r(bad), class = "zuarrow_format_error")
+  frame <- test_array(
+    test_schema(zspec("+s", children = list(zspec("u", "s")))),
+    3,
+    list(NULL),
+    children = list(test_array_spec(
+      3,
+      list(NULL, le_int(c(0, 3, 1, 5), 4L), charToRaw("abcde"))
+    ))
+  )
+  expect_error(arrow_to_r(frame), class = "zuarrow_format_error")
+})
+
+test_that("list offsets outside the child are a format error (#102)", {
+  child <- test_array_spec(3, list(NULL, le_int(1:3, 4L)))
+  list32 <- test_array(
+    test_schema(zspec("+l", children = list(zspec("i", "item")))),
+    2,
+    list(NULL, le_int(c(0, 4000, 3), 4L)),
+    children = list(child)
+  )
+  expect_error(arrow_to_r(list32), class = "zuarrow_format_error")
+  list64 <- test_array(
+    test_schema(zspec("+L", children = list(zspec("i", "item")))),
+    2,
+    list(NULL, le_int(c(0, 2, 1))),
+    children = list(child)
+  )
+  expect_error(arrow_to_r(list64), class = "zuarrow_format_error")
+  view <- test_array(
+    test_schema(zspec("+vl", children = list(zspec("i", "item")))),
+    1,
+    list(NULL, le_int(2, 4L), le_int(4000, 4L)),
+    children = list(child)
+  )
+  expect_error(arrow_to_r(view), class = "zuarrow_format_error")
+})
+
+test_that("bad offsets inside a list's strings are a format error (#102)", {
+  nested <- test_array(
+    test_schema(zspec("+l", children = list(zspec("u", "item")))),
+    1,
+    list(NULL, le_int(c(0, 2), 4L)),
+    children = list(test_array_spec(
+      2,
+      list(NULL, le_int(c(0, 4000, 5), 4L), charToRaw("abcde"))
+    ))
+  )
+  expect_error(arrow_to_r(nested), class = "zuarrow_format_error")
+})
+
 test_that("binary converts to a list of raw, fixed_size_binary keeps its width", {
   blob <- test_array(
     "z",
