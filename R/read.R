@@ -16,7 +16,8 @@
 #'   whole dictionary into a new one, and every copy counts, so many small
 #'   deltas cannot build a large amount of memory from a small input. A
 #'   dictionary that deltas extend is also held to `max_batch_rows` values
-#'   and `max_message` bytes.
+#'   and `max_message` bytes. The default, 2^28 bytes (256 MiB), is far above
+#'   what real deltas build and stops a hostile stream early.
 #' @returns A list of class `zuarrow_limits`.
 #' @export
 #' @examples
@@ -26,7 +27,7 @@ arrow_limits <- function(
   max_depth = 64L,
   max_batch_rows = 2^31 - 1,
   max_bytes = Inf,
-  max_dictionary = 2^31 - 1
+  max_dictionary = 2^28
 ) {
   call <- sys.call()
   values <- list(

@@ -169,6 +169,12 @@ test_that("a file's blocks must name messages of their kind", {
   )
 })
 
+test_that("max_dictionary defaults to 256 MiB, under the format ceiling", {
+  limits <- arrow_limits()
+  expect_identical(limits$max_dictionary, 2^28)
+  expect_lt(limits$max_dictionary, limits$max_message)
+})
+
 test_that("a file may not replace a dictionary", {
   bytes <- arrow_write(data.frame(f = factor("a"), g = factor("b")), NULL)
   m <- ipc_messages(bytes, 8)

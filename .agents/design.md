@@ -612,7 +612,9 @@ tensor extensions pass through as storage with the attribute.
   before the delta is decoded: the extended dictionary is held to
   `max_batch_rows` values and `max_message` bytes, and every byte the
   copies build counts against `max_dictionary`, a fifth limit of
-  `arrow_limits()` (default 2³¹ − 1 bytes, like `max_message`).
+  `arrow_limits()`, by default 2²⁸ bytes (256 MiB). The format ceiling,
+  2³¹ − 1, would bound nothing: the copies are already pathological
+  well before it. *2026-11-05:* default lowered from 2³¹ − 1 to 2²⁸.
 - **Newer layouts.** Run-end-encoded arrays are decoded to their value
   type; string-view, binary-view and list-view arrays are converted by
   copying through their views. nanoarrow's IPC decoder stops short of
