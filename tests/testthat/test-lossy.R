@@ -225,7 +225,8 @@ test_that("each row of the lossy table errors by default and converts under allo
     as.POSIXct("2026-10-21 10:00:00", tz = "UTC"),
     schema = "tsn:UTC"
   )
-  us <- arrow_array(as.POSIXct("2026-10-21 10:00:00", tz = "UTC"))
+  # 2106-02-07: a microsecond value whose double does not round-trip.
+  us <- test_fixed("tsu:UTC", 4294970119634999, 8L)
   cases <- list(
     int64 = test_array("l", 1, list(NULL, le_hex("0020000000000001"))),
     uint64 = test_array("L", 1, list(NULL, le_hex("0020000000000001"))),
@@ -250,7 +251,7 @@ test_that("each row of the lossy table errors by default and converts under allo
     decimal64 = 123.45,
     decimal128 = 123.45,
     decimal256 = 123.45,
-    timestamp_us = utc(1792576800),
+    timestamp_us = utc(4294970119634999 / 1e6),
     timestamp_ns = utc(1792576800),
     date64 = utc(86400),
     time32 = secs(3723),
@@ -314,9 +315,14 @@ test_that("character gives the exact text and records the type", {
     text(test_fixed("tsn:UTC", 1500000001, 8L)),
     "1970-01-01T00:00:01.500000001Z"
   )
+  # An exact microsecond column stays POSIXct, so its text is asked for.
   expect_identical(
-    text(test_fixed("tsu:", -1, 8L)),
+    as.vector(arrow_to_r(test_fixed("tsu:", -1, 8L), to = character())),
     "1969-12-31T23:59:59.999999"
+  )
+  expect_identical(
+    text(test_fixed("tsu:UTC", 4294970119634999, 8L)),
+    "2106-02-07T07:15:19.634999Z"
   )
   # The int64 extremes, where the fraction must not be found by multiplying.
   expect_identical(
@@ -628,4 +634,80 @@ test_that("a negative-scale decimal parses only with its trailing zeros", {
   expect_error(bad("12345"), class = "zuarrow_lossy_error")
   expect_error(bad("12300.5"), class = "zuarrow_lossy_error")
   expect_error(bad("1230000000"), class = "zuarrow_lossy_error")
+})
+
+test_that("a POSIXct round-trips through Arrow under the default policy", {
+  times <- as.POSIXct(
+    c("1900-01-01 00:00:00", "2026-11-04 12:00:00.5", NA, "2099-12-31"),
+    tz = "UTC"
+  )
+  df <- data.frame(t = times)
+  expect_identical(arrow_to_r(arrow_array(df)), df)
+  path <- withr::local_tempfile()
+  arrow_write(df, path)
+  expect_identical(arrow_read(path), df)
+})
+
+test_that("a timestamp is exact when its double reproduces the integer", {
+  # Every microsecond from 1900 to 2100 round-trips; some in 2106 do not.
+  fine <- test_fixed("tsu:UTC", c(-2208988800000000, 0, 4102444799999999), 8L)
+  expect_identical(
+    as.numeric(arrow_to_r(fine)),
+    c(-2208988800, 0, 4102444799.999999)
+  )
+  bad <- test_fixed("tsu:UTC", c(0, 4294970119634999), 8L)
+  err <- expect_error(arrow_to_r(bad), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 2)
+  expect_identical(err$target, "zutempo")
+  # Milliseconds have the same check: the old 2^53 bound let this through.
+  ms <- test_fixed("tsm:", c(1, 4398048199498821), 8L)
+  err <- expect_error(arrow_to_r(ms), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 2)
+  # Seconds divide by 1, so 2^53 is still their bound.
+  expect_identical(
+    as.numeric(arrow_to_r(test_fixed("tss:", 2^53, 8L))),
+    2^53
+  )
+  # A null slot is not checked.
+  masked <- test_fixed(
+    "tsu:",
+    c(0, 4294970119634999),
+    8L,
+    null_count = 1,
+    validity = as.raw(0x01)
+  )
+  expect_identical(as.numeric(arrow_to_r(masked)), c(0, NA))
+  # Nanoseconds stay lossy whatever the values.
+  expect_error(
+    arrow_to_r(test_fixed("tsn:UTC", 0, 8L)),
+    class = "zuarrow_lossy_error"
+  )
+})
+
+test_that("the timestamp check runs through run-end encoding", {
+  ree <- function(values) {
+    schema <- test_schema(zspec(
+      "+r",
+      children = list(
+        zspec("i", "run_ends", flags = 0L),
+        zspec("tsu:UTC", "values")
+      )
+    ))
+    test_array(
+      schema,
+      3,
+      list(),
+      children = list(
+        test_array_spec(2, list(NULL, le_int(c(2, 3), 4L))),
+        test_array_spec(2, list(NULL, le_int(values, 8L)))
+      )
+    )
+  }
+  # A run-end encoded column's values are a nested node, so the error
+  # names no row, as for any nested value.
+  expect_error(
+    arrow_to_r(ree(c(0, 4294970119634999))),
+    class = "zuarrow_lossy_error"
+  )
+  expect_identical(as.numeric(arrow_to_r(ree(c(0, 1e6)))), c(0, 0, 1))
 })

@@ -104,6 +104,15 @@
   that no row reads, or that only null rows read, is not lossy. Before,
   any such value in the dictionary or the runs raised an error with no
   row (#107).
+
+* A `POSIXct` round-trips through Arrow under the default policy.
+  Millisecond and microsecond timestamps are exact by value: a value is
+  exact when its double of seconds rounds back to the same integer, and
+  only one that does not is a `zuarrow_lossy_error` naming its row. Before,
+  every microsecond timestamp was lossy, so zuarrow could not read back
+  what it wrote, and the millisecond bound of 2^53 let a few values past
+  2^51 through inexactly (#130).
+
 * `arrow_read()` applies a delta dictionary batch that extends a
   dictionary already holding values, for fixed-width, binary and string
   values. Before, the bundled decoder refused it with a

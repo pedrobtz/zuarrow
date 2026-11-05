@@ -52,21 +52,22 @@ arrow_types <- function() {
     c("date32", "tdD", "Date", "yes", "", ""),
     c("date64", "tdm", "", "no", "POSIXct", "zutempo"),
     c(
-      "timestamp[s], timestamp[ms]",
-      "tss:, tsm:",
+      "timestamp[s]",
+      "tss:",
       "POSIXct",
-      "within +/-2^53 units",
+      "within +/-2^53 seconds",
       "POSIXct",
       "zutempo"
     ),
     c(
-      "timestamp[us], timestamp[ns]",
-      "tsu:, tsn:",
-      "",
-      "no",
+      "timestamp[ms], timestamp[us]",
+      "tsm:, tsu:",
+      "POSIXct",
+      "when the double of seconds rounds back",
       "POSIXct",
       "zutempo"
     ),
+    c("timestamp[ns]", "tsn:", "", "no", "POSIXct", "zutempo"),
     c("time32, time64", "tts, ttm, ttu, ttn", "", "no", "difftime", "zutempo"),
     c("duration", "tDs, tDm, tDu, tDn", "", "no", "difftime", "zutempo"),
     c(
