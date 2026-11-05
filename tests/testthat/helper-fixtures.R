@@ -29,18 +29,7 @@ fixtures_dir <- function() {
     for (f in files) {
       dest <- file.path(dir, f)
       dir.create(dirname(dest), recursive = TRUE, showWarnings = FALSE)
-      ok <- tryCatch(
-        utils::download.file(
-          paste0(base, f),
-          dest,
-          mode = "wb",
-          quiet = TRUE
-        ) ==
-          0,
-        error = function(e) FALSE,
-        warning = function(w) FALSE
-      )
-      if (!ok) {
+      if (!fetch_file(paste0(base, f), dest)) {
         stop(
           "ZUARROW_FETCH_FIXTURES is set, but ",
           f,
@@ -52,6 +41,35 @@ fixtures_dir <- function() {
     file.create(stamp)
   }
   dir
+}
+
+# Downloads `url` to `dest`, trying `attempts` times with a growing pause.
+# One download in several hundred failing transiently made CI red (#151).
+# A failed attempt can leave a partial file, so each one writes to a
+# temporary name and only a complete download is renamed into place.
+fetch_file <- function(
+  url,
+  dest,
+  attempts = 4L,
+  download = utils::download.file,
+  pause = Sys.sleep
+) {
+  part <- paste0(dest, ".part")
+  on.exit(unlink(part))
+  for (attempt in seq_len(attempts)) {
+    ok <- tryCatch(
+      download(url, part, mode = "wb", quiet = TRUE) == 0,
+      error = function(e) FALSE,
+      warning = function(w) FALSE
+    )
+    if (ok && file.rename(part, dest)) {
+      return(TRUE)
+    }
+    if (attempt < attempts) {
+      pause(2^(attempt - 1))
+    }
+  }
+  FALSE
 }
 
 golden_cases <- function(version) {
