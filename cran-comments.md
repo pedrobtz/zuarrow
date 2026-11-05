@@ -15,7 +15,7 @@ The pre-submission check is the `pedrobtz/r-actions` R CMD check, run with
 
 * GitHub Actions: macOS, Windows and Ubuntu on R-release, Windows on
   R-devel, and Ubuntu on R-oldrel-1.
-* R-hub CRAN-like containers on R-devel: `clang23`, `ubuntu-clang` and
+* CRAN-like containers on R-devel: `clang23`, `ubuntu-clang` and
   `ubuntu-gcc16`, plus `nosuggests` and `nold`.
 * Native checks on R-devel: ASan and UBSan with gcc and clang, valgrind,
   rchk, LTO, `-fanalyzer`, gctorture, and CRAN's `rcnst`, `rlibro` and
@@ -57,6 +57,12 @@ The source tarball contains no object code.
 
 `decimal` and `zujson` are used only in tests, which skip when they are
 missing.
+
+## Method References
+
+There are no published references describing the methods in this package.
+It implements the Apache Arrow columnar format specification, cited in
+`Description:`.
 
 ## Reverse dependencies
 
