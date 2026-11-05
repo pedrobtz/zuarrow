@@ -900,3 +900,158 @@ test_that("a test registration puts back the one it replaced (#118)", {
   })
   expect_false("my.leak" %in% arrow_registry()$key)
 })
+
+test_that("a registered vector's schema is its whole column's (#113)", {
+  local_registration(
+    "s",
+    from = function(x) {
+      v <- unclass(x)
+      arrow_array(v, schema = if (all(abs(v) < 128L)) "c" else "s")
+    },
+    class = "fake_wide"
+  )
+  x <- structure(c(1L, 300L), class = "fake_wide")
+  expect_identical(format(arrow_schema(x)), "int16")
+
+  df <- data.frame(id = 1:2)
+  df$w <- x
+  schema <- arrow_schema(df)
+  expect_identical(format(schema), "struct<id: int32, w: int16>")
+  stream <- arrow_stream(df, batch = 1, schema = schema)
+  expect_identical(as.data.frame(stream)$w, unclass(x))
+})
+
+test_that("the registration for the most specific class wins (#114)", {
+  register <- function(key, value, class, .env) {
+    local_registration(
+      key,
+      to = function(array, schema) rep(value, arrow_info_length(array)),
+      from = function(x) arrow_array(rep(value, length(x))),
+      class = class,
+      .env = .env
+    )
+  }
+  sub <- structure(1:3, class = c("fake_sub", "fake_base"))
+  base <- structure(1:3, class = "fake_base")
+  ints <- test_fixed("i", 1:2, 4L)
+  for (sub_first in c(TRUE, FALSE)) {
+    local({
+      env <- environment()
+      if (sub_first) {
+        register("my.sub", "sub", "fake_sub", env)
+        register("my.base", "base", "fake_base", env)
+      } else {
+        register("my.base", "base", "fake_base", env)
+        register("my.sub", "sub", "fake_sub", env)
+      }
+      expect_identical(arrow_to_r(arrow_array(sub)), rep("sub", 3))
+      expect_identical(arrow_to_r(arrow_array(base)), rep("base", 3))
+      expect_identical(
+        arrow_to_r(ints, to = structure(integer(), class = class(sub))),
+        c("sub", "sub")
+      )
+      expect_identical(
+        arrow_to_r(ints, to = structure(integer(), class = class(base))),
+        c("base", "base")
+      )
+    })
+  }
+})
+
+test_that("a pattern keeps its priority when its owner registers it again (#115)", {
+  local_unload_hooks("utils")
+  first <- function(array, schema) rep("first", arrow_info_length(array))
+  local_registration("d:*", to = first, package = "utils")
+  local_registration(
+    "d:5*",
+    to = function(array, schema) rep("second", arrow_info_length(array))
+  )
+  column <- test_fixed("d:5,2", 1, 16L)
+  expect_identical(arrow_to_r(column), "first")
+
+  # Again, as on a reload that runs no unload hook.
+  arrow_register("d:*", to = first, package = "utils")
+  expect_identical(arrow_to_r(column), "first")
+
+  # A reload: the unload hook removes the registration, the load adds it.
+  zuarrow:::zar_unregister_package("utils")
+  arrow_register("d:*", to = first, package = "utils")
+  expect_identical(arrow_to_r(column), "first")
+
+  # arrow_unregister() forgets the priority.
+  arrow_unregister("d:*")
+  arrow_register("d:*", to = first, package = "utils")
+  expect_identical(arrow_to_r(column), "second")
+})
+
+test_that("arrow_array() checks the length a from handler builds (#123)", {
+  local_registration(
+    "i",
+    from = function(x) arrow_array(1:5),
+    class = "fake_int"
+  )
+  x <- structure(1:3, class = "fake_int")
+  expect_error(arrow_array(x), class = "zuarrow_registry_error")
+  expect_error(arrow_schema(x), class = "zuarrow_registry_error")
+})
+
+test_that("a from handler that returns a released array is a handle error", {
+  local_registration(
+    "i",
+    from = function(x) {
+      array <- arrow_array(unclass(x))
+      test_release(array)
+      array
+    },
+    class = "fake_int"
+  )
+  x <- structure(1:3, class = "fake_int")
+  expect_error(arrow_array(x), class = "zuarrow_handle_error")
+  df <- data.frame(n = 1:3)
+  df$x <- x
+  expect_error(arrow_array(df), class = "zuarrow_handle_error")
+})
+
+test_that("an extension over an exact storage type stays exact (#133)", {
+  for (key in c("arrow.json", "arrow.uuid")) {
+    expect_error(
+      arrow_register(key, to = function(a, s) 1, exact = FALSE),
+      class = "zuarrow_registry_error",
+      info = key
+    )
+  }
+  local_registration(
+    "my.text",
+    to = function(array, schema) rep("lossy", arrow_info_length(array)),
+    exact = FALSE
+  )
+  text <- test_array(
+    ext_schema("u", "my.text"),
+    1,
+    list(NULL, le_int(c(0, 1), 4L), charToRaw("a"))
+  )
+  # Under "error" the inexact registration is not used.
+  expect_identical(as.vector(arrow_to_r(text)), "a")
+  for (lossy in c("warn", "allow")) {
+    expect_error(
+      arrow_to_r(text, lossy = lossy),
+      class = "zuarrow_registry_error",
+      info = lossy
+    )
+  }
+  # Over a lossy storage type the inexact registration applies.
+  wide <- test_array(ext_schema("l", "my.text"), 1, list(NULL, le_int(1, 8L)))
+  expect_identical(arrow_to_r(wide, lossy = "allow"), "lossy")
+
+  # Nested storage is exact when every child's is.
+  storage_exact <- zuarrow:::zar_storage_exact
+  expect_true(storage_exact(zspec("+l", children = list(zspec("i")))))
+  expect_false(storage_exact(zspec("+l", children = list(zspec("l")))))
+  expect_false(storage_exact(zspec(
+    "+s",
+    children = list(zspec("u"), zspec("d:5,1"))
+  )))
+  dict <- zspec("i")
+  dict$dictionary <- zspec("L")
+  expect_false(storage_exact(dict))
+})

@@ -469,7 +469,9 @@ SEXP zar_c_schema_from_spec(SEXP spec) {
   }
   UNPROTECT(1);
   if (code != NANOARROW_OK) {
-    return zar_failure_from_error(code == EILSEQ ? "type" : NULL, &error);
+    /* A spec that cannot become a schema: a missing format, a string that
+       is not UTF-8, metadata that is not a named list of raw vectors. */
+    return zar_failure_from_error("type", &error);
   }
   return out;
 }

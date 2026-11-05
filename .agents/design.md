@@ -761,6 +761,27 @@ dictionary reached a handler registered for `"l"`.
 owns replaces its registration without a message, as it does on every
 reload. The message stays for a different owner.
 
+*Decided 2026-11-05 (#123):* `arrow_array()` of a top-level registered
+vector checks the length of the array its `from` handler returns, as a
+data-frame column always did, and another length is a
+`zuarrow_registry_error`, because an array whose length differs from its
+input is never an exact conversion. The check is in the one place every
+`from` call goes through, so `arrow_schema()` and each re-built batch get
+it too.
+
+*2026-11-05 (#113, #114, #115, #133):* `arrow_schema()` of a registered
+vector calls `from` on the whole column, as #91 builds it, so the schema
+and the array agree. Where several registrations' classes match an
+object, the one whose class comes earliest in `class(x)` wins, for `from`
+and for a prototype in `to`; registration order only breaks a tie. A
+package that registers a key it already owned keeps the key's place
+among the patterns, across its own unload and reload;
+`arrow_unregister()` forgets it. An extension is exact when its storage
+type is: `arrow.bool8`, `arrow.json` and `arrow.uuid` refuse an inexact
+registration, and an inexact registration of any other name that matches
+a column whose storage converts exactly is a `zuarrow_registry_error`
+when the policy would use it.
+
 Decided 2026-11-03 under X4 and X5 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6):
 
 - **The policy reaches the handler.** A `to` may take a third argument,
@@ -909,6 +930,14 @@ same class from every consumer (`arrow_next()`, `arrow_to_r()`,
 `arrow_write()`, `arrow_validate()`, `arrow_equal()`). zuarrow's own IPC
 reader names the kind of its failure (`format`, `limit` or `codec`), and
 any other producer's failure is a `zuarrow_handle_error`.
+
+*Decided 2026-11-05 (#126):* every `.Call()` whose routine can return a
+`zar_failure` goes through `zar_check()`, internal helpers included, even
+where the handle was checked earlier on the same path. A released handle
+is then a `zuarrow_handle_error` wherever it is first touched, never a
+base error from reading `$length` of a failure. A spec that cannot become
+a schema is a `zuarrow_type_error` (#132); only a failed allocation is a
+bare `zuarrow_error`.
 
 ## 9. Testing
 
