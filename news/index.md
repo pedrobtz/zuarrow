@@ -1,6 +1,6 @@
 # Changelog
 
-## zuarrow (development version)
+## zuarrow 0.0.0.9000
 
 - Initial CRAN submission.
 
@@ -228,7 +228,7 @@
   ([\#102](https://github.com/pedrobtz/zuarrow/issues/102)).
 
 - [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
-  writes a sliced batch, one with a nonzero offset at any depth, as the
+  writes a sliced batch, one with a non-zero offset at any depth, as the
   values it holds, as `arrow`, DuckDB and ‘nanoarrow’ slices produce.
   Every writer failure now has a class: a view layout, a sliced run-end
   encoded column and a batch with null rows are a `zuarrow_type_error`,
