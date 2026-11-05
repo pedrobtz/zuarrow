@@ -142,6 +142,12 @@
   wrong, and a dictionary of decimals did not reach decimal's (#93).
 * A package that registers a key it already owns, as on every reload,
   does so without a message (#92).
+* `arrow_write()` writes a sliced batch, one with a nonzero offset at any
+  depth, as the values it holds, as `arrow`, DuckDB and 'nanoarrow' slices
+  produce. Every writer failure now has a class: a view layout, a sliced
+  run-end encoded column and a batch with null rows are a
+  `zuarrow_type_error`, and a malformed batch is a `zuarrow_format_error`.
+  Before, these raised an unclassed `zuarrow_error` (#104).
 
 * `arrow_metadata<-` raises `zuarrow_type_error` for a key that is not
   valid UTF-8 or a value that is not raw. Before, it raised a plain

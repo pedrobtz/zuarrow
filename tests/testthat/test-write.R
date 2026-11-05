@@ -291,3 +291,212 @@ test_that("bad arguments are type errors", {
     class = "zuarrow_io_error"
   )
 })
+
+test_that("a sliced batch is written as the values it holds", {
+  dict_field <- zspec("i", "f")
+  dict_field$dictionary <- zspec("u")
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(
+      zspec("i", "x"),
+      zspec("u", "s"),
+      zspec("b", "b"),
+      zspec("+l", "l", children = list(zspec("i", "item"))),
+      dict_field
+    )
+  ))
+  # The struct starts at row 1 and each child but `s` has its own offset.
+  batch <- test_array(
+    schema,
+    2,
+    list(NULL),
+    offset = 1,
+    children = list(
+      test_array_spec(3, list(NULL, le_int(c(10, 20, 30, 40), 4L)), offset = 1),
+      test_array_spec(
+        3,
+        list(NULL, le_int(c(0, 1, 3, 6), 4L), charToRaw("abbccc"))
+      ),
+      # Bits 3 and 4 hold TRUE and FALSE; bit 4 is null.
+      test_array_spec(
+        3,
+        list(as.raw(0xef), as.raw(0x4d)),
+        null_count = 1,
+        offset = 2
+      ),
+      test_array_spec(
+        3,
+        list(NULL, le_int(c(0, 0, 1, 1, 3), 4L)),
+        offset = 1,
+        children = list(test_array_spec(
+          3,
+          list(NULL, le_int(c(6, 7, 8, 9), 4L)),
+          offset = 1
+        ))
+      ),
+      test_array_spec(
+        3,
+        list(NULL, le_int(c(0, 0, 1, 0), 4L)),
+        offset = 1,
+        dictionary = test_array_spec(
+          2,
+          list(NULL, le_int(c(0, 1, 2, 3), 4L), charToRaw("zab")),
+          offset = 1
+        )
+      )
+    )
+  )
+  for (format in c("file", "stream")) {
+    out <- arrow_read(arrow_write(batch, NULL, format = format))
+    expect_identical(out$x, c(30L, 40L), info = format)
+    expect_identical(out$s, c("bb", "ccc"), info = format)
+    expect_identical(out$b, c(TRUE, NA), info = format)
+    expect_identical(out$l, list(integer(), c(8L, 9L)), info = format)
+    expect_identical(
+      out$f,
+      factor(c("b", "a"), levels = c("a", "b")),
+      info = format
+    )
+  }
+})
+
+test_that("a sliced union is written as the values it holds", {
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec(
+      "+us:0,1",
+      "u",
+      children = list(zspec("i", "a"), zspec("u", "b"))
+    ))
+  ))
+  sliced <- test_array(
+    schema,
+    2,
+    list(NULL),
+    offset = 1,
+    children = list(test_array_spec(
+      3,
+      list(as.raw(c(0, 0, 1))),
+      children = list(
+        test_array_spec(3, list(NULL, le_int(c(1, 2, 3), 4L))),
+        test_array_spec(
+          3,
+          list(NULL, le_int(c(0, 1, 2, 3), 4L), charToRaw("xyz"))
+        )
+      )
+    ))
+  )
+  expected <- test_array(
+    schema,
+    2,
+    list(NULL),
+    children = list(test_array_spec(
+      2,
+      list(as.raw(c(0, 1))),
+      children = list(
+        test_array_spec(2, list(NULL, le_int(c(2, 3), 4L))),
+        test_array_spec(2, list(NULL, le_int(c(0, 1, 2), 4L), charToRaw("yz")))
+      )
+    ))
+  )
+  # A union has no R form, so the bytes are compared with the unsliced
+  # array's.
+  expect_identical(arrow_write(sliced, NULL), arrow_write(expected, NULL))
+
+  # A dense union keeps its children whole: its offsets point into them.
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec(
+      "+ud:0,1",
+      "u",
+      children = list(zspec("i", "a"), zspec("u", "b"))
+    ))
+  ))
+  dense <- function(offset, types, offsets) {
+    test_array(
+      schema,
+      2,
+      list(NULL),
+      offset = offset,
+      children = list(test_array_spec(
+        length(types),
+        list(as.raw(types), le_int(offsets, 4L)),
+        children = list(
+          test_array_spec(2, list(NULL, le_int(c(1, 2), 4L))),
+          test_array_spec(1, list(NULL, le_int(c(0, 1), 4L), charToRaw("x")))
+        )
+      ))
+    )
+  }
+  expect_identical(
+    arrow_write(dense(1, c(0, 0, 1), c(0, 1, 0)), NULL),
+    arrow_write(dense(0, c(0, 1), c(1, 0)), NULL)
+  )
+})
+
+test_that("a sliced run-end encoded column is a type error", {
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec(
+      "+r",
+      "r",
+      children = list(zspec("i", "run_ends"), zspec("i", "values"))
+    ))
+  ))
+  batch <- test_array(
+    schema,
+    1,
+    list(NULL),
+    offset = 1,
+    children = list(test_array_spec(
+      2,
+      list(),
+      children = list(
+        test_array_spec(1, list(NULL, le_int(2, 4L))),
+        test_array_spec(1, list(NULL, le_int(5, 4L)))
+      )
+    ))
+  )
+  expect_error(arrow_write(batch, NULL), class = "zuarrow_type_error")
+})
+
+test_that("a view layout is a type error", {
+  for (format in c("vu", "vz")) {
+    schema <- test_schema(zspec("+s", children = list(zspec(format, "v"))))
+    batch <- test_array(
+      schema,
+      0,
+      list(NULL),
+      children = list(test_array_spec(0, list(NULL, raw())))
+    )
+    expect_error(
+      arrow_write(batch, NULL),
+      class = "zuarrow_type_error",
+      info = format
+    )
+  }
+})
+
+test_that("null rows in a batch are a type error", {
+  schema <- test_schema(zspec("+s", children = list(zspec("i", "x"))))
+  batch <- test_array(
+    schema,
+    2,
+    list(as.raw(0x01)),
+    null_count = 1,
+    children = list(test_array_spec(2, list(NULL, le_int(c(1, 2), 4L))))
+  )
+  expect_error(arrow_write(batch, NULL), class = "zuarrow_type_error")
+})
+
+test_that("a malformed batch is a format error", {
+  schema <- test_schema(zspec("+s", children = list(zspec("i", "x"))))
+  # Three rows, but a field of two.
+  batch <- test_array(
+    schema,
+    3,
+    list(NULL),
+    children = list(test_array_spec(2, list(NULL, le_int(c(1, 2), 4L))))
+  )
+  expect_error(arrow_write(batch, NULL), class = "zuarrow_format_error")
+})
