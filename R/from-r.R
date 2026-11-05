@@ -137,7 +137,7 @@ zar_prebuild <- function(x, call = NULL) {
       attrs[keep],
       list(class = "zar_prebuilt")
     )
-    n <- .Call(zar_c_array_info, out$array)$length
+    n <- zar_check(.Call(zar_c_array_info, out$array), call = call)$length
     if (n != length(x)) {
       zar_abort(
         "registry",
@@ -173,7 +173,7 @@ zar_prebuild <- function(x, call = NULL) {
 
 zar_nrow <- function(x) {
   if (inherits(x, "zar_prebuilt")) {
-    return(.Call(zar_c_array_info, x$array)$length)
+    return(zar_check(.Call(zar_c_array_info, x$array))$length)
   }
   if (is.data.frame(x)) {
     .row_names_info(x, 2L)

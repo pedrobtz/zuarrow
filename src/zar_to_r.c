@@ -341,8 +341,8 @@ static void zar_list_range(const struct ArrowArrayView *v, int64_t j,
   }
 }
 
-/* A slice through a dictionary: element i of `s` is the dictionary value
-/* its index names, in `out`. An index outside the dictionary is a format
+/* A slice through a dictionary, in `out`: element i is the dictionary value
+   that index i of `s` names. An index outside the dictionary is a format
    failure: foreign arrays get default validation, which does not check
    dictionary indices. */
 static int zar_dictionary_slice(const struct zar_slice *s, struct zar_slice *out,
@@ -675,7 +675,6 @@ static int zar_plan_to(struct zar_plan *p, int to, struct zar_err *e) {
 
 /* ---- the value scan ---------------------------------------------------- */
 
-/* Returns the first offending element of the slice, or -1. */
 /* The byte range [*lo, *hi) of the data buffer that holds a string slice's
    values, when the slice reads string or large_string elements directly
    and its offsets never decrease. Returns 0 otherwise, or when an element
@@ -822,6 +821,7 @@ static int64_t zar_scan_direct(const struct zar_plan *p, const struct zar_slice 
   }
 }
 
+/* The first element of the slice that the plan's scan looks for, or -1. */
 static int64_t zar_scan_slice(const struct zar_plan *p,
                               const struct zar_slice *s) {
   int64_t direct = zar_scan_direct(p, s);

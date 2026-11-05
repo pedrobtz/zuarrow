@@ -8,5 +8,7 @@ deferred_info <- function(x) .Call(zuarrow:::zar_c_deferred_info, x)
 # (1-based) in place, "no_na" calls the No_NA method.
 deferred_probe <- function(x, op, i = 0L, value = NA_character_) {
   code <- match(op, c("dataptr", "or_null", "set", "no_na"))
-  .Call(zuarrow:::zar_c_deferred_probe, x, code, as.integer(i), value)
+  zuarrow:::zar_check(
+    .Call(zuarrow:::zar_c_deferred_probe, x, code, as.integer(i), value)
+  )
 }
