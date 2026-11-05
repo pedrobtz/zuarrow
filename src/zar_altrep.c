@@ -252,9 +252,18 @@ SEXP zar_c_deferred_probe(SEXP x, SEXP op, SEXP i, SEXP value) {
     }
     case 2:
       return Rf_ScalarLogical(zar_deferred_dataptr_or_null(x) != NULL);
-    case 3:
-      SET_STRING_ELT(x, (R_xlen_t)Rf_asInteger(i) - 1, STRING_ELT(value, 0));
+    case 3: {
+      /* A test hook that ships in the shared object: check what it writes. */
+      int k = Rf_asInteger(i);
+      if (k == NA_INTEGER || k < 1 || (R_xlen_t)k > Rf_xlength(x)) {
+        return zar_failure("type", "The element index is out of range.");
+      }
+      if (TYPEOF(value) != STRSXP || Rf_xlength(value) < 1) {
+        return zar_failure("type", "The value must be a character string.");
+      }
+      SET_STRING_ELT(x, (R_xlen_t)k - 1, STRING_ELT(value, 0));
       return R_NilValue;
+    }
     default:
       return Rf_ScalarLogical(zar_deferred_no_na(x));
   }
