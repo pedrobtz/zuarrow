@@ -183,6 +183,12 @@
   write the column in batches of that type
   ([\#91](https://github.com/pedrobtz/zuarrow/issues/91)).
 
+- A registered `from` handler that builds a batch whose nested type
+  differs from the column’s, such as `list<int32>` in a `list<int64>`
+  column, raises a `zuarrow_registry_error`. Before, only the top-level
+  format was compared, so the batch’s bytes were read as the wrong type
+  ([\#100](https://github.com/pedrobtz/zuarrow/issues/100)).
+
 - A dictionary or run-end encoded column goes to the handler registered
   for its value type, which receives the decoded values. Before, the
   handler for the index type received the dictionary, so a dictionary
