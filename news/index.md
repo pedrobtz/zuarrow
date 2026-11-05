@@ -235,6 +235,15 @@
   ([\#102](https://github.com/pedrobtz/zuarrow/issues/102)).
 
 - [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  and the decoder that hands a dictionary’s or run-end encoded column’s
+  values to a registered handler check every offset the same way.
+  Before,
+  [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  wrote a batch whose string offsets decrease or point past its data
+  into a file no reader accepts
+  ([\#150](https://github.com/pedrobtz/zuarrow/issues/150)).
+
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
   writes a sliced batch, one with a non-zero offset at any depth, as the
   values it holds, as `arrow`, DuckDB and ‘nanoarrow’ slices produce.
   Every writer failure now has a class: a view layout, a sliced run-end
