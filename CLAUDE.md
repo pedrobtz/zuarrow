@@ -38,12 +38,14 @@ Stages 0 to 9 of `.agents/roadmap.md` are merged. Stage 10 (v0.1.0
 readiness) is in progress, and Stage 11 (Review) follows it. The first
 critical review (2026-10-27, issues labelled `review`) has been fixed.
 
-The version is `0.1.0`. It builds on zukomp’s development version
-through `Remotes:`. Submission waits for zukomp 0.2.0, the release with
-the codecs, to reach CRAN, which can happen 2026-11-27 at the earliest.
-The first step of the CRAN-submission issue (#12) is then to remove
-`Remotes:` and set `zukomp (>= 0.2.0)`. Stage 10 also wants an upstream
-nanoarrow pull request for vendored patch 0004.
+The version stays at `0.0.0.9000` until submission (decided 2026-11-05);
+setting `0.1.0` is a step of the CRAN-submission issue (#12). It builds
+on zukomp’s development version through `Remotes:`. Submission waits for
+zukomp 0.2.0, the release with the codecs, to reach CRAN, which can
+happen 2026-11-27 at the earliest. The first step of the CRAN-submission
+issue (#12) is then to remove `Remotes:` and set `zukomp (>= 0.2.0)`.
+Stage 10 also wants an upstream nanoarrow pull request for vendored
+patch 0004.
 
 `decimal`’s registration (decimal#24) is optional. It is tested when
 `decimal` provides it, and 0.1.0 does not wait for it (design §12).
@@ -295,14 +297,17 @@ test or CI leg will catch late. Add more as stages establish them.
 
 ## Definition of done
 
-`devtools::document()` and `devtools::check()` clean, meaning 0 errors,
-0 warnings and 0 notes. The one allowed note is “New submission” before
-the first release. `devtools::test(shuffle = TRUE)` green. CI green at
-the change’s tier: the quick profile for a `quick` roadmap stage or an
-ordinary pull request, the full profile for a `full` stage, `Full CI`,
-and every release, plus a dispatched step-20 gctorture run where the
-gctorture section below asks for one. A user-facing change also needs a
-test, roxygen documentation and a `NEWS.md` entry.
+[`devtools::document()`](https://devtools.r-lib.org/reference/document.html)
+and
+[`devtools::check()`](https://devtools.r-lib.org/reference/check.html)
+clean, meaning 0 errors, 0 warnings and 0 notes. The one allowed note is
+“New submission” before the first release.
+`devtools::test(shuffle = TRUE)` green. CI green at the change’s tier:
+the quick profile for a `quick` roadmap stage or an ordinary pull
+request, the full profile for a `full` stage, `Full CI`, and every
+release, plus a dispatched step-20 gctorture run where the gctorture
+section below asks for one. A user-facing change also needs a test,
+roxygen documentation and a `NEWS.md` entry.
 
 ## Releasing to CRAN
 
@@ -380,13 +385,18 @@ main thing slowing roadmaps down, so:
   on a green full run. The roadmap gives the reason in the stage’s
   `**CI.**` line, for example first compiled code, a `PROTECT` or
   finalizer change, a vendored library, or a Windows-only path.
-- **Don’t wait on the full run a merge starts** on the default branch,
-  and cancel older full runs it supersedes. A failure that only the full
-  set shows goes on the `Full CI` stage issue as a comment with the run
-  link, and is fixed there. A failure the quick profile also shows is
-  fixed now.
-- **`Full CI` and `v0.1.0 readiness` wait** for a green full run on
-  their merge commit, and the release commit always needs one.
+- **Merges run quick too.** The callers pass `profile: auto`, so a push
+  to `main` runs the quick profile. The full set runs on the weekly
+  schedule (Monday) and when dispatched:
+  `gh workflow run R-CMD-check.yaml --ref main` and
+  `gh workflow run native-checks.yaml --ref main`. Dispatch it once at
+  the end of a series of merges, on the last merge commit, not after
+  each one.
+- **A failure only the full set shows** goes on the `Full CI` stage
+  issue as a comment with the run link, and is fixed there. A failure
+  the quick profile also shows is fixed now.
+- **`Full CI`, `v0.1.0 readiness` and the release commit wait** for a
+  green dispatched full run on their merge commit.
 
 ### gctorture: wide on every push, step 20 on a schedule
 

@@ -1,6 +1,6 @@
 # Changelog
 
-## zuarrow 0.1.0
+## zuarrow (development version)
 
 - Initial CRAN submission.
 
