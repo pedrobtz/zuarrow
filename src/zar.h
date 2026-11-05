@@ -103,8 +103,9 @@ const char *zar_reader_kind(const struct ArrowArrayStream *stream);
 const char *zar_reader_recorded_kind(const struct ArrowArrayStream *stream);
 
 /* Opens a reader over a copy of `size` bytes into `out`, with the limits
-   c(max_message, max_depth, max_batch_rows, max_bytes). On failure returns
-   non-zero with `error` and `*kind` set. R-free, for the fuzz target. */
+   c(max_message, max_depth, max_batch_rows, max_bytes, max_dictionary). On
+   failure returns non-zero with `error` and `*kind` set. R-free, for the
+   fuzz target. */
 int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limits,
                           struct ArrowArrayStream *out, struct ArrowError *error,
                           const char **kind);
