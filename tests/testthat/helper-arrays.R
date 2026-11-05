@@ -54,6 +54,23 @@ test_utf8 <- function(offsets, data) {
   )
 }
 
+# A bitmap, least significant bit first, from a logical vector: a validity
+# buffer, or a boolean array's values.
+test_bits <- function(x) {
+  packBits(c(as.logical(x), rep(FALSE, (-length(x)) %% 8L)), "raw")
+}
+
+# The offsets and data buffers of a string array holding `x`, NA as "".
+test_string_buffers <- function(x, large = FALSE) {
+  x[is.na(x)] <- ""
+  ends <- cumsum(nchar(x, type = "bytes"))
+  offsets <- c(0, ends)
+  list(
+    if (large) le_int(offsets, 8L) else le_int(offsets, 4L),
+    charToRaw(paste0(x, collapse = ""))
+  )
+}
+
 test_stream <- function(schema, arrays) {
   if (is.character(schema)) {
     schema <- arrow_schema(schema)
