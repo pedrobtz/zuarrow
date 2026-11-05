@@ -214,3 +214,32 @@ test_that("no_na is true only for batches without a validity bitmap", {
   y <- arrow_to_r(arrow_array(c("a", NA)), copy = FALSE)
   expect_false(deferred_probe(y, "no_na"))
 })
+
+test_that("large_string arrays are deferred", {
+  big <- arrow_array(c("p", NA, "qr", ""), schema = "U")
+  x <- arrow_to_r(big, copy = FALSE)
+  expect_false(is.null(deferred_info(x)))
+  expect_identical(x[[3]], "qr")
+  expect_identical(x[[4]], "")
+  expect_identical(x, c("p", NA, "qr", ""))
+})
+
+test_that("a released array is a handle error, not a crash", {
+  array <- arrow_array(c("x", "y"))
+  x <- arrow_to_r(array, copy = FALSE)
+  test_release(array)
+  expect_error(x[[1]], class = "zuarrow_handle_error")
+  expect_error(x[[2]], class = "zuarrow_handle_error")
+  expect_error(arrow_to_r(array), class = "zuarrow_handle_error")
+})
+
+test_that("elements made before the array was released stay usable", {
+  array <- arrow_array(c("x", NA, "z"))
+  x <- arrow_to_r(array, copy = FALSE)
+  expect_identical(x[[1]], "x")
+  expect_identical(x[[2]], NA_character_)
+  expect_identical(x[[3]], "z")
+  test_release(array)
+  # Every element exists, so the released batch is not read again.
+  expect_identical(x, c("x", NA, "z"))
+})

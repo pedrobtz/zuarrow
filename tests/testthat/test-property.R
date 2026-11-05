@@ -51,3 +51,55 @@ test_that("a data frame of every exact type round-trips through a stream", {
   expect_true(arrow_validate(arrow_stream(df, batch = 9L), "full"))
   expect_identical(arrow_read(arrow_write(df, NULL, batch = 9L)), df)
 })
+
+test_that("arrays with a random offset convert from that offset", {
+  withr::local_seed(20261104)
+  buffers <- function(kind, x) {
+    switch(
+      kind,
+      logical = list(test_bits(!is.na(x) & x)),
+      integer = list(writeBin(
+        ifelse(is.na(x), 0L, x),
+        raw(),
+        endian = "little"
+      )),
+      double = list(writeBin(as.double(x), raw(), endian = "little")),
+      Date = list(writeBin(
+        ifelse(is.na(x), 0L, as.integer(unclass(x))),
+        raw(),
+        endian = "little"
+      )),
+      character = test_string_buffers(x)
+    )
+  }
+  formats <- c(
+    logical = "b",
+    integer = "i",
+    double = "g",
+    Date = "tdD",
+    character = "u"
+  )
+  cases <- gctorture_sample(seq_len(40), 5)
+  for (case in cases) {
+    for (kind in names(formats)) {
+      offset <- sample(0:70, 1)
+      n <- sample(0:30, 1)
+      x <- random_values(kind, offset + n + sample(0:9, 1))
+      valid <- !is.na(x) | is.nan(x)
+      slice <- offset + seq_len(n)
+      array <- test_array(
+        formats[[kind]],
+        n,
+        c(list(test_bits(valid)), buffers(kind, x)),
+        null_count = sum(!valid[slice]),
+        offset = offset
+      )
+      info <- paste(kind, case, offset, n)
+      expect_true(arrow_validate(array, "full"), info = info)
+      expect_identical(arrow_to_r(array), x[slice], info = info)
+      if (kind == "character") {
+        expect_identical(arrow_to_r(array, copy = FALSE), x[slice], info = info)
+      }
+    }
+  }
+})
