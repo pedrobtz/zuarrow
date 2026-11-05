@@ -2,7 +2,12 @@ on:
   push:
     branches: [main, master]
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  # The full set runs weekly and on demand:
+  # `gh workflow run native-checks.yaml --ref main`.
+  schedule:
+    - cron: "47 4 * * 1"
+  workflow_dispatch:
 
 name: native-checks
 
@@ -21,14 +26,14 @@ jobs:
       asan: true
       env: |
         ZUARROW_FETCH_FIXTURES=true
-      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+      profile: auto
 
   # valgrind.yml takes no env input, so the oracle tests skip here; the
   # crash corpus runs under ASan in sanitizers and in gctorture.yaml.
   valgrind:
     uses: pedrobtz/r-actions/.github/workflows/valgrind.yml@v1
     with:
-      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+      profile: auto
 
   lto:
     uses: pedrobtz/r-actions/.github/workflows/lto.yml@v1
@@ -46,4 +51,4 @@ jobs:
   cran-special:
     uses: pedrobtz/r-actions/.github/workflows/cran-special.yml@v1
     with:
-      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+      profile: auto

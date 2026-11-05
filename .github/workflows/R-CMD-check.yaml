@@ -1,9 +1,14 @@
 on:
   push:
     branches: [main, master]
-  # `labeled` so that adding `full-ci` to a pull request reruns it in full.
+  # `labeled`/`unlabeled` so that adding or removing `full-ci` reruns it.
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  # The full set runs weekly and on demand:
+  # `gh workflow run R-CMD-check.yaml --ref main`.
+  schedule:
+    - cron: "17 4 * * 1"
+  workflow_dispatch:
 
 name: R-CMD-check
 
@@ -19,9 +24,10 @@ jobs:
   R-CMD-check:
     uses: pedrobtz/r-actions/.github/workflows/r-cmd-check.yml@v1
     with:
-      # Quick on each push to a pull request, full after merge. The
-      # `full-ci` label runs the full set on a pull request before merging.
-      profile: ${{ github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'full-ci') && 'quick' || 'full' }}
+      # Quick on pull requests and on pushes to main. Full on the weekly
+      # schedule, on a manual dispatch, and on a pull request labelled
+      # `full-ci` (r-actions v1.30.0).
+      profile: auto
       # The default four legs plus Windows on R-devel, the combination CRAN's
       # own Windows R-devel check runs and nothing else here reaches. The
       # extra row runs in the full profile only.

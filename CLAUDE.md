@@ -347,12 +347,17 @@ thing slowing roadmaps down, so:
   green full run. The roadmap gives the reason in the stage's `**CI.**`
   line, for example first compiled code, a `PROTECT` or finalizer change, a
   vendored library, or a Windows-only path.
-- **Don't wait on the full run a merge starts** on the default branch, and
-  cancel older full runs it supersedes. A failure that only the full set
-  shows goes on the `Full CI` stage issue as a comment with the run link,
-  and is fixed there. A failure the quick profile also shows is fixed now.
-- **`Full CI` and `v0.1.0 readiness` wait** for a green full run on their
-  merge commit, and the release commit always needs one.
+- **Merges run quick too.** The callers pass `profile: auto`, so a push to
+  `main` runs the quick profile. The full set runs on the weekly schedule
+  (Monday) and when dispatched:
+  `gh workflow run R-CMD-check.yaml --ref main` and
+  `gh workflow run native-checks.yaml --ref main`. Dispatch it once at the
+  end of a series of merges, on the last merge commit, not after each one.
+- **A failure only the full set shows** goes on the `Full CI` stage issue as
+  a comment with the run link, and is fixed there. A failure the quick
+  profile also shows is fixed now.
+- **`Full CI`, `v0.1.0 readiness` and the release commit wait** for a green
+  dispatched full run on their merge commit.
 
 ### gctorture: wide on every push, step 20 on a schedule
 
