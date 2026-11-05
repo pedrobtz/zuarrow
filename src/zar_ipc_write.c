@@ -517,6 +517,9 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     if (code != NANOARROW_OK) break;
     n_views++;
     code = ArrowArrayViewSetArray(view, array, &error);
+    /* The view is copied and encoded below: check every offset and range
+       first (#150). */
+    if (code == NANOARROW_OK) code = zar_view_check_read(view, &error);
     if (code != NANOARROW_OK) {
       kind = "format";
       break;

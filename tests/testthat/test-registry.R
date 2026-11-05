@@ -671,6 +671,39 @@ test_that("a handler for the index type never gets a dictionary", {
   expect_identical(arrow_to_r(array), factor(c("a", "b", "a")))
 })
 
+test_that("bad encoded string offsets never reach a handler (#150)", {
+  seen <- new.env()
+  seen$calls <- 0L
+  local_registration("u", to = function(array, schema) {
+    seen$calls <- seen$calls + 1L
+    rep("x", arrow_info_length(array))
+  })
+  # Default validation checks only the first and last offsets.
+  values <- test_array_spec(
+    3,
+    list(NULL, le_int(c(0, 3, 1, 5), 4L), charToRaw("abcde"))
+  )
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("u")
+  dict <- test_array(
+    test_schema(spec),
+    3,
+    list(NULL, le_int(c(0, 1, 2), 4L)),
+    dictionary = values
+  )
+  ree <- test_ree_array("u", c(1, 2, 3), values)
+  expect_error(arrow_to_r(dict), class = "zuarrow_format_error")
+  expect_error(arrow_to_r(ree), class = "zuarrow_format_error")
+  # The decoder checks on its own, whoever calls it.
+  for (x in list(dict, ree)) {
+    expect_error(
+      zuarrow:::zar_check(.Call(zuarrow:::zar_c_array_decode, x)),
+      class = "zuarrow_format_error"
+    )
+  }
+  expect_identical(seen$calls, 0L)
+})
+
 test_that("encoded values the decoder can't copy are a type error", {
   local_registration("+w:*", to = function(array, schema) "x", exact = TRUE)
   spec <- zspec("i", "x")

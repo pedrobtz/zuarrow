@@ -535,3 +535,49 @@ test_that("a malformed batch is a format error", {
   )
   expect_error(arrow_write(batch, NULL), class = "zuarrow_format_error")
 })
+
+test_that("bad string offsets are a format error, never written (#150)", {
+  frame <- function(offsets, offset = 0) {
+    n <- length(offsets) - 1
+    test_array(
+      test_schema(zspec("+s", children = list(zspec("u", "s")))),
+      n - offset,
+      list(NULL),
+      offset = offset,
+      children = list(test_array_spec(
+        n,
+        list(NULL, le_int(offsets, 4L), charToRaw("abcde"))
+      ))
+    )
+  }
+  # Default validation checks only the first and last offsets.
+  expect_error(
+    arrow_write(frame(c(0, 3, 1, 5)), NULL),
+    class = "zuarrow_format_error"
+  )
+  expect_error(
+    arrow_write(frame(c(0, 4000, 5)), NULL),
+    class = "zuarrow_format_error"
+  )
+  # A sliced batch is copied through its offsets.
+  expect_error(
+    arrow_write(frame(c(0, 3, 1, 4, 5), offset = 1), NULL),
+    class = "zuarrow_format_error"
+  )
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("u")
+  dict <- test_array(
+    test_schema(zspec("+s", children = list(spec))),
+    2,
+    list(NULL),
+    children = list(test_array_spec(
+      2,
+      list(NULL, le_int(c(0, 1), 4L)),
+      dictionary = test_array_spec(
+        2,
+        list(NULL, le_int(c(0, 4000, 5), 4L), charToRaw("abcde"))
+      )
+    ))
+  )
+  expect_error(arrow_write(dict, NULL), class = "zuarrow_format_error")
+})

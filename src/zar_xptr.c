@@ -780,11 +780,13 @@ SEXP zar_c_array_decode(SEXP x) {
   if (ArrowArrayViewInitFromSchema(&view, schema, &error) != NANOARROW_OK) {
     return zar_failure_from_error("format", &error);
   }
-  if (ArrowArrayViewSetArray(&view, array, &error) != NANOARROW_OK) {
+  /* The values are copied below: check every offset and range first. */
+  if (ArrowArrayViewSetArray(&view, array, &error) != NANOARROW_OK ||
+      zar_view_check_read(&view, &error) != NANOARROW_OK) {
     ArrowArrayViewReset(&view);
     return zar_failure_from_error("format", &error);
   }
-  int ree = view.storage_type == NANOARROW_TYPE_RUN_END_ENCODED;
+  int ree =view.storage_type == NANOARROW_TYPE_RUN_END_ENCODED;
   if (schema->dictionary == NULL && !ree) {
     ArrowArrayViewReset(&view);
     return zar_failure("handle",
