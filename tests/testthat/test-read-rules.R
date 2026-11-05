@@ -87,6 +87,67 @@ test_that("deltas extend a fixed-width dictionary, nulls included", {
   expect_identical(arrow_read(stream)$x, c(10L, 20L, 30L, NA, 40L, 10L))
 })
 
+test_that("the dictionaries that deltas build are bounded (#101)", {
+  # Each delta copies the whole dictionary, and each batch keeps the
+  # version it was decoded with, so n deltas of k values build about
+  # n^2 * k / 2 values. Here n = 40 and k = 100.
+  first <- int_dictionary_stream(0, 1)
+  m <- ipc_messages(first)
+  batch <- function(code) {
+    bytes <- int_dictionary_stream(code, seq_len(code + 1))
+    ipc_message_bytes(bytes, ipc_messages(bytes)[[3]])
+  }
+  n <- 40
+  k <- 100
+  deltas <- lapply(seq_len(n), function(i) {
+    c(
+      ipc_int32_dictionary(0, seq_len(k) + i * k, is_delta = TRUE),
+      batch(i * k)
+    )
+  })
+  stream <- c(
+    ipc_message_bytes(first, m[[1]]),
+    ipc_message_bytes(first, m[[2]]),
+    ipc_message_bytes(first, m[[3]]),
+    unlist(deltas),
+    ipc_eos()
+  )
+  # Each batch takes the last value of the delta before it.
+  expected <- c(1L, as.integer((seq_len(n) + 1) * k))
+
+  # Under the limits, the stream reads as before.
+  expect_identical(arrow_read(stream)$x, expected)
+  # About 4 * 100 * 40^2 / 2 = 320 000 bytes are built in all.
+  expect_identical(
+    arrow_read(stream, limits = arrow_limits(max_dictionary = 4e5))$x,
+    expected
+  )
+  expect_error(
+    arrow_read(stream, limits = arrow_limits(max_dictionary = 1e5)),
+    class = "zuarrow_limit_error"
+  )
+  expect_error(
+    arrow_to_r(
+      arrow_read(
+        stream,
+        lazy = TRUE,
+        limits = arrow_limits(max_dictionary = 1e5)
+      )
+    ),
+    class = "zuarrow_limit_error"
+  )
+  # One dictionary may hold no more values than one batch may.
+  expect_error(
+    arrow_read(stream, limits = arrow_limits(max_batch_rows = 2000)),
+    class = "zuarrow_limit_error"
+  )
+  # Nor more bytes than one message may.
+  expect_error(
+    arrow_read(stream, limits = arrow_limits(max_message = 8000)),
+    class = "zuarrow_limit_error"
+  )
+})
+
 test_that("a file's blocks must name messages of their kind", {
   bytes <- arrow_write(data.frame(f = factor("a"), g = factor("b")), NULL)
   m <- ipc_messages(bytes, 8)
@@ -102,6 +163,12 @@ test_that("a file's blocks must name messages of their kind", {
     arrow_read(ipc_swap_block(bytes, m[[2]], m[[4]])),
     class = "zuarrow_format_error"
   )
+})
+
+test_that("max_dictionary defaults to 256 MiB, under the format ceiling", {
+  limits <- arrow_limits()
+  expect_identical(limits$max_dictionary, 2^28)
+  expect_lt(limits$max_dictionary, limits$max_message)
 })
 
 test_that("a file may not replace a dictionary", {

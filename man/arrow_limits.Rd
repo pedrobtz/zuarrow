@@ -8,7 +8,8 @@ arrow_limits(
   max_message = 2^31 - 1,
   max_depth = 64L,
   max_batch_rows = 2^31 - 1,
-  max_bytes = Inf
+  max_bytes = Inf,
+  max_dictionary = 2^28
 )
 }
 \arguments{
@@ -20,6 +21,14 @@ and the most bytes one compressed buffer may claim when decompressed.}
 \item{max_batch_rows}{The most rows one record batch may hold.}
 
 \item{max_bytes}{The most bytes of input in all.}
+
+\item{max_dictionary}{The most bytes that delta dictionary batches may
+build in all. A delta onto a dictionary that holds values copies the
+whole dictionary into a new one, and every copy counts, so many small
+deltas cannot build a large amount of memory from a small input. A
+dictionary that deltas extend is also held to \code{max_batch_rows} values
+and \code{max_message} bytes. The default, 2^28 bytes (256 MiB), is far above
+what real deltas build and stops a hostile stream early.}
 }
 \value{
 A list of class \code{zuarrow_limits}.
