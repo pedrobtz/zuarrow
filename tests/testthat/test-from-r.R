@@ -128,10 +128,10 @@ test_that("the lossy error from export names the row", {
 
 test_that("POSIXct exports as microseconds in its zone", {
   x <- as.POSIXct("2026-10-21 10:00:00.25", tz = "Europe/Lisbon")
-  out <- arrow_to_r(arrow_array(x), lossy = "allow")
-  expect_identical(attr(out, "tzone"), "Europe/Lisbon")
-  expect_identical(as.numeric(out), as.numeric(x))
-  text <- arrow_to_r(arrow_array(x), lossy = "character")
+  # Microseconds are exact by value, so the default policy reads it back.
+  expect_identical(arrow_to_r(arrow_array(x)), x)
+  expect_identical(format_of(arrow_schema(arrow_array(x))), "tsu:Europe/Lisbon")
+  text <- arrow_to_r(arrow_array(x), to = character())
   expect_match(text, "\\.250000Z$")
 })
 

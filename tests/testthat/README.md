@@ -37,14 +37,6 @@ A factor holds at most 2^31 - 1 levels: "the dictionary has more levels
 than a factor holds" in `zar_to_r.c`. Reaching it takes that many distinct
 dictionary values, tens of GiB.
 
-## A stream whose `get_schema()` fails
-
-`arrow_validate()`, `arrow_equal()` and `arrow_schema()` check the code a
-stream's `get_schema()` returns. zuarrow's own streams, and nanoarrow's,
-answer it from a schema they already hold, so no producer available to
-the tests fails there. A failing `get_next()` is reachable, through a lazy
-reader over a cut stream, and `test-stream.R` tests it.
-
 ## Internal consistency checks
 
 "a malformed list column" in `zar_build_list()` guards the shape of what
@@ -70,6 +62,17 @@ These guard what R or nanoarrow has already checked:
   `zar_utf8.c`, both of them. nanoarrow's `ArrowMetadataReaderInit()`
   always succeeds, and `ArrowMetadataReaderRead()` fails only when no keys
   remain, which the loop condition excludes.
+
+Two branches of `zar_c_array_decode()` in `zar_xptr.c` guard what its R
+caller and nanoarrow have already settled:
+
+- "the array is not dictionary or run-end encoded". R calls the decoder
+  only for a field whose handler was found through its encoded values
+  (`zar_field_handler()` sets `decode`).
+- "a run-end encoding ends before its last row". `ArrowArrayViewSetArray()`
+  validates at nanoarrow's default level first, which already rejects a
+  last run end short of the array's offset plus length as a
+  `zuarrow_format_error`. `test-registry.R` tests that input.
 
 ## No interrupt checks
 
