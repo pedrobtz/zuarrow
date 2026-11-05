@@ -960,6 +960,16 @@ runs them from the source tree with every oracle installed and
 `ZUARROW_ORACLES=true`, which turns a missing oracle into a failure.
 Locally `devtools::test()` runs them and skips what is not installed.
 
+*Decided 2026-11-05 (#118):* a test that changes the registry puts the
+whole registry back when it ends, not just unregisters the keys it
+added. `local_registration()` and `local_registry()` in
+`helper-registry.R` snapshot it and restore it on exit, and the golden
+test that loads `decimal` restores it too. A registration a package
+makes at load, such as `decimal`'s `"d:*"` once decimal#24 ships, then
+survives a test that replaces it, and one a test loads does not reach
+later files, so results do not depend on the installed packages or on
+file order. To confirm against `decimal` once it registers.
+
 Property tests: for every built-in exact type and random values with
 nulls, `arrow_to_r(arrow_array(x))` is identical to `x`,
 `arrow_equal(arrow_array(x), arrow_array(x))` holds, `arrow_validate()`

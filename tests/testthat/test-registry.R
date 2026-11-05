@@ -602,12 +602,8 @@ test_that("a dictionary column is handled by its value type, decoded", {
 
 test_that("a run-end encoded column is handled by its value type, decoded", {
   seen <- local_decimal_text()
-  schema <- test_schema(zspec(
-    "+r",
-    children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
-  ))
   array <- test_array(
-    schema,
+    test_schema(ree_decimal_spec()),
     4,
     list(),
     offset = 1,
@@ -620,37 +616,27 @@ test_that("a run-end encoded column is handled by its value type, decoded", {
       )
     )
   )
-  df <- as.data.frame(test_stream(
-    test_schema(zspec(
-      "+s",
-      children = list(zspec(
-        "+r",
-        "x",
-        children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
-      ))
-    )),
-    list(test_array(
-      test_schema(zspec(
-        "+s",
-        children = list(zspec(
-          "+r",
-          "x",
-          children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
-        ))
-      )),
-      2,
-      list(NULL),
-      children = list(test_array_spec(
-        2,
-        list(),
-        children = list(
-          test_array_spec(1, list(NULL, le_int(2, 4L))),
-          test_array_spec(1, list(NULL, le_int(7, 16L)))
-        )
-      ))
-    ))
-  ))
   expect_identical(arrow_to_r(array), c("1.5", NA, "-2.5", "-2.5"))
+  expect_identical(unique(seen$formats), "decimal128(5, 1)")
+})
+
+test_that("a run-end encoded data frame column is handled by its value type", {
+  seen <- local_decimal_text()
+  schema <- test_schema(zspec("+s", children = list(ree_decimal_spec("x"))))
+  batch <- test_array(
+    schema,
+    2,
+    list(NULL),
+    children = list(test_array_spec(
+      2,
+      list(),
+      children = list(
+        test_array_spec(1, list(NULL, le_int(2, 4L))),
+        test_array_spec(1, list(NULL, le_int(7, 16L)))
+      )
+    ))
+  )
+  df <- as.data.frame(test_stream(schema, list(batch)))
   expect_identical(df$x, c("0.7", "0.7"))
   expect_identical(unique(seen$formats), "decimal128(5, 1)")
 })
@@ -887,10 +873,7 @@ test_that("a dictionary index outside its dictionary is a format error", {
 
 test_that("a run-end encoding shorter than its array is a format error", {
   local_decimal_text()
-  schema <- test_schema(zspec(
-    "+r",
-    children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
-  ))
+  schema <- test_schema(ree_decimal_spec())
   array <- test_array(
     schema,
     4,
@@ -901,4 +884,19 @@ test_that("a run-end encoding shorter than its array is a format error", {
     )
   )
   expect_error(arrow_to_r(array), class = "zuarrow_format_error")
+})
+
+test_that("a test registration puts back the one it replaced (#118)", {
+  arrow_register("d:*", to = function(array, schema) "loaded", package = NULL)
+  withr::defer(arrow_unregister("d:*"))
+  local({
+    local_decimal_text()
+    expect_identical(arrow_to_r(test_fixed("d:5,1", 15, 16L)), "1.5")
+  })
+  expect_identical(arrow_to_r(test_fixed("d:5,1", 15, 16L)), "loaded")
+  local({
+    local_registry()
+    arrow_register("my.leak", to = function(array, schema) 1)
+  })
+  expect_false("my.leak" %in% arrow_registry()$key)
 })
