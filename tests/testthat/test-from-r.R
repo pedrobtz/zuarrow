@@ -309,3 +309,21 @@ test_that("a binary element that is not a raw vector is a type error", {
     class = "zuarrow_type_error"
   )
 })
+
+test_that("a from handler that returns a released array is a handle error", {
+  local_registration(
+    "i",
+    from = function(x) {
+      array <- arrow_array(unclass(x))
+      test_release(array)
+      array
+    },
+    class = "fake_int"
+  )
+  x <- structure(1:2, class = "fake_int")
+  expect_error(
+    arrow_array(data.frame(v = 1:2, w = I(x))),
+    class = "zuarrow_handle_error"
+  )
+  expect_error(arrow_stream(x), class = "zuarrow_handle_error")
+})
