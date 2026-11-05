@@ -76,79 +76,112 @@ as a logical.</p>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 11                            fixed_size_binary                      w:n</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 12                                       date32                      tdD</span>
 <span class="r-out co"><span class="r-pr">#&gt;</span> 13                                       date64                      tdm</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14                  timestamp[s], timestamp[ms]               tss:, tsm:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15                 timestamp[us], timestamp[ns]               tsu:, tsn:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16                               time32, time64       tts, ttm, ttu, ttn</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                     duration       tDs, tDm, tDu, tDn</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18 decimal32, decimal64, decimal128, decimal256                    d:p,s</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                     interval            tiM, tiD, tin</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                    dense_union, sparse_union               +ud:, +us:</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                       struct                       +s</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 22 list, large_list, list_view, large_list_view         +l, +L, +vl, +vL</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 23                              fixed_size_list                     +w:n</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 24                                          map                       +m</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 25                        dictionary of strings             index + utf8</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 26                   dictionary of other values           index + values</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 27                              run_end_encoded                       +r</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 28                        arrow.bool8 extension c + ARROW:extension:name</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                                          r                     exact</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1                             logical (NA)                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                  logical                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                  integer                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                  integer unless a value is INT_MIN</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                   double                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                   double                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                   double            within +/-2^53</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                   double                up to 2^53</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                character  unless a value holds NUL</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10                             list of raw                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11                list of raw, arrow_width                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                    Date                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                                                no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                 POSIXct      within +/-2^53 units</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15                                                                no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                                                no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                                                no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                                                no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                                                no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                                                no</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21                              data.frame                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 22                             list column                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 23 list column; matrix with arrow_matrix()                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 24    list column of key/value data frames                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 25                                  factor                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 26                      the values' R form             as the values</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 27                      the values' R form             as the values</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 28                                 logical                       yes</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span>                            lossy_r exact_with</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                            </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                            </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                            </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 4                     integer (NA)           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                            </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                            </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 7  double, or integer64 with bit64      zuint</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 8                           double      zuint</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 9            character, cut at NUL           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 13                         POSIXct    zutempo</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 14                         POSIXct    zutempo</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 15                         POSIXct    zutempo</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 16                        difftime    zutempo</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 17                        difftime    zutempo</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 18                          double    decimal</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 19                            none    zutempo</span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 20                            none           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 23                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 24                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 25                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 26                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 27                                           </span>
-<span class="r-out co"><span class="r-pr">#&gt;</span> 28                                           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                 timestamp[s]                     tss:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                 timestamp[ms], timestamp[us]               tsm:, tsu:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                timestamp[ns]                     tsn:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                               time32, time64       tts, ttm, ttu, ttn</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                     duration       tDs, tDm, tDu, tDn</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19 decimal32, decimal64, decimal128, decimal256                    d:p,s</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                     interval            tiM, tiD, tin</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                    dense_union, sparse_union               +ud:, +us:</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                       struct                       +s</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23 list, large_list, list_view, large_list_view         +l, +L, +vl, +vL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 24                              fixed_size_list                     +w:n</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 25                                          map                       +m</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 26                        dictionary of strings             index + utf8</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 27                   dictionary of other values           index + values</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 28                              run_end_encoded                       +r</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 29                        arrow.bool8 extension c + ARROW:extension:name</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                          r</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                             logical (NA)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                  logical</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                  integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4                                  integer</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                   double</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                   double</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                                   double</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                                   double</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                                character</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                             list of raw</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                list of raw, arrow_width</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                    Date</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                                 POSIXct</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15                                 POSIXct</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                        </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                              data.frame</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                             list column</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 24 list column; matrix with arrow_matrix()</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 25    list column of key/value data frames</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 26                                  factor</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 27                      the values' R form</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 28                      the values' R form</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 29                                 logical</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>                                     exact                         lossy_r</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1                                     yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2                                     yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3                                     yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4               unless a value is INT_MIN                    integer (NA)</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5                                     yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6                                     yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7                          within +/-2^53 double, or integer64 with bit64</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8                              up to 2^53                          double</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9                unless a value holds NUL           character, cut at NUL</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13                                     no                         POSIXct</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14                 within +/-2^53 seconds                         POSIXct</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15 when the double of seconds rounds back                         POSIXct</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16                                     no                         POSIXct</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17                                     no                        difftime</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18                                     no                        difftime</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19                                     no                          double</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20                                     no                            none</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21                                     no                            none</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 24                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 25                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 26                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 27                          as the values                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 28                          as the values                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 29                                    yes                                </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span>    exact_with</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 1            </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 2            </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 3            </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 4            </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 5            </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 6            </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 7       zuint</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 8       zuint</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 9            </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 10           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 11           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 12           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 13    zutempo</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 14    zutempo</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 15    zutempo</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 16    zutempo</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 17    zutempo</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 18    zutempo</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 19    decimal</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 20    zutempo</span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 21           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 22           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 23           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 24           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 25           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 26           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 27           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 28           </span>
+<span class="r-out co"><span class="r-pr">#&gt;</span> 29           </span>
 </code></pre></div>
     </div>
   </main><aside class="col-md-3"><nav id="toc" aria-label="Table of contents"><h2>On this page</h2>
