@@ -24,7 +24,15 @@ struct zar_limits {
   double max_message;
   double max_batch_rows;
   double max_bytes;
+  double max_dictionary;
   int max_depth;
+};
+
+/* The bytes a dictionary is estimated to hold, by id, for the bound on
+   delta concatenation. */
+struct zar_dictionary_size {
+  int64_t id;
+  double bytes;
 };
 
 struct zar_reader {
@@ -53,6 +61,9 @@ struct zar_reader {
   struct ArrowIpcFileBlock *dict_blocks;
   int64_t *seen_ids; /* dictionary ids a file has defined */
   int64_t n_seen;
+  struct zar_dictionary_size *dict_sizes; /* every dictionary defined so far */
+  int64_t n_dict_sizes;
+  double dict_built; /* bytes that delta concatenation has built in all */
 
   int64_t n_select; /* -1: every column */
   int64_t *select;  /* top-level field indices, in output order */
@@ -119,6 +130,7 @@ static void zar_reader_free(struct zar_reader *r) {
   free(r->blocks);
   free(r->dict_blocks);
   free(r->seen_ids);
+  free(r->dict_sizes);
   free(r->select);
   free(r->field_index);
   ArrowBufferReset(&r->header_copy);
@@ -417,6 +429,87 @@ static int zar_check_batch(struct zar_reader *r, struct ArrowBufferView header,
       r, (ns(RecordBatch_table_t))ns(Message_header(message)), body);
 }
 
+/* The most bytes a checked batch's buffers can decode to: a compressed
+   buffer's length prefix, otherwise its length. */
+static double zar_batch_bytes(ns(RecordBatch_table_t) batch, struct ArrowBufferView body) {
+  int compressed = ns(RecordBatch_compression_is_present(batch));
+  ns(Buffer_vec_t) buffers = ns(RecordBatch_buffers(batch));
+  size_t n = ns(Buffer_vec_len(buffers));
+  double total = 0;
+  for (size_t i = 0; i < n; i++) {
+    ns(Buffer_struct_t) b = ns(Buffer_vec_at(buffers, i));
+    int64_t offset = ns(Buffer_offset(b));
+    int64_t size = ns(Buffer_length(b));
+    if (compressed && size >= 8) {
+      int64_t prefix;
+      memcpy(&prefix, body.data.as_uint8 + offset, sizeof(prefix));
+      if (prefix != -1) size = prefix;
+    }
+    total += (double)size;
+  }
+  return total;
+}
+
+/* Bounds a dictionary batch before it is decoded (#101). A delta onto a
+   dictionary that holds values copies the whole dictionary into a new
+   one, and each record batch keeps the version it was decoded with, so n
+   small deltas would build O(n^2) bytes. The extended dictionary must
+   stay within max_batch_rows values and max_message bytes, and every
+   byte that concatenation builds counts against max_dictionary. The
+   batch has passed zar_check_record_batch(). */
+static int zar_bound_dictionary(struct zar_reader *r, ns(RecordBatch_table_t) batch,
+                                struct ArrowBufferView body,
+                                const struct ArrowIpcDictionaryBatch *d) {
+  const struct ArrowArray *current = NULL;
+  struct ArrowError ignored;
+  if (ArrowIpcDictionariesFindCurrentValue(&r->dictionaries, d->id, &current, &ignored) !=
+      NANOARROW_OK) {
+    return NANOARROW_OK; /* the decoder reports the unknown id */
+  }
+  struct zar_dictionary_size *size = NULL;
+  for (int64_t k = 0; k < r->n_dict_sizes; k++) {
+    if (r->dict_sizes[k].id == d->id) size = &r->dict_sizes[k];
+  }
+  if (size == NULL) {
+    struct zar_dictionary_size *sizes = (struct zar_dictionary_size *)realloc(
+        r->dict_sizes, (size_t)(r->n_dict_sizes + 1) * sizeof(struct zar_dictionary_size));
+    if (sizes == NULL) return zar_reader_fail(r, NULL, ENOMEM);
+    r->dict_sizes = sizes;
+    size = &r->dict_sizes[r->n_dict_sizes++];
+    size->id = d->id;
+    size->bytes = 0;
+  }
+  double bytes = zar_batch_bytes(batch, body);
+  int concat = d->is_delta && current->release != NULL && current->length != 0;
+  if (!concat) {
+    size->bytes = bytes;
+    return NANOARROW_OK;
+  }
+  double length = (double)current->length + (double)ns(RecordBatch_length(batch));
+  if (length > r->limits.max_batch_rows) {
+    ArrowErrorSet(&r->error,
+                  "deltas extend dictionary %" PRId64 " to %.0f values, over max_batch_rows",
+                  d->id, length);
+    return zar_reader_fail(r, "limit", EINVAL);
+  }
+  bytes += size->bytes;
+  if (bytes > r->limits.max_message) {
+    ArrowErrorSet(&r->error,
+                  "deltas extend dictionary %" PRId64 " to %.0f bytes, over max_message",
+                  d->id, bytes);
+    return zar_reader_fail(r, "limit", EINVAL);
+  }
+  if (r->dict_built + bytes > r->limits.max_dictionary) {
+    ArrowErrorSet(&r->error,
+                  "delta dictionaries build more than max_dictionary (%.0f bytes)",
+                  r->limits.max_dictionary);
+    return zar_reader_fail(r, "limit", EINVAL);
+  }
+  r->dict_built += bytes;
+  size->bytes = bytes;
+  return NANOARROW_OK;
+}
+
 static int zar_apply_dictionary(struct zar_reader *r, struct ArrowBufferView header,
                                 struct ArrowBufferView body) {
   ns(Message_table_t) message = ns(Message_as_root(header.data.data));
@@ -441,6 +534,10 @@ static int zar_apply_dictionary(struct zar_reader *r, struct ArrowBufferView hea
       r->seen_ids = ids;
       r->seen_ids[r->n_seen++] = d->id;
     }
+  }
+  if (d != NULL) {
+    int bounded = zar_bound_dictionary(r, ns(DictionaryBatch_data(dictionary)), body, d);
+    if (bounded != NANOARROW_OK) return bounded;
   }
   int code = ArrowIpcDecoderDecodeDictionary(&r->decoder, body, NANOARROW_VALIDATION_LEVEL_FULL,
                                              &r->dictionaries, &r->error);
@@ -770,6 +867,7 @@ static int zar_reader_open_over(uint8_t *data, int owns, int64_t size, const dou
   r->limits.max_depth = (int)limits[1];
   r->limits.max_batch_rows = limits[2];
   r->limits.max_bytes = limits[3];
+  r->limits.max_dictionary = limits[4];
 
   int code = NANOARROW_OK;
   if ((double)size > r->limits.max_bytes) {
@@ -881,7 +979,7 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
 
 /* Opens a reader over a path (a string) or bytes (a raw vector) and returns
    it as a stream handle. `limits` is c(max_message, max_depth,
-   max_batch_rows, max_bytes).
+   max_batch_rows, max_bytes, max_dictionary).
 
    With `in_place` TRUE a raw vector is read where it is (design section
    6.7), held in the handle's protected field so it outlives the reader.

@@ -556,6 +556,16 @@ list column by default, and as an `n`-column matrix when
 and `value`, in the map's order, with the `keys_sorted` flag kept as an
 attribute. Nesting depth is bounded by `max_depth` (§6.7).
 
+*2026-11-04 (#103):* the data frame elements of a list column (and the
+entries of a map) must have the same column names in the same order, and
+each column the same class, storage type and attributes, recursively
+through nested data frame columns; otherwise `zuarrow_type_error`. A
+struct's fields are ordered, so a different order is a different type.
+A plain factor column's levels may differ between elements, as a
+dictionary may between batches, and export writes their union; an
+ordered factor's levels must be identical, because a union would invent
+an order.
+
 ### 6.5 Dictionaries
 
 A `dictionary<index, utf8>` whose dictionary has at most 2³¹ − 1 entries
@@ -620,6 +630,14 @@ tensor extensions pass through as storage with the attribute.
   already holds values appends to it, through vendored patch 0015, for
   fixed-width, binary and string values. A delta onto a dictionary of any
   other value type is a `zuarrow_format_error`.
+  *2026-11-04 (#101):* each delta copies the whole dictionary, and each
+  batch keeps the version it was decoded with, so the copies are bounded
+  before the delta is decoded: the extended dictionary is held to
+  `max_batch_rows` values and `max_message` bytes, and every byte the
+  copies build counts against `max_dictionary`, a fifth limit of
+  `arrow_limits()`, by default 2²⁸ bytes (256 MiB). The format ceiling,
+  2³¹ − 1, would bound nothing: the copies are already pathological
+  well before it. *2026-11-05:* default lowered from 2³¹ − 1 to 2²⁸.
 - **Newer layouts.** Run-end-encoded arrays are decoded to their value
   type; string-view, binary-view and list-view arrays are converted by
   copying through their views. nanoarrow's IPC decoder stops short of
@@ -630,8 +648,8 @@ tensor extensions pass through as storage with the attribute.
   the FlatBuffers table is verified, every buffer offset and length is
   checked against the body length, every offsets buffer is checked
   monotonic and in range, dictionary indices are checked against the
-  dictionary length, and `max_depth`, `max_message`, `max_batch_rows`
-  and `max_bytes` are enforced. The check-then-build shape is
+  dictionary length, and `max_depth`, `max_message`, `max_batch_rows`,
+  `max_bytes` and `max_dictionary` are enforced. The check-then-build shape is
   `zucbor`'s: nothing is allocated on the R heap for a message that
   fails. Each decoded array then passes nanoarrow's full validation
   level, which checks buffer contents and not only sizes, as the library
