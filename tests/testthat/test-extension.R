@@ -66,3 +66,10 @@ test_that("field metadata becomes arrow_field_metadata and back", {
   expect_identical(attr(out$x, "arrow_field_metadata"), c(unit = "kg"))
   expect_true(arrow_equal(arrow_array(out), array))
 })
+
+test_that("an `arrow_extension` attribute must be one string", {
+  expect_error(
+    arrow_array(structure(1:3, arrow_extension = 1)),
+    class = "zuarrow_type_error"
+  )
+})

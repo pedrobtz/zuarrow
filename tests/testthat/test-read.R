@@ -307,3 +307,8 @@ test_that("streams read as one must share a schema and fit the limits", {
     class = "zuarrow_limit_error"
   )
 })
+
+test_that("`columns` that are neither names nor positions are a type error", {
+  bytes <- arrow_write(data.frame(x = 1), NULL)
+  expect_error(arrow_read(bytes, columns = TRUE), class = "zuarrow_type_error")
+})

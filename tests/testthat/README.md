@@ -29,13 +29,39 @@ than list offsets address" in `zar_from_r.c`. Reaching them takes over
 ## R's string limit
 
 A single string longer than 2^31 - 1 bytes can't become an R string:
-"longer than R's string limit" in `zar_string_bytes()` of `zar_to_r.c`.
-Reaching it takes a 2 GiB value.
+"longer than R's string limit" in `zar_string_bytes()` of `zar_to_r.c`,
+and "dictionary value ... is longer than R's string limit" when a factor's
+levels are built. Reaching either takes a 2 GiB value.
+
+A factor holds at most 2^31 - 1 levels: "the dictionary has more levels
+than a factor holds" in `zar_to_r.c`. Reaching it takes that many distinct
+dictionary values, tens of GiB.
 
 ## Internal consistency checks
 
 "a malformed list column" in `zar_build_list()` guards the shape of what
 `zar_prepare()` hands to C. R always builds that list whole.
+
+These guard what R or nanoarrow has already checked:
+
+- "a registered handler built N values, not M" in `zar_build_prebuilt()`
+  of `zar_from_r.c`. `zar_prebuild()` in `R/from-r.R` compares the
+  handler's length first and raises the same `zuarrow_registry_error`,
+  which `test-registry.R` tests.
+- "the vector is shorter than its rows" in `zar_from_r.c`. R passes the
+  row count it took from the same vector or data frame.
+- "converting %s columns is not supported" in `zar_plan_init()` of
+  `zar_to_r.c`. The switch has a case for every type
+  `ArrowSchemaViewInit()` returns, and a format it does not know fails
+  there first as a `zuarrow_format_error`.
+- "a run-end encoded array's run ends stop short" in `zar_value_equal()`
+  of `zar_validate.c`. nanoarrow's default validation, which
+  `arrow_equal()` runs on both arrays, refuses an array whose last run end
+  is below its offset plus length, at every level of nesting.
+- "the metadata is malformed" in `zar_metadata_check_keys()` of
+  `zar_utf8.c`, both of them. nanoarrow's `ArrowMetadataReaderInit()`
+  always succeeds, and `ArrowMetadataReaderRead()` fails only when no keys
+  remain, which the loop condition excludes.
 
 Two branches of `zar_c_array_decode()` in `zar_xptr.c` guard what its R
 caller and nanoarrow have already settled:

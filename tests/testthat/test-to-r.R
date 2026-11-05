@@ -201,3 +201,22 @@ test_that("conversion does not accept a non-handle", {
   expect_error(arrow_to_r(1:3), class = "zuarrow_handle_error")
   expect_error(arrow_next(1:3), class = "zuarrow_handle_error")
 })
+
+test_that("a list view element outside its child is a format error", {
+  schema <- test_schema(zspec("+vl", children = list(zspec("i", "item"))))
+  # Element 2 starts at 2 and claims 5 of the child's 3 values.
+  array <- test_array(
+    schema,
+    2,
+    list(NULL, le_int(c(0, 2), 4L), le_int(c(2, 5), 4L)),
+    children = list(test_array_spec(3, list(NULL, le_int(1:3, 4L))))
+  )
+  expect_error(arrow_to_r(array), class = "zuarrow_format_error")
+})
+
+test_that("as.data.frame() refuses an array that is not a struct", {
+  expect_error(
+    as.data.frame(arrow_array(1:3)),
+    class = "zuarrow_type_error"
+  )
+})

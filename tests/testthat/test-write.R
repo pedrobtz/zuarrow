@@ -292,6 +292,13 @@ test_that("bad arguments are type errors", {
   )
 })
 
+test_that("only a struct array or stream can be written", {
+  expect_error(
+    arrow_write(arrow_array(1:3), NULL),
+    class = "zuarrow_type_error"
+  )
+})
+
 test_that("a dictionary of nested values is written with their children", {
   # #140: the schema kept the value type but dropped its children.
   spec <- zspec("i", "x")

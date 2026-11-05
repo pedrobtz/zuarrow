@@ -134,3 +134,9 @@ test_that("an unknown level is a type error", {
   )
   expect_true(arrow_validate(test_int32(1L), "minimal"))
 })
+
+test_that("a string view with a negative length is a format error", {
+  views <- c(le_int(-1, 4L), raw(12))
+  array <- test_array("vu", 1, list(NULL, views, le_int(numeric(), 8L)))
+  expect_error(arrow_validate(array), class = "zuarrow_format_error")
+})
