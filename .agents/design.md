@@ -688,6 +688,14 @@ tensor extensions pass through as storage with the attribute.
   padding bytes left uninitialised, FlatBuffers built by the vendored
   encoder in a fixed field order, and codec output pinned by the `zukomp`
   version the package was checked against.
+  *Decided 2026-11-05 (#117):* compressed bytes belong to the lz4 and
+  zstd versions `zukomp` bundles, which a `zukomp` release may update
+  without any change here. The tests therefore pin the uncompressed
+  hashes outright, and the lz4 and zstd hashes only while
+  `zukomp::komp_info()$vendored` reports the codec versions they were
+  taken with (lz4 1.10.0, zstd 1.5.7). Under any version the compressed
+  output must repeat byte for byte and read back. A codec update then
+  leaves CRAN's checks green; it re-pins the hashes, not the guarantee.
 
 *Decided 2026-11-04 (#104):* a batch with a nonzero offset at any depth
 is copied to offset zero in `zar_ipc_write.c` before it is encoded, so a

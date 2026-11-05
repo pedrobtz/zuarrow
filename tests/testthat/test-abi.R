@@ -19,5 +19,8 @@ test_that("no symbol CRAN's compiled-code check reports is referenced", {
   skip_on_cran()
   abi_skip_instrumented()
   imports <- sub("^_+", "", abi_imports())
+  # The object calls R's API, so an empty or unparsed listing is a broken
+  # tool or pattern, not a clean object.
+  expect_true("Rf_allocVector" %in% imports)
   expect_identical(intersect(imports, abi_forbidden), character())
 })
