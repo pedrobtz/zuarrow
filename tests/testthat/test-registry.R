@@ -117,7 +117,18 @@ test_that("a registration may not make an exact type lossy", {
     arrow_register("arrow.bool8", to = function(a, s) 1, exact = FALSE),
     class = "zuarrow_registry_error"
   )
-  exact <- c("tss:", "tsm:UTC", "+w:4", "+vl", "+vL", "tss:*", "tsm*", "+v*")
+  exact <- c(
+    "tss:",
+    "tsm:UTC",
+    "tsu:UTC",
+    "tsu:*",
+    "+w:4",
+    "+vl",
+    "+vL",
+    "tss:*",
+    "tsm*",
+    "+v*"
+  )
   for (key in exact) {
     expect_error(
       arrow_register(key, to = function(a, s) 1, exact = FALSE),
@@ -126,7 +137,7 @@ test_that("a registration may not make an exact type lossy", {
     )
   }
   # Lossy defaults may still take an inexact registration.
-  for (key in c("tsn:UTC", "tsu:*", "tdm")) {
+  for (key in c("tsn:UTC", "tsn:*", "tdm")) {
     local_registration(key, to = function(a, s) 1, exact = FALSE)
     expect_true(key %in% arrow_registry()$key, info = key)
   }
@@ -700,4 +711,126 @@ test_that("a handler whose nested type differs per batch is refused", {
     arrow_write(df, NULL, format = "stream", batch = 2),
     class = "zuarrow_registry_error"
   )
+})
+
+test_that("a string dictionary's handler gets its decoded values", {
+  seen <- new.env()
+  local_registration("u", to = function(array, schema) {
+    seen$format <- format_of(schema)
+    seen$length <- arrow_info_length(array)
+    structure(arrow_to_r(array), class = "fake_text")
+  })
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("u")
+  # The dictionary is sliced: its first value, "x", is not part of it.
+  array <- test_array(
+    test_schema(spec),
+    5,
+    list(as.raw(0x17), le_int(c(2, 0, 1, 0, 2), 4L)),
+    null_count = 1,
+    dictionary = test_array_spec(
+      3,
+      list(as.raw(0x0b), le_int(c(0, 1, 3, 3, 6), 4L), charToRaw("xabcde")),
+      null_count = 1,
+      offset = 1
+    )
+  )
+  expect_identical(
+    arrow_to_r(array),
+    structure(c("cde", "ab", NA, NA, "cde"), class = "fake_text")
+  )
+  expect_identical(seen$format, "u")
+  expect_equal(seen$length, 5)
+})
+
+test_that("a boolean dictionary's handler gets its decoded bits", {
+  local_registration("b", to = function(array, schema) {
+    structure(arrow_to_r(array), class = "fake_bool")
+  })
+  spec <- zspec("c", "x")
+  spec$dictionary <- zspec("b")
+  # From bit 3 the dictionary is TRUE, NA, TRUE, TRUE, FALSE. The NA's data
+  # bit is set, so only its validity bit makes it null.
+  array <- test_array(
+    test_schema(spec),
+    6,
+    list(NULL, as.raw(c(9, 0, 1, 2, 3, 4, 0))),
+    offset = 1,
+    dictionary = test_array_spec(
+      5,
+      list(as.raw(0xef), as.raw(0x78)),
+      null_count = 1,
+      offset = 3
+    )
+  )
+  expect_identical(
+    arrow_to_r(array),
+    structure(c(TRUE, NA, TRUE, TRUE, FALSE, TRUE), class = "fake_bool")
+  )
+})
+
+test_that("a handler for the dictionary values' extension gets them", {
+  seen <- new.env()
+  local_registration("zuarrow.test_text", to = function(array, schema) {
+    seen$spec <- .Call(zuarrow:::zar_c_schema_to_spec, schema)
+    structure(as.vector(arrow_to_r(array)), class = "fake_text")
+  })
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("u")
+  spec$dictionary$metadata <- list(
+    "ARROW:extension:name" = charToRaw("zuarrow.test_text"),
+    "ARROW:extension:metadata" = raw()
+  )
+  array <- test_array(
+    test_schema(spec),
+    3,
+    list(NULL, le_int(c(1, 0, 1), 4L)),
+    dictionary = test_array_spec(
+      2,
+      list(NULL, le_int(c(0, 1, 3), 4L), charToRaw("abc"))
+    )
+  )
+  expect_identical(
+    arrow_to_r(array),
+    structure(c("bc", "a", "bc"), class = "fake_text")
+  )
+  expect_identical(seen$spec$format, "u")
+  expect_identical(
+    rawToChar(seen$spec$metadata[["ARROW:extension:name"]]),
+    "zuarrow.test_text"
+  )
+})
+
+test_that("a dictionary index outside its dictionary is a format error", {
+  local_registration("u", to = function(array, schema) arrow_to_r(array))
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("u")
+  array <- test_array(
+    test_schema(spec),
+    2,
+    list(NULL, le_int(c(0, 2), 4L)),
+    dictionary = test_array_spec(
+      2,
+      list(NULL, le_int(c(0, 1, 2), 4L), charToRaw("ab"))
+    )
+  )
+  expect_error(arrow_to_r(array), class = "zuarrow_format_error")
+})
+
+test_that("a run-end encoding shorter than its array is a format error", {
+  local_decimal_text()
+  schema <- test_schema(zspec(
+    "+r",
+    children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
+  ))
+  array <- test_array(
+    schema,
+    4,
+    list(),
+    children = list(
+      test_array_spec(1, list(NULL, le_int(2, 4L))),
+      test_array_spec(1, list(NULL, le_int(15, 16L)))
+    )
+  )
+  expect_error(arrow_to_r(array), class = "zuarrow_format_error")
 })

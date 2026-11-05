@@ -17,7 +17,8 @@ static void zar_check_failure(int code, const char *kind, const char *message) {
 }
 
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
-  const double limits[4] = {16.0 * 1024 * 1024, 64.0, 1e6, 64.0 * 1024 * 1024};
+  const double limits[5] = {16.0 * 1024 * 1024, 64.0, 1e6, 64.0 * 1024 * 1024,
+                            64.0 * 1024 * 1024};
   struct ArrowArrayStream stream;
   struct ArrowError error;
   error.message[0] = '\0';

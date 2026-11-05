@@ -438,7 +438,8 @@ Built in, exact in both directions, needing no registration:
 | `utf8`, `large_utf8`, `utf8_view` | `character` | embedded NUL is lossy |
 | `binary` and variants, `fixed_size_binary` | list of `raw` | see below |
 | `date32` | `Date` | |
-| `timestamp[s]`, `timestamp[ms]` | `POSIXct` | exact within ±2⁵³ ms |
+| `timestamp[s]` | `POSIXct` | exact within ±2⁵³ s |
+| `timestamp[ms]`, `timestamp[us]` | `POSIXct` | exact by value: see below |
 | `struct` | `data.frame` column | §6.4 |
 | `list`, `large_list`, `list_view`, `large_list_view` | list column | §6.4 |
 | `fixed_size_list` | list column; matrix on export when asked | §6.4 |
@@ -446,6 +447,18 @@ Built in, exact in both directions, needing no registration:
 | `dictionary` | `factor`, when the values are strings | §6.5 |
 | `run_end_encoded` | the decoded values' type | read only |
 | `arrow.bool8` extension | `logical` | §6.6 |
+
+A millisecond or microsecond timestamp is exact when its value, divided
+into a double of seconds and multiplied back with export's rounding, gives
+the same integer. A value that does not is lossy and names its row, as an
+`int64` past 2⁵³ does. Decided 2026-11-04 (#130): `POSIXct` exports as
+`timestamp[us]` under D10, and with `timestamp[us]` lossy by schema
+zuarrow could not read back what it wrote. The test is per value because
+no magnitude bound fits. Measured over 3 million values a decade, every
+microsecond from 1900 to 2100 passes, about 9% of 2100 to 2110 fail, none
+fail again until 2240, and half fail after 2250. The same measurement
+showed the earlier `timestamp[ms]` bound of ±2⁵³ was wrong past 2⁵¹ ms.
+Nanoseconds stay `zutempo`'s: at their scale a double cannot hold them.
 
 Half floats are widened by the rule `zufast` ships, reimplemented locally
 since there is no `LinkingTo`. `binary`, `large_binary` and `binary_view`
@@ -465,7 +478,7 @@ value beyond that is loss (§6.3). The row is here for those values.
 Corrected 2026-11-03 under X2 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6), which found the table
 calling the types lossy outright while §6.3 checks them by value.
 | `decimal32`, `decimal64`, `decimal128`, `decimal256` | `double` | `decimal` |
-| `timestamp[us]`, `timestamp[ns]` | `POSIXct` | `zutempo` |
+| `timestamp[ns]` | `POSIXct` | `zutempo` |
 | `date64` | `POSIXct` | `zutempo` |
 | `time32`, `time64` | `difftime` | `zutempo` |
 | `duration` | `difftime` | `zutempo` |
@@ -543,6 +556,16 @@ list column by default, and as an `n`-column matrix when
 and `value`, in the map's order, with the `keys_sorted` flag kept as an
 attribute. Nesting depth is bounded by `max_depth` (§6.7).
 
+*2026-11-04 (#103):* the data frame elements of a list column (and the
+entries of a map) must have the same column names in the same order, and
+each column the same class, storage type and attributes, recursively
+through nested data frame columns; otherwise `zuarrow_type_error`. A
+struct's fields are ordered, so a different order is a different type.
+A plain factor column's levels may differ between elements, as a
+dictionary may between batches, and export writes their union; an
+ordered factor's levels must be identical, because a union would invent
+an order.
+
 ### 6.5 Dictionaries
 
 A `dictionary<index, utf8>` whose dictionary has at most 2³¹ − 1 entries
@@ -607,6 +630,14 @@ tensor extensions pass through as storage with the attribute.
   already holds values appends to it, through vendored patch 0015, for
   fixed-width, binary and string values. A delta onto a dictionary of any
   other value type is a `zuarrow_format_error`.
+  *2026-11-04 (#101):* each delta copies the whole dictionary, and each
+  batch keeps the version it was decoded with, so the copies are bounded
+  before the delta is decoded: the extended dictionary is held to
+  `max_batch_rows` values and `max_message` bytes, and every byte the
+  copies build counts against `max_dictionary`, a fifth limit of
+  `arrow_limits()`, by default 2²⁸ bytes (256 MiB). The format ceiling,
+  2³¹ − 1, would bound nothing: the copies are already pathological
+  well before it. *2026-11-05:* default lowered from 2³¹ − 1 to 2²⁸.
 - **Newer layouts.** Run-end-encoded arrays are decoded to their value
   type; string-view, binary-view and list-view arrays are converted by
   copying through their views. nanoarrow's IPC decoder stops short of
@@ -617,8 +648,8 @@ tensor extensions pass through as storage with the attribute.
   the FlatBuffers table is verified, every buffer offset and length is
   checked against the body length, every offsets buffer is checked
   monotonic and in range, dictionary indices are checked against the
-  dictionary length, and `max_depth`, `max_message`, `max_batch_rows`
-  and `max_bytes` are enforced. The check-then-build shape is
+  dictionary length, and `max_depth`, `max_message`, `max_batch_rows`,
+  `max_bytes` and `max_dictionary` are enforced. The check-then-build shape is
   `zucbor`'s: nothing is allocated on the R heap for a message that
   fails. Each decoded array then passes nanoarrow's full validation
   level, which checks buffer contents and not only sizes, as the library
@@ -1076,7 +1107,9 @@ them. None was discussed before writing.
 - **D10 (C).** `POSIXct` exports as `timestamp[us]`, because a double of
   seconds carries microseconds for every date in practical use and
   `arrow` makes the same choice; the zone is the `tzone` attribute or
-  `UTC`. Nanoseconds are `zutempo`'s.
+  `UTC`. Nanoseconds are `zutempo`'s. Since 2026-11-04 (#130)
+  `timestamp[us]` reads back exactly by value (§6.2), so a `POSIXct`
+  round-trips under the default policy.
 - **D11 (C).** Bodies are padded to 8 bytes, the specification's
   requirement and `arrow`'s default, not the 64 it recommends for SIMD.
 - **D12 (C).** The R prefix is `arrow_`, avoiding the names `arrow`
