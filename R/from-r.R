@@ -137,19 +137,6 @@ zar_prebuild <- function(x, call = NULL) {
       attrs[keep],
       list(class = "zar_prebuilt")
     )
-    n <- .Call(zar_c_array_info, out$array)$length
-    if (n != length(x)) {
-      zar_abort(
-        "registry",
-        sprintf(
-          "The `from` handler for `%s` built %.0f values, not %.0f.",
-          handler$key,
-          n,
-          length(x)
-        ),
-        call = call
-      )
-    }
     return(out)
   }
   if (is.data.frame(x)) {

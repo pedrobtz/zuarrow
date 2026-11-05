@@ -117,6 +117,25 @@
   Elements with the same levels still round-trip as ordered factors
   (#138).
 
+* `arrow_schema()` of a registered vector, or of a data frame holding one,
+  takes the type from the whole column, as `arrow_array()` does. A `from`
+  handler that picks the type from the values gave the two a different
+  type before (#113).
+* An object goes through the registration of its most specific class: an
+  object of class `c("sub", "base")` uses the `"sub"` registration, in
+  `arrow_array()` and as a prototype in `to`, whichever loaded first. It
+  used to use the one registered first (#114).
+* A package that registers a pattern again, as on a reload, keeps the
+  pattern's place among overlapping patterns. It used to move last (#115).
+* `arrow_array()` of a registered vector is a `zuarrow_registry_error`
+  when the `from` handler builds an array of another length, as it is for
+  a data frame column (#123).
+* An extension whose storage type converts exactly stays exact. An
+  inexact registration for `arrow.json` or `arrow.uuid` is refused, and
+  one for another extension name is a `zuarrow_registry_error` when it
+  would read a column of exact storage under `lossy = "warn"` or
+  `"allow"` (#133).
+
 * A `POSIXct` round-trips through Arrow under the default policy.
   Millisecond and microsecond timestamps are exact by value: a value is
   exact when its double of seconds rounds back to the same integer, and

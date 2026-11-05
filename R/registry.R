@@ -5,6 +5,9 @@
 zar_registry <- new.env(parent = emptyenv())
 zar_registry$entries <- list()
 zar_registry$order <- 0L
+# The order each key was first registered in, by its owner, which a reload
+# keeps (#115). arrow_unregister() forgets it; a package's unload does not.
+zar_registry$priority <- list()
 zar_registry$hooked <- character()
 zar_registry$active <- character()
 
@@ -31,6 +34,10 @@ zar_exact_formats <- c(
   "tdD"
 )
 
+# Canonical extension types whose storage type always converts exactly:
+# int8, utf8 or large_utf8, and fixed_size_binary(16).
+zar_exact_extensions <- c("arrow.bool8", "arrow.json", "arrow.uuid")
+
 zar_format_pattern <- paste0(
   "^(n|b|c|C|s|S|i|I|l|L|e|f|g|z|Z|vz|u|U|vu|tdD|tdm|tt[smun]|tD[smun]|",
   "ti[MDn]|d:.+|w:.+|ts[smun]:.*|\\+.*)$"
@@ -55,7 +62,8 @@ zar_format_pattern <- paste0(
 #' `decimal128(38, 0)` column is read by a `"d:*"` registration, even where
 #' it holds integers; naming a prototype of another registered class in the
 #' `to` of [arrow_to_r()] is how a caller opts into that class's handler
-#' instead.
+#' instead. A package that registers a pattern again, as on a reload,
+#' keeps its place among the patterns; `arrow_unregister()` forgets it.
 #'
 #' `to` converts Arrow to R: a function of `(array, schema)`, the column's
 #' array and schema handles, returning an R vector of the array's length.
@@ -68,14 +76,22 @@ zar_format_pattern <- paste0(
 #' `zuarrow_registry_error`.
 #'
 #' `from` converts R to Arrow: a function of `(x)` returning an array
-#' handle, used for every object that inherits from `class`.
+#' handle of `x`'s length, used for every object that inherits from
+#' `class`. It receives the whole column, and the column's type is that
+#' array's, in [arrow_schema()] too. An array of another length is a
+#' `zuarrow_registry_error`. Where several registrations' classes match an
+#' object, the one whose class comes first in `class(x)` is used, for `from`
+#' and for a prototype in the `to` of [arrow_to_r()].
 #'
 #' Inside `to`, `arrow_to_r()` on the same column uses the built-in
 #' conversion, so a handler can start from it.
 #'
 #' A registration declares whether it is exact. One that is not is used
 #' only under `lossy = "warn"` or `"allow"`, and may not replace a type
-#' whose built-in conversion is exact. Registering a key again replaces the
+#' whose built-in conversion is exact. An extension is exact when its
+#' storage type is: an inexact registration for `arrow.bool8`, `arrow.json`
+#' or `arrow.uuid` is refused, and one that would read a column of exact
+#' storage is a `zuarrow_registry_error`. Registering a key again replaces the
 #' earlier registration, with a message naming both packages when another
 #' package owned it.
 #'
@@ -204,7 +220,16 @@ arrow_register <- function(
       zar_owner(old$package)
     ))
   }
-  zar_registry$order <- zar_registry$order + 1L
+  # The owner of a key keeps its place among the patterns when it registers
+  # the key again, removed by an unload or not (#115).
+  kept <- zar_registry$priority[[key]]
+  order <- if (!is.null(kept) && identical(kept$package, package)) {
+    kept$order
+  } else {
+    zar_registry$order <- zar_registry$order + 1L
+    zar_registry$order
+  }
+  zar_registry$priority[[key]] <- list(package = package, order = order)
   zar_registry$entries[[key]] <- list(
     key = key,
     kind = kind,
@@ -215,7 +240,7 @@ arrow_register <- function(
     class = class,
     package = package,
     exact = exact,
-    order = zar_registry$order
+    order = order
   )
   if (!is.null(package) && !package %in% zar_registry$hooked) {
     zar_registry$hooked <- c(zar_registry$hooked, package)
@@ -235,6 +260,7 @@ arrow_unregister <- function(key) {
     zar_abort("registry", "`key` must be one string.", call = call)
   }
   zar_registry$entries[[key]] <- NULL
+  zar_registry$priority[[key]] <- NULL
   invisible(key)
 }
 
@@ -281,7 +307,9 @@ zar_requires <- function(f) {
 # Whether a key covers a format whose built-in conversion is exact.
 zar_covers_exact <- function(kind, prefix) {
   if (kind == "extension") {
-    return(identical(prefix, "arrow.bool8"))
+    # The canonical extensions whose storage converts exactly (#133); any
+    # other is judged by its storage type when a column is converted.
+    return(prefix %in% zar_exact_extensions)
   }
   nested <- c("+s", "+l", "+L", "+vl", "+vL", "+m")
   if (kind == "format") {
@@ -296,6 +324,24 @@ zar_covers_exact <- function(kind, prefix) {
     c(zar_exact_formats, nested, "w:1", "+w:1", "tss:", "tsm:", "tsu:"),
     prefix
   ))
+}
+
+# Whether a field's storage converts exactly whatever its values: its own
+# format is exact and so is every child's, and an encoded field's values.
+zar_storage_exact <- function(spec) {
+  if (!is.null(spec$dictionary)) {
+    return(zar_storage_exact(spec$dictionary))
+  }
+  if (identical(spec$format, "+r")) {
+    return(zar_storage_exact(spec$children[[2L]]))
+  }
+  if (startsWith(spec$format, "+")) {
+    nested <- spec$format %in%
+      c("+s", "+l", "+L", "+vl", "+vL", "+m") ||
+      startsWith(spec$format, "+w:")
+    return(nested && all(vapply(spec$children, zar_storage_exact, NA)))
+  }
+  zar_covers_exact("format", spec$format)
 }
 
 zar_unregister_package <- function(package) {
@@ -342,28 +388,36 @@ zar_handler_for <- function(format, extension) {
 # The handler a prototype in `to` names: the registration whose `class` the
 # prototype inherits from and that has a `to` handler, or NULL.
 zar_handler_for_prototype <- function(proto) {
-  if (!is.object(proto)) {
-    return(NULL)
-  }
-  for (e in zar_registry$entries) {
-    if (!is.null(e$to) && !is.null(e$class) && inherits(proto, e$class)) {
-      return(e)
-    }
-  }
-  NULL
+  zar_most_specific(proto, function(e) !is.null(e$to) && !is.null(e$class))
 }
 
 # The handler that converts an R object to Arrow, or NULL.
 zar_handler_for_class <- function(x) {
+  zar_most_specific(x, function(e) !is.null(e$from))
+}
+
+# Of the registrations `use` accepts, the one whose `class` comes earliest
+# in class(x), so a subclass's registration beats its parent's whatever
+# order they loaded in (#114). A tie goes to the earlier registration.
+zar_most_specific <- function(x, use) {
   if (!is.object(x)) {
     return(NULL)
   }
+  classes <- class(x)
+  best <- NULL
+  best_at <- Inf
   for (e in zar_registry$entries) {
-    if (!is.null(e$from) && inherits(x, e$class)) {
-      return(e)
+    if (!use(e)) {
+      next
+    }
+    at <- match(e$class, classes)
+    at <- at[!is.na(at)]
+    if (length(at) > 0L && min(at) < best_at) {
+      best <- e
+      best_at <- min(at)
     }
   }
-  NULL
+  best
 }
 
 zar_extension_name <- function(spec) {
