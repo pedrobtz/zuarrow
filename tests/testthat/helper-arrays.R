@@ -141,3 +141,10 @@ ext_schema <- function(format, name, metadata = raw()) {
 test_failing_stream <- function(schema, schema_fails = FALSE) {
   .Call(zuarrow:::zar_c_test_failing_stream, schema, schema_fails)
 }
+
+# Releases a handle in place, as another consumer or nanoarrow's
+# nanoarrow_pointer_release() would. With `schema = TRUE` it releases an
+# array's own schema, the handle's tag.
+test_release <- function(x, schema = FALSE) {
+  invisible(.Call(zuarrow:::zar_c_test_release, x, schema))
+}
