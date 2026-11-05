@@ -942,8 +942,32 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
             cs[b] = (struct zar_slice){cv, 0, cv->length, NULL, NULL};
           }
         }
+        /* A scanned dictionary or run-end encoding is scanned whole first,
+           which is cheap. Only if that finds a lossy value is it scanned
+           again as the rows read it: a value that no row reads, or that
+           only null rows read, is then not lossy, and a lossy one has a
+           row. A factor keeps every level, so a string dictionary is
+           always scanned whole. */
+        int mapped = 0;
+        if (child->scan != ZAR_SCAN_NONE &&
+            (p->target == ZAR_T_REE ||
+             (child == p->dict && child->target != ZAR_T_CHR))) {
+          for (int64_t b = 0; b < n_slices && !mapped; b++) {
+            mapped = zar_scan_slice(child, &cs[b]) >= 0;
+          }
+          for (int64_t b = 0; b < n_slices && mapped; b++) {
+            if (p->target == ZAR_T_REE) {
+              cs[b] = zar_ree_slice(&slices[b]);
+              continue;
+            }
+            int code = zar_dictionary_slice(&slices[b], &cs[b],
+                                            p->schema->format, e);
+            if (code != NANOARROW_OK) return code;
+          }
+        }
         int code = zar_resolve(child, cs, n_slices, lossy,
-                               p->target == ZAR_T_STRUCT && top, warned, e);
+                               (p->target == ZAR_T_STRUCT || mapped) && top,
+                               warned, e);
         if (code != NANOARROW_OK) {
           /* A dictionary's values are part of the column: name its format,
              not the values' format. */

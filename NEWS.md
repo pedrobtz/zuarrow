@@ -99,6 +99,12 @@
 
 ## Fixes
 
+* A lossy value in a dictionary or run-end encoded column is checked as
+  the rows read it. The `zuarrow_lossy_error` names its row, and a value
+  that no row reads, or that only null rows read, is not lossy. Before,
+  any such value in the dictionary or the runs raised an error with no
+  row (#107).
+
 * `arrow_array()` refuses a list column of data frames whose elements
   differ in column names, column order, or a column's class, type or
   attributes, with a `zuarrow_type_error` naming the column. It used to

@@ -31,6 +31,193 @@ test_that("the lossy error names the column, type, row and target", {
   expect_identical(err$column, "")
 })
 
+test_that("a lossy value read through a dictionary names its row (#107)", {
+  big <- c(le_int(1, 8L), le_hex("0020000000000001"))
+  int64 <- test_dict_array("l", c(0, 0, 1), test_array_spec(2, list(NULL, big)))
+  err <- expect_error(arrow_to_r(int64), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 3)
+  # The error names the column's format, the index type's.
+  expect_identical(err$arrow_type, "i")
+
+  uint64 <- test_dict_array("L", c(1, 0), test_array_spec(2, list(NULL, big)))
+  err <- expect_error(arrow_to_r(uint64), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 1)
+
+  min_int <- test_dict_array(
+    "i",
+    c(0, 1, 0),
+    test_array_spec(2, list(NULL, le_int(c(5, -2^31), 4L)))
+  )
+  err <- expect_error(arrow_to_r(min_int), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 2)
+})
+
+test_that("a lossy value read through run-end encoding names its row (#107)", {
+  big <- c(le_int(1, 8L), le_hex("0020000000000001"))
+  int64 <- test_ree_array("l", c(2, 5), test_array_spec(2, list(NULL, big)))
+  err <- expect_error(arrow_to_r(int64), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 3)
+  expect_identical(err$target, "zuint")
+
+  uint64 <- test_ree_array("L", c(2, 5), test_array_spec(2, list(NULL, big)))
+  err <- expect_error(arrow_to_r(uint64), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 3)
+
+  min_int <- test_ree_array(
+    "i",
+    c(1, 3),
+    test_array_spec(2, list(NULL, le_int(c(-2^31, 5), 4L)))
+  )
+  err <- expect_error(arrow_to_r(min_int), class = "zuarrow_lossy_error")
+  expect_identical(err$row, 1)
+})
+
+test_that("a dictionary or run value no row reads is not lossy (#107)", {
+  big <- c(le_int(1, 8L), le_hex("0020000000000001"))
+  # The index of row 2 names the large value, but row 2 is null.
+  null_index <- test_dict_array(
+    "l",
+    c(0, NA),
+    test_array_spec(2, list(NULL, big))
+  )
+  expect_identical(arrow_to_r(null_index), c(1, NA))
+  # No index names it.
+  unused <- test_dict_array("L", c(0, 0), test_array_spec(2, list(NULL, big)))
+  expect_identical(arrow_to_r(unused), c(1, 1))
+  min_int <- test_dict_array(
+    "i",
+    0,
+    test_array_spec(2, list(NULL, le_int(c(5, -2^31), 4L)))
+  )
+  expect_identical(arrow_to_r(min_int), 5L)
+  # The run's value is null.
+  null_run <- test_ree_array(
+    "l",
+    c(2, 5),
+    test_array_spec(
+      2,
+      list(test_validity(c(TRUE, FALSE)), big),
+      null_count = 1
+    )
+  )
+  expect_identical(arrow_to_r(null_run), c(1, 1, NA, NA, NA))
+})
+
+test_that("character and allow convert a dictionary's lossy value (#107)", {
+  big <- c(le_int(1, 8L), le_hex("0020000000000001"))
+  array <- test_dict_array("L", c(0, 1, 0), test_array_spec(2, list(NULL, big)))
+  text <- arrow_to_r(array, lossy = "character")
+  expect_identical(as.vector(text), c("1", "9007199254740993", "1"))
+  expect_identical(attr(text, "arrow_type"), "L")
+  expect_identical(arrow_to_r(array, lossy = "allow"), c(1, 2^53, 1))
+  ree <- test_ree_array(
+    "i",
+    c(1, 3),
+    test_array_spec(2, list(NULL, le_int(c(-2^31, 5), 4L)))
+  )
+  expect_identical(arrow_to_r(ree, lossy = "allow"), c(NA, 5L, 5L))
+})
+
+test_that("a lossy value under a null struct row is not lossy (#107)", {
+  big <- c(le_int(1, 8L), le_hex("0020000000000001"))
+  # `depth` structs, each null at the row `valid` clears, around int64 `x`.
+  nested <- function(depth, valid) {
+    spec <- zspec("l", "x")
+    arr <- test_array_spec(2, list(NULL, big))
+    for (k in seq_len(depth)) {
+      spec <- zspec("+s", paste0("s", k), children = list(spec))
+      arr <- test_array_spec(
+        2,
+        list(test_validity(valid)),
+        null_count = sum(!valid),
+        children = list(arr)
+      )
+    }
+    test_array(
+      test_schema(zspec("+s", children = list(spec))),
+      2,
+      list(NULL),
+      children = list(arr)
+    )
+  }
+  # One level is read directly; past 16 levels of bitmaps, element by
+  # element.
+  for (depth in c(1, 17)) {
+    hidden <- arrow_to_r(nested(depth, c(TRUE, FALSE)))
+    leaf <- hidden
+    for (k in seq_len(depth)) {
+      leaf <- leaf[[1]]
+    }
+    expect_identical(leaf$x, c(1, NA))
+    err <- expect_error(
+      arrow_to_r(nested(depth, c(FALSE, TRUE))),
+      class = "zuarrow_lossy_error"
+    )
+    expect_identical(err$row, 2)
+  }
+
+  # A dictionary field under a null struct row.
+  dict <- list(
+    format = "i",
+    name = "x",
+    flags = 2L,
+    metadata = NULL,
+    children = list(),
+    dictionary = zspec("l")
+  )
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("+s", "p", children = list(dict)))
+  ))
+  struct_of_dict <- function(valid) {
+    test_array(
+      schema,
+      2,
+      list(NULL),
+      children = list(test_array_spec(
+        2,
+        list(test_validity(valid)),
+        null_count = sum(!valid),
+        children = list(test_array_spec(
+          2,
+          list(NULL, le_int(c(0, 1), 4L)),
+          dictionary = test_array_spec(2, list(NULL, big))
+        ))
+      ))
+    )
+  }
+  expect_identical(arrow_to_r(struct_of_dict(c(TRUE, FALSE)))$p$x, c(1, NA))
+  err <- expect_error(
+    arrow_to_r(struct_of_dict(c(TRUE, TRUE))),
+    class = "zuarrow_lossy_error"
+  )
+  expect_identical(err$row, 2)
+})
+
+test_that("a lossy dictionary value inside a list names no row (#107)", {
+  big <- c(le_int(1, 8L), le_hex("0020000000000001"))
+  dict <- list(
+    format = "i",
+    name = "item",
+    flags = 2L,
+    metadata = NULL,
+    children = list(),
+    dictionary = zspec("l")
+  )
+  array <- test_array(
+    test_schema(zspec("+l", children = list(dict))),
+    1,
+    list(NULL, le_int(c(0, 2), 4L)),
+    children = list(test_array_spec(
+      2,
+      list(NULL, le_int(c(0, 1), 4L)),
+      dictionary = test_array_spec(2, list(NULL, big))
+    ))
+  )
+  err <- expect_error(arrow_to_r(array), class = "zuarrow_lossy_error")
+  expect_null(err$row)
+})
+
 test_that("each row of the lossy table errors by default and converts under allow", {
   # Under allow an int64 becomes integer64 when bit64 is loaded.
   local_mocked_bindings(zar_bit64_loaded = function() FALSE)
