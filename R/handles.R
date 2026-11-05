@@ -369,6 +369,24 @@ zar_flatten <- function(x, call = NULL) {
     }
     return(do.call(rbind, present))
   }
+  # c() of ordered factors whose levels differ is a plain factor with
+  # their union, which would invent an order: they must share levels.
+  # The shared class already keeps ordered and plain factors apart.
+  if (is.ordered(first)) {
+    levels <- levels(first)
+    for (e in present[-1L]) {
+      if (!identical(levels(e), levels)) {
+        zar_abort(
+          "type",
+          paste(
+            "The ordered factor elements of a list column must have",
+            "the same levels."
+          ),
+          call = call
+        )
+      }
+    }
+  }
   # Plain atomic vectors concatenate in one call; classed ones, such as
   # dates or factors, need their c() method.
   if (is.atomic(first) && is.null(oldClass(first))) {

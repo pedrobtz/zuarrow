@@ -138,6 +138,40 @@ test_that("factor columns of data frame elements may differ in levels", {
   expect_error(arrow_array(x), class = "zuarrow_type_error")
 })
 
+test_that("ordered factor elements of a list column keep their order", {
+  lv <- c("lo", "mid", "hi")
+  x <- list(
+    factor(c("hi", "lo"), levels = lv, ordered = TRUE),
+    NULL,
+    factor(character(), levels = lv, ordered = TRUE),
+    factor(c("mid", NA), levels = lv, ordered = TRUE)
+  )
+  expect_identical(arrow_to_r(arrow_array(x)), x)
+  # Plain factor elements may differ in levels, as dictionary batches may.
+  x <- list(factor("a", levels = c("a", "b")), factor("c"))
+  out <- arrow_to_r(arrow_array(x))
+  expect_identical(lapply(out, as.character), list("a", "c"))
+})
+
+test_that("ordered factor elements of a list column must share levels", {
+  # Their union would invent an order between levels (#138).
+  x <- list(
+    factor("a", levels = c("a", "b"), ordered = TRUE),
+    factor("b", levels = c("b", "a"), ordered = TRUE)
+  )
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  x <- list(
+    factor("a", levels = c("a", "b"), ordered = TRUE),
+    factor(character(), levels = "a", ordered = TRUE)
+  )
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+  x <- list(
+    factor("a", levels = c("a", "b"), ordered = TRUE),
+    factor("b", levels = c("a", "b"))
+  )
+  expect_error(arrow_array(x), class = "zuarrow_type_error")
+})
+
 test_that("a list column whose values outnumber its offsets is refused", {
   schema <- arrow_schema(list(1:2))
   prep <- structure(
