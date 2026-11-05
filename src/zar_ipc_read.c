@@ -826,9 +826,99 @@ static void zar_stream_release(struct ArrowArrayStream *stream) {
   stream->release = NULL;
 }
 
+/* ---- a chain of readers ------------------------------------------------ */
+
+#ifndef ZAR_STANDALONE
+
+/* Several reader streams read one after another, for a list of sources
+   (design section 6.7): each get_next() decodes one batch of the current
+   stream, and a stream that has ended is released at once, so its input is
+   freed before the next one is read. The chain owns its streams and never
+   calls R. */
+struct zar_chain {
+  struct ArrowArrayStream *streams;
+  int64_t n;
+  int64_t current;
+};
+
+static int zar_chain_get_schema(struct ArrowArrayStream *stream, struct ArrowSchema *out) {
+  struct zar_chain *c = (struct zar_chain *)stream->private_data;
+  /* Every stream has the first one's schema; the first may have ended, so
+     the schema comes from the current stream, or the last one. */
+  int64_t i = c->current < c->n ? c->current : c->n - 1;
+  return c->streams[i].get_schema(&c->streams[i], out);
+}
+
+static int zar_chain_get_next(struct ArrowArrayStream *stream, struct ArrowArray *out) {
+  struct zar_chain *c = (struct zar_chain *)stream->private_data;
+  while (c->current < c->n) {
+    struct ArrowArrayStream *s = &c->streams[c->current];
+    int code = s->get_next(s, out);
+    if (code != NANOARROW_OK) return code;
+    if (out->release != NULL) return NANOARROW_OK;
+    /* The last stream is kept, so the schema can still be read. */
+    if (c->current == c->n - 1) break;
+    s->release(s);
+    c->current++;
+  }
+  c->current = c->n;
+  out->release = NULL;
+  return NANOARROW_OK;
+}
+
+static const char *zar_chain_last_error(struct ArrowArrayStream *stream) {
+  struct zar_chain *c = (struct zar_chain *)stream->private_data;
+  if (c->current >= c->n) return NULL;
+  struct ArrowArrayStream *s = &c->streams[c->current];
+  return s->get_last_error(s);
+}
+
+static void zar_chain_release(struct ArrowArrayStream *stream) {
+  struct zar_chain *c = (struct zar_chain *)stream->private_data;
+  for (int64_t i = 0; i < c->n; i++) {
+    if (c->streams[i].release != NULL) c->streams[i].release(&c->streams[i]);
+  }
+  free(c->streams);
+  free(c);
+  stream->private_data = NULL;
+  stream->release = NULL;
+}
+
+/* A chain over `n` streams, which it takes: each is moved into the chain
+   and left released. On failure nothing is moved. */
+static int zar_chain_init(struct ArrowArrayStream **streams, int64_t n,
+                          struct ArrowArrayStream *out) {
+  struct zar_chain *c = (struct zar_chain *)calloc(1, sizeof(struct zar_chain));
+  if (c == NULL) return ENOMEM;
+  c->streams = (struct ArrowArrayStream *)calloc(n > 0 ? (size_t)n : 1,
+                                                 sizeof(struct ArrowArrayStream));
+  if (c->streams == NULL) {
+    free(c);
+    return ENOMEM;
+  }
+  for (int64_t i = 0; i < n; i++) ArrowArrayStreamMove(streams[i], &c->streams[i]);
+  c->n = n;
+  out->get_schema = &zar_chain_get_schema;
+  out->get_next = &zar_chain_get_next;
+  out->get_last_error = &zar_chain_last_error;
+  out->release = &zar_chain_release;
+  out->private_data = c;
+  return NANOARROW_OK;
+}
+
+#endif /* ZAR_STANDALONE */
+
 /* The kind of the last failure of a reader stream, or NULL when the stream
-   is not one zuarrow's reader made. */
+   is not one zuarrow's reader made. A chain answers for its current
+   stream. */
 const char *zar_reader_kind(const struct ArrowArrayStream *stream) {
+#ifndef ZAR_STANDALONE
+  if (stream->get_next == &zar_chain_get_next) {
+    const struct zar_chain *c = (const struct zar_chain *)stream->private_data;
+    if (c->current >= c->n) return NULL;
+    stream = &c->streams[c->current];
+  }
+#endif
   if (stream->get_next != &zar_stream_get_next) return NULL;
   const struct zar_reader *r = (const struct zar_reader *)stream->private_data;
   return r->kind == NULL ? "format" : r->kind;
@@ -1060,6 +1150,39 @@ SEXP zar_c_reader_select(SEXP stream_xptr, SEXP columns) {
   r->out_schema.release(&r->out_schema);
   ArrowSchemaMove(&out, &r->out_schema);
   return Rf_ScalarLogical(TRUE);
+}
+
+/* One stream handle over the reader handles in `readers`, read one after
+   another (a list of sources, design section 6.7). Each reader is moved
+   into the chain and its handle left released. The caller has checked
+   that every reader has the first one's schema. */
+SEXP zar_c_reader_chain(SEXP readers) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  R_xlen_t n = Rf_xlength(readers);
+  if (n < 1) return zar_failure("type", "a chain needs at least one stream");
+  struct ArrowArrayStream **streams =
+      (struct ArrowArrayStream **)R_alloc((size_t)n, sizeof(struct ArrowArrayStream *));
+  for (R_xlen_t i = 0; i < n; i++) {
+    streams[i] = zar_stream_from_xptr(VECTOR_ELT(readers, i), &error);
+    if (streams[i] == NULL) return zar_failure_from_error("handle", &error);
+    if (streams[i]->get_next != &zar_stream_get_next) {
+      return zar_failure("handle", "only streams from arrow_read() are chained");
+    }
+    /* A reader over a raw vector in place depends on R keeping the vector;
+       the chain may leave R, so it takes only readers over a copy. */
+    if (R_ExternalPtrProtected(VECTOR_ELT(readers, i)) != R_NilValue) {
+      return zar_failure("handle", "a chained reader must own its input");
+    }
+  }
+  SEXP out = PROTECT(zar_stream_owning_xptr());
+  struct ArrowArrayStream *stream = (struct ArrowArrayStream *)R_ExternalPtrAddr(out);
+  if (zar_chain_init(streams, (int64_t)n, stream) != NANOARROW_OK) {
+    UNPROTECT(1);
+    return zar_failure(NULL, "cannot allocate the stream");
+  }
+  UNPROTECT(1);
+  return out;
 }
 
 #endif /* ZAR_STANDALONE */

@@ -613,6 +613,17 @@ tensor extensions pass through as storage with the attribute.
 - **Laziness.** `lazy = TRUE` returns a stream handle and decodes one
   record batch per `arrow_next()`; `lazy = FALSE` decodes everything and
   returns one data frame, concatenating batches in C.
+  *Decided 2026-11-05 (#116):* for a list of sources, `lazy = TRUE` means
+  the same: every source is read into memory and its schema checked when
+  the handle is made, and `arrow_next()` decodes one batch at a time,
+  stream after stream, releasing each source once it ends. `max_bytes`
+  binds all the sources together, whatever their kind, because it bounds
+  the memory one call holds. Decoding everything up front, as before,
+  made the handle lazy in name only.
+- **Column positions.** *Decided 2026-11-05 (#125):* a position that is
+  not finite, or lies outside `1` to the number of columns, is a
+  `zuarrow_type_error`, checked before it is coerced to an integer, so no
+  coercion warning or unclassed error reaches the caller.
 - **Column selection.** `columns` is a character or integer vector of
   top-level fields; in the file format the unselected buffers are never
   read, in the stream format they are skipped after the message is
