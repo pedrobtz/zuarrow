@@ -292,6 +292,34 @@ test_that("bad arguments are type errors", {
   )
 })
 
+test_that("a dictionary of nested values is written with their children", {
+  # #140: the schema kept the value type but dropped its children.
+  spec <- zspec("i", "x")
+  spec$dictionary <- zspec("+s", children = list(zspec("i", "a")))
+  array <- test_array(
+    test_schema(zspec("+s", children = list(spec))),
+    3,
+    list(NULL),
+    children = list(test_array_spec(
+      3,
+      list(NULL, le_int(c(1, 0, 1), 4L)),
+      dictionary = test_array_spec(
+        2,
+        list(NULL),
+        children = list(test_array_spec(2, list(NULL, le_int(c(5, 6), 4L))))
+      )
+    ))
+  )
+  for (format in c("stream", "file")) {
+    bytes <- arrow_write(array, NULL, format = format)
+    expect_identical(
+      format(arrow_schema(arrow_read(bytes, lazy = TRUE))),
+      "struct<x: dictionary(int32)<struct<a: int32>>>"
+    )
+    expect_identical(arrow_read(bytes)$x, data.frame(a = c(6L, 5L, 6L)))
+  }
+})
+
 test_that("a sliced batch is written as the values it holds", {
   dict_field <- zspec("i", "f")
   dict_field$dictionary <- zspec("u")

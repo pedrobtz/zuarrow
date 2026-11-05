@@ -19,7 +19,9 @@
  * callback, and the footer lists the dictionary blocks with every padding
  * byte zeroed (tools/patches/0013-encode-batches.patch), and a delta
  * dictionary batch extends a dictionary that already holds values
- * (tools/patches/0015-dictionary-delta-concat.patch).
+ * (tools/patches/0015-dictionary-delta-concat.patch), and a
+ * dictionary-encoded field is written with its value type's children
+ * (tools/patches/0016-encode-dictionary-children.patch).
  */
 #include "nanoarrow_ipc_flatcc_generated.h"
 // Licensed to the Apache Software Foundation (ASF) under one
@@ -3790,10 +3792,13 @@ static ArrowErrorCode ArrowIpcEncodeField(
 
   NANOARROW_RETURN_NOT_OK(ArrowIpcEncodeFieldType(builder, &schema_view, error));
 
-  if (schema->n_children != 0) {
+  // A dictionary-encoded field's children are those of its value type.
+  const struct ArrowSchema* type_schema =
+      schema->dictionary != NULL ? schema->dictionary : schema;
+  if (type_schema->n_children != 0) {
     FLATCC_RETURN_UNLESS_0(Field_children_start(builder), error);
     NANOARROW_RETURN_NOT_OK(
-        ArrowIpcEncodeFields(builder, schema, &ns(Field_children_push_start),
+        ArrowIpcEncodeFields(builder, type_schema, &ns(Field_children_push_start),
                              &ns(Field_children_push_end), dictionary_encodings, error));
     FLATCC_RETURN_UNLESS_0(Field_children_end(builder), error);
   }
