@@ -34,7 +34,8 @@ Stages 0 to 9 of `.agents/roadmap.md` are merged. Stage 10 (v0.1.0
 readiness) is in progress, and Stage 11 (Review) follows it. The first
 critical review (2026-10-27, issues labelled `review`) has been fixed.
 
-The version is `0.1.0`. It builds on zukomp's development version
+The version stays at `0.0.0.9000` until submission (decided 2026-11-05);
+setting `0.1.0` is a step of the CRAN-submission issue (#12). It builds on zukomp's development version
 through `Remotes:`. Submission waits for zukomp 0.2.0, the release with
 the codecs, to reach CRAN, which can happen 2026-11-27 at the earliest.
 The first step of the CRAN-submission issue (#12) is then to remove
