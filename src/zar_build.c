@@ -135,12 +135,19 @@ SEXP zar_c_stream_from_arrays(SEXP schema_xptr, SEXP arrays) {
   return out;
 }
 
-/* A stream from another producer whose get_next() always fails, for the
-   tests: any consumer reaches the branch a foreign producer's failure
-   takes, without nanoarrow (#83). */
+/* A stream from another producer whose get_next() always fails, or whose
+   get_schema() does too, for the tests: any consumer reaches the branch a
+   foreign producer's failure takes, without nanoarrow (#83, #110). */
 static int zar_failing_get_schema(struct ArrowArrayStream *stream,
                                   struct ArrowSchema *out) {
   return ArrowSchemaDeepCopy((struct ArrowSchema *)stream->private_data, out);
+}
+
+static int zar_failing_get_schema_fails(struct ArrowArrayStream *stream,
+                                        struct ArrowSchema *out) {
+  (void)stream;
+  out->release = NULL;
+  return EIO;
 }
 
 static int zar_failing_get_next(struct ArrowArrayStream *stream,
@@ -163,7 +170,7 @@ static void zar_failing_release(struct ArrowArrayStream *stream) {
   stream->release = NULL;
 }
 
-SEXP zar_c_test_failing_stream(SEXP schema_xptr) {
+SEXP zar_c_test_failing_stream(SEXP schema_xptr, SEXP schema_fails) {
   struct ArrowError error;
   error.message[0] = '\0';
   struct ArrowSchema *schema = zar_schema_from_xptr(schema_xptr, &error);
@@ -178,7 +185,9 @@ SEXP zar_c_test_failing_stream(SEXP schema_xptr) {
     UNPROTECT(1);
     return zar_failure(NULL, "the schema could not be copied");
   }
-  stream->get_schema = &zar_failing_get_schema;
+  stream->get_schema = Rf_asLogical(schema_fails) == TRUE
+                           ? &zar_failing_get_schema_fails
+                           : &zar_failing_get_schema;
   stream->get_next = &zar_failing_get_next;
   stream->get_last_error = &zar_failing_get_last_error;
   stream->release = &zar_failing_release;

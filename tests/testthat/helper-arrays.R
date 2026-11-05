@@ -154,9 +154,9 @@ ext_schema <- function(format, name, metadata = raw()) {
 }
 
 # A stream from a producer other than zuarrow's reader, whose get_next()
-# always fails.
-test_failing_stream <- function(schema) {
-  .Call(zuarrow:::zar_c_test_failing_stream, schema)
+# always fails. With `schema_fails = TRUE` its get_schema() fails too.
+test_failing_stream <- function(schema, schema_fails = FALSE) {
+  .Call(zuarrow:::zar_c_test_failing_stream, schema, schema_fails)
 }
 
 # Releases a handle in place, as another consumer or nanoarrow's
