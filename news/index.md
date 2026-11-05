@@ -219,6 +219,10 @@
   does so without a message
   ([\#92](https://github.com/pedrobtz/zuarrow/issues/92)).
 
+- A registered `from` handler that returns a released array raises a
+  `zuarrow_handle_error`. Before, it raised a base error
+  ([\#126](https://github.com/pedrobtz/zuarrow/issues/126)).
+
 - [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
   and
   [`arrow_equal()`](https://pedrobtz.github.io/zuarrow/reference/arrow_equal.md)
