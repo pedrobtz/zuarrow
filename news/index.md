@@ -145,6 +145,13 @@
   an ordered factor’s may not
   ([\#103](https://github.com/pedrobtz/zuarrow/issues/103)).
 
+- [`arrow_array()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
+  refuses a list column of ordered factors whose levels differ, with a
+  `zuarrow_type_error`. It used to write them as one plain factor with
+  the union of their levels, so they read back unordered. Elements with
+  the same levels still round-trip as ordered factors
+  ([\#138](https://github.com/pedrobtz/zuarrow/issues/138)).
+
 - A `POSIXct` round-trips through Arrow under the default policy.
   Millisecond and microsecond timestamps are exact by value: a value is
   exact when its double of seconds rounds back to the same integer, and
