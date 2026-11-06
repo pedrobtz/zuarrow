@@ -49,8 +49,38 @@ abi_clean <- function(x) {
   x
 }
 
-abi_objdump <- function() {
-  abi_run(abi_tool("objdump"), c("-p", shQuote(abi_dll_path())))
+abi_objdump <- function(path = abi_dll_path()) {
+  abi_run(abi_tool("objdump"), c("-p", shQuote(path)))
+}
+
+# On Windows every DLL links the mingw-w64 runtime, whose startup code
+# imports abort, exit and the stdio table itself. R CMD check keeps only the
+# DLL symbols that the package's own object files reference (symbols.rds),
+# so it never reports them. These are the imports of an empty DLL built
+# with the same toolchain, so the guard can count only what zuarrow adds.
+abi_runtime_imports <- function() {
+  if (.Platform$OS.type != "windows") {
+    return(character())
+  }
+  dir <- tempfile("abi-baseline")
+  dir.create(dir)
+  on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+  writeLines("void zar_abi_baseline(void) {}", file.path(dir, "baseline.c"))
+  r <- file.path(R.home("bin"), "R")
+  status <- withr::with_dir(
+    dir,
+    suppressWarnings(system2(
+      r,
+      c("CMD", "SHLIB", "baseline.c"),
+      stdout = FALSE,
+      stderr = FALSE
+    ))
+  )
+  dll <- file.path(dir, paste0("baseline", .Platform$dynlib.ext))
+  if (!identical(status, 0L) || !file.exists(dll)) {
+    abi_unavailable("R CMD SHLIB could not build the baseline DLL")
+  }
+  abi_objdump_imports(abi_objdump(dll))
 }
 
 abi_exports <- function() {
@@ -76,12 +106,31 @@ abi_exports <- function() {
 
 abi_imports <- function() {
   if (.Platform$OS.type == "windows") {
-    out <- abi_objdump()
-    rows <- out[grepl("^\\s+[0-9a-f]+\\s+[0-9]+\\s+\\S+$", out)]
-    return(sub("^.*\\s", "", trimws(rows)))
+    return(abi_objdump_imports(abi_objdump()))
   }
   out <- abi_run(abi_tool("nm"), c("-u", shQuote(abi_dll_path())))
   abi_clean(sub("^.*\\s", "", trimws(out[nzchar(out)])))
+}
+
+# The member names of objdump -p's import tables. Each DLL's table starts at
+# a "vma:" header and ends at a blank line. Its rows are the address, then
+# the hint, or with binutils 2.41 and later the ordinal and the hint, then
+# the name, so the name is the last field whatever the column count.
+abi_objdump_imports <- function(out) {
+  out <- sub("\\s+$", "", out)
+  start <- grep("^\\s*vma:", out)
+  if (length(start) == 0L) {
+    abi_unavailable("objdump printed no import table")
+  }
+  names <- character()
+  for (i in start) {
+    j <- i + 1L
+    while (j <= length(out) && nzchar(trimws(out[j]))) {
+      names <- c(names, sub("^.*\\s", "", trimws(out[j])))
+      j <- j + 1L
+    }
+  }
+  names
 }
 
 # The symbols R CMD check's compiled-code check reports, across platforms,

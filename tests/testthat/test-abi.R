@@ -22,5 +22,33 @@ test_that("no symbol CRAN's compiled-code check reports is referenced", {
   # The object calls R's API, so an empty or unparsed listing is a broken
   # tool or pattern, not a clean object.
   expect_true("Rf_allocVector" %in% imports)
-  expect_identical(intersect(imports, abi_forbidden), character())
+  runtime <- sub("^_+", "", abi_runtime_imports())
+  expect_identical(
+    intersect(setdiff(imports, runtime), abi_forbidden),
+    character()
+  )
+})
+
+test_that("objdump import tables parse with and without an ordinal column", {
+  out <- c(
+    "The Import Tables (interpreted .idata section contents)",
+    " vma:            Hint    Time      Forward  DLL       First",
+    "                 Table   Stamp     Chain    Name      Thunk",
+    " 0001c000       0001c0a0 00000000 00000000 0001c4e8 0001c1a0",
+    "",
+    "\tDLL Name: R.dll",
+    "\tvma:  Hint/Ord Member-Name Bound-To",
+    "\t1c5f0\t  123  Rf_allocVector",
+    "",
+    "\tDLL Name: api-ms-win-crt-stdio-l1-1-0.dll",
+    "\tvma:     Ordinal  Hint  Member-Name  Bound-To",
+    "\t1c6a8     <none>  0001  __acrt_iob_func\r",
+    "\t1c6b0     <none>  0002  fwrite",
+    ""
+  )
+  imports <- abi_objdump_imports(out)
+  expect_true(all(
+    c("Rf_allocVector", "__acrt_iob_func", "fwrite") %in% imports
+  ))
+  expect_false(any(grepl("Member-Name|<none>", imports)))
 })
