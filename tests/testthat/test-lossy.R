@@ -6,8 +6,7 @@ test_that("an int64 past 2^53 is a lossy error naming the row and zuint", {
     3,
     list(NULL, c(le_int(c(1, 2), 8L), le_hex("0020000000000001")))
   )
-  err <- tryCatch(arrow_to_r(big), zuarrow_lossy_error = function(e) e)
-  expect_s3_class(err, "zuarrow_lossy_error")
+  err <- expect_error(arrow_to_r(big), class = "zuarrow_lossy_error")
   expect_s3_class(err, "zuarrow_error")
   expect_identical(err$row, 3)
   expect_identical(err$target, "zuint")
@@ -454,7 +453,7 @@ test_that("the scan finds lossy values in any batch of a stream", {
       test_array("l", 1, list(NULL, le_hex("0020000000000001")))
     )
   )
-  err <- tryCatch(arrow_to_r(stream), zuarrow_lossy_error = function(e) e)
+  err <- expect_error(arrow_to_r(stream), class = "zuarrow_lossy_error")
   expect_identical(err$row, 3)
 })
 

@@ -126,7 +126,9 @@ test_that("writing an array leaves it usable", {
 
 test_that("writing a released array is a handle error", {
   array <- arrow_array(data.frame(x = 1:3))
-  stream <- .Call(zar_c_stream_from_arrays, arrow_schema(array), list(array))
+  # A stream built over the array moves it out and leaves the handle
+  # released; the stream itself is not used.
+  .Call(zar_c_stream_from_arrays, arrow_schema(array), list(array))
   expect_error(arrow_write(array, NULL), class = "zuarrow_handle_error")
 })
 
