@@ -17,11 +17,6 @@ test_that("libarrow decodes the golden files to the same values", {
     "4.0.0-shareddict",
     "cpp-21.0.0"
   )
-  # zuarrow's reading of every version is the test above; under gctorture
-  # this one adds only arrow's, so the version with the most cases is enough.
-  if (under_gctorture()) {
-    versions <- "cpp-21.0.0"
-  }
   for (version in versions) {
     cases <- golden_cases(version)
     for (case in names(cases)) {

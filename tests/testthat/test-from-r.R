@@ -119,9 +119,9 @@ test_that("export checks every integer width at its limits", {
 })
 
 test_that("the lossy error from export names the row", {
-  err <- tryCatch(
+  err <- expect_error(
     arrow_array(c(1L, 200L, 300L), schema = "c"),
-    zuarrow_lossy_error = function(e) e
+    class = "zuarrow_lossy_error"
   )
   expect_identical(err$row, 2)
 })

@@ -24,11 +24,13 @@ test_that("every little-endian golden case decodes the same from file and stream
       from_file <- read_golden(paste0(cases[[case]], ".arrow_file"))
       from_stream <- read_golden(paste0(cases[[case]], ".stream"))
       if (no_r_form(case)) {
-        expect_s3_class(from_file, "zuarrow_lossy_error")
-        expect_s3_class(from_stream, "zuarrow_lossy_error")
+        # expect_s3_class() takes no info, so each case is named this way.
+        expect_true(inherits(from_file, "zuarrow_lossy_error"), info = label)
+        expect_true(inherits(from_stream, "zuarrow_lossy_error"), info = label)
         next
       }
-      expect_s3_class(from_file, "data.frame")
+      # The class itself, so a failure shows what was read instead.
+      expect_identical(class(from_file), "data.frame", info = label)
       expect_identical(from_file, from_stream, info = label)
     }
   }

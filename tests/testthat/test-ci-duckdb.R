@@ -63,26 +63,11 @@ test_that("an empty result keeps its columns", {
   expect_identical(out, data.frame(x = integer()))
 })
 
-test_that("with zuint's registration the integers are exact", {
+test_that("a registration makes DuckDB's BIGINT exact", {
+  # A test-only registration stands in for zuint's, which does not exist
+  # yet (helper-registry.R).
+  local_registration("l", to = as_text_int64)
   con <- local_duckdb()
-  # zuint is not on CRAN yet, so it is not in Suggests; reached by name so
-  # R CMD check does not count it as a dependency.
-  zuint <- "zuint"
-  skip_if_not_installed(zuint)
-  loadNamespace(zuint)
-  skip_if_not(
-    zuint %in% arrow_registry()$package,
-    "zuint does not register with zuarrow yet"
-  )
-  prototype <- function(name) getExportedValue(zuint, name)()
-  out <- duckdb_to_r(
-    con,
-    paste(
-      "SELECT 9007199254740993::BIGINT AS i,",
-      "1::HUGEINT AS h, 1::UHUGEINT AS u"
-    )
-  )
-  expect_s3_class(out$i, class(prototype("int64"))[[1]])
-  expect_s3_class(out$h, class(prototype("int128"))[[1]])
-  expect_s3_class(out$u, class(prototype("uint128"))[[1]])
+  out <- duckdb_to_r(con, "SELECT 9007199254740993::BIGINT AS i")
+  expect_identical(out$i, structure("9007199254740993", class = "fake_int64"))
 })

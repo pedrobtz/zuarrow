@@ -74,7 +74,19 @@ fetch_file <- function(
 
 golden_cases <- function(version) {
   dir <- file.path(fixtures_dir(), "arrow-ipc-stream", "integration", version)
-  testthat::skip_if_not(dir.exists(dir), paste("no fixtures for", version))
+  if (!dir.exists(dir)) {
+    # As for a failed download: with fetching set, CI cannot go green on a
+    # version that fixtures-files.txt left out.
+    if (nzchar(Sys.getenv("ZUARROW_FETCH_FIXTURES"))) {
+      stop(
+        "ZUARROW_FETCH_FIXTURES is set, but there are no fixtures for ",
+        version,
+        ".",
+        call. = FALSE
+      )
+    }
+    testthat::skip(paste("no fixtures for", version))
+  }
   cases <- sub("\\.stream$", "", list.files(dir, "\\.stream$"))
   stats::setNames(file.path(dir, cases), cases)
 }

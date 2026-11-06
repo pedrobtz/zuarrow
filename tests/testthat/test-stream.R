@@ -113,10 +113,9 @@ test_that("a foreign stream whose next batch fails is a handle error", {
   expect_error(arrow_to_r(failing()), class = "zuarrow_handle_error")
   expect_error(arrow_write(failing(), NULL), class = "zuarrow_handle_error")
   expect_error(arrow_validate(failing()), class = "zuarrow_handle_error")
-  expect_error(
-    arrow_equal(failing(), arrow_stream(data.frame(x = 1L))),
-    class = "zuarrow_handle_error"
-  )
+  good <- function() arrow_stream(data.frame(x = 1L))
+  expect_error(arrow_equal(failing(), good()), class = "zuarrow_handle_error")
+  expect_error(arrow_equal(good(), failing()), class = "zuarrow_handle_error")
 })
 
 test_that("a foreign stream whose schema fails is a handle error", {
