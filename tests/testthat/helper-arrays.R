@@ -38,6 +38,12 @@ test_array_spec <- function(
   )
 }
 
+# The inverse of test_array(): an array's lengths, offset and buffers as a
+# spec, each buffer the bytes nanoarrow's view sizes it to (#171).
+test_array_to_spec <- function(array) {
+  .Call(zuarrow:::zar_c_test_array_to_spec, array)
+}
+
 test_int32 <- function(values) {
   test_array(
     "i",
