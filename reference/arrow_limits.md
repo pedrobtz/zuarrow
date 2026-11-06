@@ -34,7 +34,8 @@ arrow_limits(
 
 - max_bytes:
 
-  The most bytes of input in all.
+  The most bytes of input in all. For a list of sources, the most bytes
+  of all of them together.
 
 - max_dictionary:
 

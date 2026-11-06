@@ -26,6 +26,8 @@ arrow_read(
   list of these, each a whole IPC stream, read as one: Spark Connect,
   for one, sends each batch of a result as its own stream. Every stream
   must have the first one's schema, or it is a `zuarrow_format_error`.
+  Every source in the list is read into memory when the call starts, and
+  `max_bytes` binds all of them together.
 
 - columns:
 
@@ -36,9 +38,11 @@ arrow_read(
 
   `FALSE` to read every batch into one data frame; `TRUE` to return a
   stream handle whose batches are decoded by
-  [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md).
-  With `lazy = TRUE`, `to`, `lossy` and `copy` belong to that later
-  conversion, and setting one here is a `zuarrow_type_error`.
+  [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md),
+  one at a time. For a list of sources the handle reads their batches in
+  order, one stream after another. With `lazy = TRUE`, `to`, `lossy` and
+  `copy` belong to that later conversion, and setting one here is a
+  `zuarrow_type_error`.
 
 - to:
 

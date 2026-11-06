@@ -136,6 +136,12 @@
   any such value in the dictionary or the runs raised an error with no
   row ([\#107](https://github.com/pedrobtz/zuarrow/issues/107)).
 
+- The `zuarrow_lossy_error` of a dictionary column names the package
+  that reads its value type exactly, such as ‘zuint’ for `int64` values,
+  as a run-end encoded column’s does. It used to look the target up by
+  the index type and name none
+  ([\#144](https://github.com/pedrobtz/zuarrow/issues/144)).
+
 - [`arrow_array()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
   refuses a list column of data frames whose elements differ in column
   names, column order, or a column’s class, type or attributes, with a
@@ -278,6 +284,19 @@
   wrote a batch whose string offsets decrease or point past its data
   into a file no reader accepts
   ([\#150](https://github.com/pedrobtz/zuarrow/issues/150)).
+
+- `arrow_read(lazy = TRUE)` on a list of sources is lazy:
+  [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  decodes one batch at a time, stream after stream, and frees each
+  source once it is read. Before, every batch was decoded when the
+  handle was made. `max_bytes` now binds the sources together for paths
+  and connections too, not only for raw vectors
+  ([\#116](https://github.com/pedrobtz/zuarrow/issues/116)).
+
+- [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  raises `zuarrow_type_error` for a column position that is infinite or
+  past the integer range. Before, it warned and raised an unclassed
+  error ([\#125](https://github.com/pedrobtz/zuarrow/issues/125)).
 
 - [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
   writes a sliced batch, one with a non-zero offset at any depth, as the

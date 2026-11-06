@@ -64,7 +64,9 @@ found from the first bytes, whatever the source is called.</p>
 <dd><p>A path, a raw vector, or a connection, which is read to its end.
 Or a list of these, each a whole IPC stream, read as one: Spark Connect,
 for one, sends each batch of a result as its own stream. Every stream
-must have the first one's schema, or it is a <code>zuarrow_format_error</code>.</p></dd>
+must have the first one's schema, or it is a <code>zuarrow_format_error</code>.
+Every source in the list is read into memory when the call starts, and
+<code>max_bytes</code> binds all of them together.</p></dd>
 
 
 <dt id="arg-columns">columns<a class="anchor" aria-label="anchor" href="#arg-columns"></a></dt>
@@ -74,7 +76,9 @@ top-level columns to read. Only those are decoded.</p></dd>
 
 <dt id="arg-lazy">lazy<a class="anchor" aria-label="anchor" href="#arg-lazy"></a></dt>
 <dd><p><code>FALSE</code> to read every batch into one data frame; <code>TRUE</code> to
-return a stream handle whose batches are decoded by <code><a href="arrow_to_r.html">arrow_next()</a></code>.
+return a stream handle whose batches are decoded by <code><a href="arrow_to_r.html">arrow_next()</a></code>,
+one at a time. For a list of sources the handle reads their batches
+in order, one stream after another.
 With <code>lazy = TRUE</code>, <code>to</code>, <code>lossy</code> and <code>copy</code> belong to that later
 conversion, and setting one here is a <code>zuarrow_type_error</code>.</p></dd>
 
