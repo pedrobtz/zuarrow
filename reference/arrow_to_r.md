@@ -120,7 +120,10 @@ column that R cannot hold exactly, such as an `int64` with a value past
 - `"allow"` converts to the nearest R type silently. An `int64` column
   becomes `bit64`'s `integer64`, exactly, when `bit64` is loaded.
 
-Intervals and unions have no R form and always fail.
+Intervals and unions have no R form and always fail, unless a handler
+registered with
+[`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
+for the column's extension name converts it.
 
 `to` names the R type a column must become:
 [`character()`](https://rdrr.io/r/base/character.html),

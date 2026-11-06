@@ -97,6 +97,11 @@
   earliest pattern.
 - A prototype of a registered class in `to`, such as `zuint::int128()`,
   converts a column through that registration whatever its Arrow type.
+- A registered extension over a `dense_union` or `sparse_union`, such as
+  `geoarrow.geometry`, reads through its `to` handler, which receives
+  the union array with its type ids, offsets and children as they are. A
+  union with no handler still fails with a `zuarrow_lossy_error`
+  ([\#171](https://github.com/pedrobtz/zuarrow/issues/171)).
 
 ### The IPC file and stream formats
 

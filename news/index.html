@@ -75,6 +75,7 @@
 <code><a href="../reference/arrow_register.html">arrow_register()</a></code>, <code><a href="../reference/arrow_register.html">arrow_unregister()</a></code> and <code><a href="../reference/arrow_register.html">arrow_registry()</a></code> let a package make a lossy type exact with its own R class, by format string, prefix pattern or extension name, in both directions.</li>
 <li>A <code>to</code> handler of <code>(array, schema, lossy)</code> receives the caller’s <code>lossy</code> policy, so a registering package applies it to values its class cannot hold. Two-argument handlers work as before. When several keys match, the extension name wins, then the exact format, then the earliest pattern.</li>
 <li>A prototype of a registered class in <code>to</code>, such as <code>zuint::int128()</code>, converts a column through that registration whatever its Arrow type.</li>
+<li>A registered extension over a <code>dense_union</code> or <code>sparse_union</code>, such as <code>geoarrow.geometry</code>, reads through its <code>to</code> handler, which receives the union array with its type ids, offsets and children as they are. A union with no handler still fails with a <code>zuarrow_lossy_error</code> (<a href="https://github.com/pedrobtz/zuarrow/issues/171" class="external-link">#171</a>).</li>
 </ul></div>
 <div class="section level3">
 <h3 id="the-ipc-file-and-stream-formats-0-0-0-9000">The IPC file and stream formats<a class="anchor" aria-label="anchor" href="#the-ipc-file-and-stream-formats-0-0-0-9000"></a></h3>

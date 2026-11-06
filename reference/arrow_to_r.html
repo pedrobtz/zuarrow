@@ -152,7 +152,9 @@ precision. The column carries the Arrow format string in its
 <code>zuarrow_lossy_warning</code> per column.</p></li>
 <li><p><code>"allow"</code> converts to the nearest R type silently. An <code>int64</code> column
 becomes <code>bit64</code>'s <code>integer64</code>, exactly, when <code>bit64</code> is loaded.</p></li>
-</ul><p>Intervals and unions have no R form and always fail.</p>
+</ul><p>Intervals and unions have no R form and always fail, unless a handler
+registered with <code><a href="arrow_register.html">arrow_register()</a></code> for the column's extension name
+converts it.</p>
 <p><code>to</code> names the R type a column must become: <code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code>, <code><a href="https://rdrr.io/r/base/double.html" class="external-link">double()</a></code>,
 <code><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer()</a></code>, or <code><a href="arrow_matrix.html">arrow_matrix()</a></code> for a <code>fixed_size_list</code>. A target that
 cannot take the column is a <code>zuarrow_type_error</code>, never a silent
