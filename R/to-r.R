@@ -660,7 +660,9 @@ zar_raise_conversion <- function(failure, call, prefix = "") {
       arrow_type = format
     )
   }
-  target <- zar_exact_target(format)
+  # A dictionary's target is its value type's (#144).
+  value_format <- failure$value_format %||% ""
+  target <- zar_exact_target(if (nzchar(value_format)) value_format else format)
   never <- grepl("^(\\+u|ti)", format)
   # A string with an embedded NUL has no text form, so lossy = "character"
   # cannot help it.

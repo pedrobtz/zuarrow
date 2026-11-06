@@ -104,6 +104,10 @@
   that no row reads, or that only null rows read, is not lossy. Before,
   any such value in the dictionary or the runs raised an error with no
   row (#107).
+* The `zuarrow_lossy_error` of a dictionary column names the package that
+  reads its value type exactly, such as 'zuint' for `int64` values, as a
+  run-end encoded column's does. It used to look the target up by the
+  index type and name none (#144).
 
 * `arrow_array()` refuses a list column of data frames whose elements
   differ in column names, column order, or a column's class, type or

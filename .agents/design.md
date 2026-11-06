@@ -536,6 +536,10 @@ it (`int64` within ±2⁵³, `int32` without `INT_MIN`, `utf8` without NUL).
 The value scan is one pass in C and is skipped when the schema already
 says exact.
 
+*2026-11-05 (#144):* a dictionary column's error names the column's
+format, the index type's, as its Arrow type, and the exact target of its
+value type, which is what a registration would match (#93).
+
 `to` overrides the table for named columns: `to = list(id =
 zuint::int64())` says what `id` must become, and a target that cannot
 take the column is a `zuarrow_type_error`, never a silent fallback.
