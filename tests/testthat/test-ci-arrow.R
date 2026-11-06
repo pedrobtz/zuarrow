@@ -4,12 +4,8 @@
 
 # From test-oracle-golden.R.
 test_that("libarrow decodes the golden files to the same values", {
-  skip_without_oracle("arrow")
+  skip_without_arrow_codecs()
   skip_without_oracle("nanoarrow")
-  skip_if_not(
-    arrow::codec_is_available("zstd") && arrow::codec_is_available("lz4_frame"),
-    "arrow was built without its codecs"
-  )
   # Cases libarrow itself cannot read, as "version case". None today; a
   # case added here is skipped, and one that reads again fails.
   unreadable <- character()
@@ -57,9 +53,8 @@ test_that("libarrow decodes the golden files to the same values", {
 
 # From test-read.R.
 test_that("arrow reads what arrow wrote, the same way", {
-  skip_without_oracle("arrow")
   # A minimal arrow build has no zstd: the portability gap D2 removes.
-  skip_if_not(arrow::codec_is_available("zstd"), "arrow was built without zstd")
+  skip_without_arrow_codecs("zstd")
   path <- test_data("basic-zstd.arrow")
   ours <- without_metadata(arrow_read(path))
   theirs <- as.data.frame(arrow::read_ipc_file(path))
@@ -70,11 +65,7 @@ test_that("arrow reads what arrow wrote, the same way", {
 # Oracle 4 (design section 9): arrow reads what zuarrow writes, at every
 # option, and zuarrow reads what arrow writes.
 test_that("arrow reads what arrow_write() writes", {
-  skip_without_oracle("arrow")
-  skip_if_not(
-    arrow::codec_is_available("zstd") && arrow::codec_is_available("lz4_frame"),
-    "arrow was built without its codecs"
-  )
+  skip_without_arrow_codecs()
   df <- basic_df()
   for (compression in c("none", "lz4", "zstd")) {
     file <- arrow_write(df, NULL, compression = compression)
@@ -99,11 +90,7 @@ test_that("arrow reads what arrow_write() writes", {
 
 # From test-write.R.
 test_that("arrow_read() reads what arrow writes, at every compression", {
-  skip_without_oracle("arrow")
-  skip_if_not(
-    arrow::codec_is_available("zstd") && arrow::codec_is_available("lz4_frame"),
-    "arrow was built without its codecs"
-  )
+  skip_without_arrow_codecs()
   df <- basic_df()
   for (compression in c("uncompressed", "lz4", "zstd")) {
     path <- withr::local_tempfile(fileext = ".arrow")

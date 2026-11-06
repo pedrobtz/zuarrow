@@ -14,3 +14,22 @@ skip_without_oracle <- function(package) {
   skip_on_cran()
   skip_if_not_installed(package)
 }
+
+# arrow, with the codecs a test needs. A minimal arrow build lacks them:
+# skipped locally, a failure under ZUARROW_ORACLES=true, where a codec-less
+# arrow would silently drop the libarrow oracle.
+skip_without_arrow_codecs <- function(codecs = c("zstd", "lz4_frame")) {
+  skip_without_oracle("arrow")
+  missing <- codecs[!vapply(codecs, arrow::codec_is_available, logical(1))]
+  if (length(missing) == 0L) {
+    return(invisible())
+  }
+  message <- sprintf(
+    "arrow was built without %s.",
+    paste(missing, collapse = " and ")
+  )
+  if (identical(Sys.getenv("ZUARROW_ORACLES"), "true")) {
+    stop(message)
+  }
+  skip(message)
+}

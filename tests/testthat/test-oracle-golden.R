@@ -1,9 +1,11 @@
 # Oracle 1 (design section 9): apache/arrow-testing's golden files. For
 # every little-endian case the file and the stream decode to the same R
 # value, read with lossy = "character" so the cases that need zuint,
-# decimal or zutempo are compared exactly as text; where the arrow package
-# is installed, both equal libarrow's decoding of the same file through
-# the same conversion, for every version. Unions and intervals have no R
+# decimal or zutempo are compared exactly as text. The independent truth
+# is each case's JSON twin: integer and decimal columns are compared as
+# text, and boolean, floating-point, string, binary, date and timestamp
+# columns as values. libarrow's decoding is compared in test-ci-arrow.R,
+# which runs only in the oracles workflow. Unions and intervals have no R
 # form, and the big-endian directory is refused (D13).
 
 test_that("every little-endian golden case decodes the same from file and stream", {
@@ -91,6 +93,44 @@ test_that("lossy = \"character\" gives the JSON text of every golden integer and
     }
   }
   expect_gt(checked, 0L)
+})
+
+test_that("boolean, float, string, binary, date and timestamp golden columns match their JSON", {
+  skip_if_not_installed("zujson")
+  versions <- c(
+    "0.14.1",
+    "0.17.1",
+    "1.0.0-littleendian",
+    "2.0.0-compression",
+    "4.0.0-shareddict",
+    "cpp-21.0.0"
+  )
+  checked <- character()
+  for (version in versions) {
+    cases <- golden_cases(version)
+    cases <- cases[!vapply(names(cases), no_r_form, logical(1))]
+    for (case in names(cases)) {
+      expected <- golden_json_values(cases[[case]])
+      if (length(expected) == 0L) {
+        next
+      }
+      df <- arrow_read(paste0(cases[[case]], ".stream"), lossy = "character")
+      for (name in names(expected)) {
+        column <- expected[[name]]
+        expect_identical(
+          golden_comparable(df[[name]], column$kind, column$type),
+          column$values,
+          info = paste(version, case, name)
+        )
+        checked <- c(checked, column$kind)
+      }
+    }
+  }
+  # Every kind is reached, so a JSON layout the helper stops parsing fails.
+  expect_setequal(
+    unique(checked),
+    c("logical", "float", "string", "binary", "date", "timestamp")
+  )
 })
 
 # Optional (design section 12): decimal's registration is not part of 0.1.0,

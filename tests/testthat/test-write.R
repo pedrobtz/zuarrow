@@ -216,14 +216,31 @@ test_that("the same input gives the same bytes", {
     md5_of(arrow_write(df, NULL, format = "stream", batch = 3)),
     "764227ecde9140d0907bcdfea03ac8fd"
   )
-  expect_identical(
-    md5_of(arrow_write(df, NULL, compression = "lz4", batch = 3)),
-    "91190b836a4a6e1f48a23e15a3461770"
+})
+
+test_that("compressed output is the same bytes, pinned per codec version", {
+  # The compressed bytes are the codec's, so their hashes are pinned only
+  # for the lz4 and zstd versions zukomp bundled when they were taken. Under
+  # any other version the bytes must still repeat and read back.
+  df <- determinism_df()
+  vendored <- zukomp::komp_info()$vendored
+  codec_version <- function(source) vendored$version[vendored$source == source]
+  pinned <- list(
+    lz4 = list(version = "1.10.0", md5 = "91190b836a4a6e1f48a23e15a3461770"),
+    zstd = list(version = "1.5.7", md5 = "67e26b55dd346508c43c6125a7628f6a")
   )
-  expect_identical(
-    md5_of(arrow_write(df, NULL, compression = "zstd", batch = 3)),
-    "67e26b55dd346508c43c6125a7628f6a"
-  )
+  for (codec in names(pinned)) {
+    bytes <- arrow_write(df, NULL, compression = codec, batch = 3)
+    expect_identical(
+      arrow_write(df, NULL, compression = codec, batch = 3),
+      bytes,
+      info = codec
+    )
+    expect_identical(arrow_read(bytes), df, info = codec)
+    if (identical(codec_version(codec), pinned[[codec]]$version)) {
+      expect_identical(md5_of(bytes), pinned[[codec]]$md5, info = codec)
+    }
+  }
 })
 
 test_that("a stream with changing dictionaries is written only as a stream", {

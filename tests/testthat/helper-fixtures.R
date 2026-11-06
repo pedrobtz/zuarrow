@@ -177,6 +177,112 @@ scale_text <- function(text, scale) {
   )
 }
 
+# The values of each top-level boolean, floating-point, string, binary,
+# date32 and second or millisecond timestamp column of a golden case's JSON
+# twin, as a named list of list(kind, type, values). `values` is in the form
+# golden_comparable() gives zuarrow's column, with NA (NULL for binary) in
+# null slots. Dictionary-encoded columns and other types are left out.
+golden_json_values <- function(case_path) {
+  con <- gzfile(paste0(case_path, ".json.gz"), "rb")
+  bytes <- readBin(con, "raw", 1e8)
+  close(con)
+  json <- zujson::json_parse_raw(bytes)
+  out <- list()
+  for (i in seq_along(json$schema$fields)) {
+    field <- json$schema$fields[[i]]
+    type <- field$type
+    kind <- golden_kind(type)
+    if (is.null(kind) || !is.null(field$dictionary)) {
+      next
+    }
+    values <- lapply(json$batches, function(batch) {
+      column <- batch$columns[[i]]
+      valid <- as.logical(unlist(column$VALIDITY))
+      data <- golden_json_data(column$DATA, kind, type)
+      if (length(valid) == length(data)) {
+        data[!valid] <- if (kind == "binary") list(NULL) else NA
+      }
+      data
+    })
+    values <- do.call(c, values) %||% golden_json_data(list(), kind, type)
+    if (kind == "timestamp") {
+      values <- list(values = values, tzone = type$timezone %||% "")
+    }
+    out[[field$name]] <- list(kind = kind, type = type, values = values)
+  }
+  out
+}
+
+golden_kind <- function(type) {
+  switch(
+    type$name,
+    bool = "logical",
+    floatingpoint = if (type$precision != "HALF") "float",
+    utf8 = ,
+    largeutf8 = "string",
+    binary = ,
+    largebinary = ,
+    fixedsizebinary = "binary",
+    date = if (type$unit == "DAY") "date",
+    timestamp = if (type$unit %in% c("SECOND", "MILLISECOND")) "timestamp",
+    NULL
+  )
+}
+
+golden_json_data <- function(data, kind, type) {
+  data <- unlist(data)
+  switch(
+    kind,
+    logical = as.logical(data) %||% logical(),
+    # The JSON prints a float32 in the fewest digits that round trip it, so
+    # rounding the parsed double to float32 recovers the stored value.
+    float = if (type$precision == "SINGLE") {
+      readBin(
+        writeBin(as.double(data), raw(), size = 4L),
+        "double",
+        n = length(data),
+        size = 4L
+      )
+    } else {
+      as.double(data) %||% double()
+    },
+    string = as.character(data) %||% character(),
+    binary = lapply(as.character(data), hex_raw),
+    date = as.double(data) %||% double(),
+    timestamp = as.double(data) %||% double()
+  )
+}
+
+hex_raw <- function(hex) {
+  if (!nzchar(hex)) {
+    return(raw())
+  }
+  starts <- seq(1L, nchar(hex), by = 2L)
+  as.raw(strtoi(substring(hex, starts, starts + 1L), 16L))
+}
+
+# zuarrow's column in the form golden_json_values() gives the JSON's: a
+# timestamp as whole units of its type, and its time zone.
+golden_comparable <- function(x, kind, type) {
+  switch(
+    kind,
+    logical = ,
+    float = ,
+    string = as.vector(x),
+    binary = lapply(unclass(x), function(v) {
+      if (is.null(v)) NULL else as.vector(v)
+    }),
+    date = if (inherits(x, "Date")) as.double(unclass(x)),
+    timestamp = if (inherits(x, "POSIXct")) {
+      scale <- if (type$unit == "MILLISECOND") 1000 else 1
+      list(
+        values = round(as.double(unclass(x)) * scale),
+        tzone = attr(x, "tzone") %||% ""
+      )
+    }
+  )
+}
+
 # The text of a column read with lossy = "character": exact text already for
 # the columns that needed it, and the printed value for those that convert
 # exactly to integer or double.
