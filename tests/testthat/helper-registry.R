@@ -1,7 +1,19 @@
+# Puts the registry back as it was when the test ends, so a registration a
+# package made at load, such as decimal's "d:*", survives a test that
+# replaces or removes it, and one a test loads does not leak (#118).
+local_registry <- function(.env = parent.frame()) {
+  registry <- zuarrow:::zar_registry
+  # Every field but the unload hooks, which local_unload_hooks() restores,
+  # and the handlers running now.
+  fields <- setdiff(ls(registry), c("hooked", "active"))
+  saved <- mget(fields, envir = registry)
+  withr::defer(list2env(saved, envir = registry), envir = .env)
+}
+
 # A test-only registration stands in for a typed package such as zuint.
 local_registration <- function(key, ..., .env = parent.frame()) {
+  local_registry(.env = .env)
   arrow_register(key, ...)
-  withr::defer(arrow_unregister(key), envir = .env)
 }
 
 as_text_int64 <- function(array, schema) {
@@ -22,6 +34,15 @@ local_unload_hooks <- function(packages, .env = parent.frame()) {
     old <- getHook(name)
     withr::defer(setHook(name, old, "replace"), envir = .env)
   }
+}
+
+# The spec of a run-end encoded decimal128(5, 1) field with int32 run ends.
+ree_decimal_spec <- function(name = "") {
+  zspec(
+    "+r",
+    name,
+    children = list(zspec("i", "run_ends", flags = 0L), zspec("d:5,1"))
+  )
 }
 
 # A handler for "d:*" that records the format it is given and returns the

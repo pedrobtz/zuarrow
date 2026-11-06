@@ -138,6 +138,8 @@ test_that("boolean, float, string, binary, date and timestamp golden columns mat
 test_that("with decimal's registration the golden decimal cases decode exactly", {
   skip_if_not_installed("zujson")
   skip_if_not_installed("decimal")
+  # Later files run with the registry as it was, decimal loaded or not.
+  local_registry()
   loadNamespace("decimal")
   registry <- arrow_registry()
   skip_if_not(
