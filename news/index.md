@@ -27,6 +27,11 @@
   reports the versions zuarrow is built from.
 - Every error inherits from `zuarrow_error`, and the lossy warning from
   `zuarrow_warning`.
+- An error names the function or S3 method you called, such as
+  [`arrow_stream()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
+  or [`as.data.frame()`](https://rdrr.io/r/base/as.data.frame.html),
+  never an internal helper
+  ([\#124](https://github.com/pedrobtz/zuarrow/issues/124)).
 
 ### Converting to and from R
 

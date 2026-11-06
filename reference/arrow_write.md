@@ -11,8 +11,8 @@ format; any other path, and `x = NULL`, to the file format.
 arrow_write(
   data,
   x = NULL,
-  format = c("file", "stream"),
-  compression = c("none", "lz4", "zstd"),
+  format = zar_write_formats,
+  compression = zar_codecs,
   level = NULL,
   batch = 65536L,
   dictionary = TRUE,

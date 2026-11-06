@@ -6,7 +6,7 @@ batch of a stream. A schema is only checked to be live.
 ## Usage
 
 ``` r
-arrow_validate(x, level = c("full", "default", "minimal"))
+arrow_validate(x, level = zar_validation_levels)
 ```
 
 ## Arguments
