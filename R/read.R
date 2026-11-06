@@ -10,7 +10,8 @@
 #'   and the most bytes one compressed buffer may claim when decompressed.
 #' @param max_depth The deepest nesting a schema may have.
 #' @param max_batch_rows The most rows one record batch may hold.
-#' @param max_bytes The most bytes of input in all.
+#' @param max_bytes The most bytes of input in all. For a list of sources,
+#'   the most bytes of all of them together.
 #' @param max_dictionary The most bytes that delta dictionary batches may
 #'   build in all. A delta onto a dictionary that holds values copies the
 #'   whole dictionary into a new one, and every copy counts, so many small
@@ -81,10 +82,14 @@ arrow_limits <- function(
 #'   Or a list of these, each a whole IPC stream, read as one: Spark Connect,
 #'   for one, sends each batch of a result as its own stream. Every stream
 #'   must have the first one's schema, or it is a `zuarrow_format_error`.
+#'   Every source in the list is read into memory when the call starts, and
+#'   `max_bytes` binds all of them together.
 #' @param columns `NULL` for every column, or the names or positions of the
 #'   top-level columns to read. Only those are decoded.
 #' @param lazy `FALSE` to read every batch into one data frame; `TRUE` to
-#'   return a stream handle whose batches are decoded by [arrow_next()].
+#'   return a stream handle whose batches are decoded by [arrow_next()],
+#'   one at a time. For a list of sources the handle reads their batches
+#'   in order, one stream after another.
 #'   With `lazy = TRUE`, `to`, `lossy` and `copy` belong to that later
 #'   conversion, and setting one here is a `zuarrow_type_error`.
 #' @inheritParams arrow_to_r
@@ -179,24 +184,33 @@ zar_open_reader <- function(x, columns, lazy, limits, call) {
 }
 
 # Several IPC streams read as one, as Spark Connect sends a result: each
-# message repeats the schema, which must be the first one's.
+# message repeats the schema, which must be the first one's. `max_bytes`
+# binds the input of every source together, whatever kind each is.
 zar_read_list <- function(x, columns, lazy, to, lossy, limits, copy, call) {
   if (length(x) == 0L) {
     zar_abort("type", "`x` must hold at least one IPC stream.", call = call)
   }
-  sizes <- vapply(x, function(el) if (is.raw(el)) length(el) else 0, 0)
-  if (sum(sizes) > limits$max_bytes) {
-    zar_abort(
-      "limit",
-      sprintf(
-        "The %.0f bytes of input exceed `max_bytes` (%.0f).",
-        sum(sizes),
-        limits$max_bytes
-      ),
-      call = call
-    )
+  streams <- vector("list", length(x))
+  used <- 0
+  for (i in seq_along(x)) {
+    # A connection is read up to what the earlier sources left.
+    left <- limits
+    left$max_bytes <- limits$max_bytes - used
+    source <- zar_read_source(x[[i]], left, call)
+    used <- used + if (is.raw(source)) length(source) else file.size(source)
+    if (used > limits$max_bytes) {
+      zar_abort(
+        "limit",
+        sprintf(
+          "The %.0f bytes of input exceed `max_bytes` (%.0f).",
+          used,
+          limits$max_bytes
+        ),
+        call = call
+      )
+    }
+    streams[[i]] <- zar_open_reader(source, columns, lazy, limits, call)
   }
-  streams <- lapply(x, zar_open_reader, columns, lazy, limits, call)
   schema <- arrow_schema(streams[[1L]])
   for (i in seq_along(streams)[-1L]) {
     if (!arrow_equal(arrow_schema(streams[[i]]), schema)) {
@@ -207,16 +221,15 @@ zar_read_list <- function(x, columns, lazy, to, lossy, limits, copy, call) {
       )
     }
   }
+  if (lazy) {
+    # The sources are held in memory, and arrow_next() decodes their
+    # batches one at a time, stream after stream.
+    return(zar_check(.Call(zar_c_reader_chain, streams), call = call))
+  }
   batches <- unlist(
     lapply(streams, zar_stream_batches, call = call),
     recursive = FALSE
   )
-  if (lazy) {
-    return(zar_check(
-      .Call(zar_c_stream_from_arrays, schema, batches),
-      call = call
-    ))
-  }
   zar_convert(
     batches,
     schema,
@@ -300,12 +313,16 @@ zar_column_index <- function(stream, columns, call) {
       )
     }
   } else if (
-    is.numeric(columns) && !anyNA(columns) && all(columns == floor(columns))
+    is.numeric(columns) &&
+      all(is.finite(columns)) &&
+      all(columns == floor(columns))
   ) {
-    idx <- as.integer(columns)
-    if (any(idx < 1L | idx > length(names))) {
+    # Checked as doubles, so a position past the integer range is out of
+    # range, not an NA with a coercion warning.
+    if (any(columns < 1 | columns > length(names))) {
       zar_abort("type", "A column position is out of range.", call = call)
     }
+    idx <- as.integer(columns)
   } else {
     zar_abort(
       "type",

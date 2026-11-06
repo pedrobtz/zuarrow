@@ -18,13 +18,17 @@ arrow_read(
 \item{x}{A path, a raw vector, or a connection, which is read to its end.
 Or a list of these, each a whole IPC stream, read as one: Spark Connect,
 for one, sends each batch of a result as its own stream. Every stream
-must have the first one's schema, or it is a \code{zuarrow_format_error}.}
+must have the first one's schema, or it is a \code{zuarrow_format_error}.
+Every source in the list is read into memory when the call starts, and
+\code{max_bytes} binds all of them together.}
 
 \item{columns}{\code{NULL} for every column, or the names or positions of the
 top-level columns to read. Only those are decoded.}
 
 \item{lazy}{\code{FALSE} to read every batch into one data frame; \code{TRUE} to
-return a stream handle whose batches are decoded by \code{\link[=arrow_next]{arrow_next()}}.
+return a stream handle whose batches are decoded by \code{\link[=arrow_next]{arrow_next()}},
+one at a time. For a list of sources the handle reads their batches
+in order, one stream after another.
 With \code{lazy = TRUE}, \code{to}, \code{lossy} and \code{copy} belong to that later
 conversion, and setting one here is a \code{zuarrow_type_error}.}
 

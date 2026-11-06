@@ -295,6 +295,75 @@ test_that("a list of IPC streams reads as one, as Spark Connect sends a result",
   expect_identical(arrow_to_r(stream), expected)
 })
 
+test_that("a lazy list of streams decodes one batch per arrow_next()", {
+  first <- stream_bytes(data.frame(x = 1:2))
+  second <- stream_bytes(data.frame(x = 3:4))
+  # Cut into the record batch: the schema reads, the batch does not.
+  broken <- second[seq_len(length(second) - 16L)]
+
+  stream <- arrow_read(list(first, broken, second), lazy = TRUE)
+  expect_identical(arrow_next(stream), data.frame(x = 1:2))
+  expect_error(arrow_next(stream), class = "zuarrow_format_error")
+
+  stream <- arrow_read(list(first, second, second), lazy = TRUE, columns = 1)
+  expect_identical(arrow_next(stream), data.frame(x = 1:2))
+  expect_identical(arrow_next(stream), data.frame(x = 3:4))
+  expect_identical(arrow_next(stream), data.frame(x = 3:4))
+  expect_null(arrow_next(stream))
+  expect_null(arrow_next(stream))
+  expect_true(arrow_equal(
+    arrow_schema(stream),
+    arrow_schema(arrow_read(first, lazy = TRUE))
+  ))
+})
+
+test_that("a chain takes only readers that own their input", {
+  bytes <- stream_bytes(data.frame(x = 1:2))
+  chain <- function(readers) {
+    zuarrow:::zar_check(.Call(zuarrow:::zar_c_reader_chain, readers))
+  }
+  open <- function(in_place) {
+    .Call(
+      zuarrow:::zar_c_reader_open,
+      bytes,
+      c(2^31, 64, 2^31, Inf, 2^28),
+      in_place
+    )
+  }
+
+  expect_error(chain(list()), class = "zuarrow_type_error")
+  expect_error(chain(list(open(TRUE))), class = "zuarrow_handle_error")
+  expect_error(
+    chain(list(test_stream(arrow_schema(open(FALSE)), list()))),
+    class = "zuarrow_handle_error"
+  )
+  reader <- open(FALSE)
+  out <- chain(list(reader))
+  expect_error(arrow_next(reader), class = "zuarrow_handle_error")
+  expect_identical(arrow_to_r(out), data.frame(x = 1:2))
+})
+
+test_that("max_bytes binds a list of sources together, whatever their kind", {
+  bytes <- stream_bytes(data.frame(x = 1:2))
+  path <- withr::local_tempfile(fileext = ".arrows")
+  writeBin(bytes, path)
+  limits <- arrow_limits(max_bytes = length(bytes) * 1.5)
+
+  expect_identical(arrow_read(list(path), limits = limits), data.frame(x = 1:2))
+  expect_error(
+    arrow_read(list(path, path), limits = limits),
+    class = "zuarrow_limit_error"
+  )
+  expect_error(
+    arrow_read(list(bytes, path), limits = limits, lazy = TRUE),
+    class = "zuarrow_limit_error"
+  )
+  expect_error(
+    arrow_read(list(path, file(path)), limits = limits),
+    class = "zuarrow_limit_error"
+  )
+})
+
 test_that("streams read as one must share a schema and fit the limits", {
   one <- stream_bytes(data.frame(x = 1:2))
   other <- stream_bytes(data.frame(x = c(1.5, 2)))
@@ -311,4 +380,12 @@ test_that("streams read as one must share a schema and fit the limits", {
 test_that("`columns` that are neither names nor positions are a type error", {
   bytes <- arrow_write(data.frame(x = 1), NULL)
   expect_error(arrow_read(bytes, columns = TRUE), class = "zuarrow_type_error")
+  for (columns in list(Inf, -Inf, NaN, NA_integer_, 1e10, c(1, Inf))) {
+    expect_no_warning(
+      expect_error(
+        arrow_read(bytes, columns = columns),
+        class = "zuarrow_type_error"
+      )
+    )
+  }
 })

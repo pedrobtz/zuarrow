@@ -199,6 +199,14 @@
   encoded column's values to a registered handler check every offset the
   same way. Before, `arrow_write()` wrote a batch whose string offsets
   decrease or point past its data into a file no reader accepts (#150).
+* `arrow_read(lazy = TRUE)` on a list of sources is lazy: `arrow_next()`
+  decodes one batch at a time, stream after stream, and frees each source
+  once it is read. Before, every batch was decoded when the handle was
+  made. `max_bytes` now binds the sources together for paths and
+  connections too, not only for raw vectors (#116).
+* `arrow_read()` raises `zuarrow_type_error` for a column position that
+  is infinite or past the integer range. Before, it warned and raised an
+  unclassed error (#125).
 
 * `arrow_write()` writes a sliced batch, one with a non-zero offset at any
   depth, as the values it holds, as `arrow`, DuckDB and 'nanoarrow' slices

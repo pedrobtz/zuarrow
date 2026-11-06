@@ -20,7 +20,8 @@ and the most bytes one compressed buffer may claim when decompressed.}
 
 \item{max_batch_rows}{The most rows one record batch may hold.}
 
-\item{max_bytes}{The most bytes of input in all.}
+\item{max_bytes}{The most bytes of input in all. For a list of sources,
+the most bytes of all of them together.}
 
 \item{max_dictionary}{The most bytes that delta dictionary batches may
 build in all. A delta onto a dictionary that holds values copies the
