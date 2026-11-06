@@ -1,3 +1,5 @@
+zar_validation_levels <- c("full", "default", "minimal")
+
 #' Validate a handle
 #'
 #' Runs the 'nanoarrow' C library's validation on an array, or on every
@@ -24,19 +26,25 @@
 #' arrow_validate(arrow_array(c("a", "b", NA)))
 #' arrow_validate(arrow_stream(data.frame(x = 1:3)), level = "minimal")
 #' arrow_validate(arrow_schema("i"))
-arrow_validate <- function(x, level = c("full", "default", "minimal")) {
+arrow_validate <- function(x, level = zar_validation_levels) {
   call <- sys.call()
-  level <- zar_arg_match(level, c("full", "default", "minimal"), "level", call)
+  level <- zar_arg_match(level, zar_validation_levels, "level", call)
   code <- match(level, c("minimal", "default", "full"))
   if (zar_is_schema(x)) {
-    zar_check_live(x)
+    zar_check_live(x, call = call)
     return(invisible(TRUE))
   }
   if (zar_is_array(x)) {
-    return(invisible(zar_check(.Call(zar_c_array_validate, x, code))))
+    return(invisible(zar_check(
+      .Call(zar_c_array_validate, x, code),
+      call = call
+    )))
   }
   if (zar_is_stream(x)) {
-    return(invisible(zar_check(.Call(zar_c_stream_validate, x, code))))
+    return(invisible(zar_check(
+      .Call(zar_c_stream_validate, x, code),
+      call = call
+    )))
   }
   zar_abort(
     "handle",
@@ -68,13 +76,13 @@ arrow_equal <- function(x, y, metadata = TRUE) {
   call <- sys.call()
   zar_check_flag(metadata, "metadata", call)
   if (zar_is_schema(x) && zar_is_schema(y)) {
-    return(zar_check(.Call(zar_c_schema_equal, x, y, metadata)))
+    return(zar_check(.Call(zar_c_schema_equal, x, y, metadata), call = call))
   }
   if (zar_is_array(x) && zar_is_array(y)) {
-    return(zar_check(.Call(zar_c_array_equal, x, y, metadata)))
+    return(zar_check(.Call(zar_c_array_equal, x, y, metadata), call = call))
   }
   if (zar_is_stream(x) && zar_is_stream(y)) {
-    return(zar_check(.Call(zar_c_stream_equal, x, y, metadata)))
+    return(zar_check(.Call(zar_c_stream_equal, x, y, metadata), call = call))
   }
   zar_abort(
     "handle",

@@ -8,20 +8,24 @@
 #' handle. `arrow_stream()` converts a data frame to a stream of record
 #' batches of at most `batch` rows each.
 #'
-#' Without a `schema`, each R class maps to one Arrow type: `logical` to
-#' `bool`, `integer` to `int32`, `double` to `double`, `character` to
-#' `utf8` (`large_utf8` past 2^31 - 1 bytes), `factor` to
-#' `dictionary<int32, utf8>`, `Date` to `date32`, `POSIXct` to
-#' `timestamp[us]` in its time zone or UTC, `difftime` to `duration[us]`,
-#' a list of raw vectors to `binary`, a list with the `arrow_keys_sorted`
-#' attribute that [arrow_to_r()] gives a map to `map`, any other list to
-#' `list<T>` with `T` from its elements, and a data frame to a `struct`. A
-#' class registered with [arrow_register()] goes through its `from`
-#' handler, and a matrix is written as a `fixed_size_list` with
-#' `schema = arrow_matrix()`. The
-#' attributes `arrow_extension`, `arrow_extension_metadata` and
-#' `arrow_field_metadata` become field metadata. Any other class is a
-#' `zuarrow_type_error`.
+#' Without a `schema`, each R class maps to one Arrow type:
+#'
+#' * `logical` to `bool`, `integer` to `int32`, `double` to `double`.
+#' * `character` to `utf8`, or `large_utf8` past 2^31 - 1 bytes.
+#' * `factor` to `dictionary<int32, utf8>`.
+#' * `Date` to `date32`, `POSIXct` to `timestamp[us]` in its time zone or
+#'   UTC, `difftime` to `duration[us]`.
+#' * A list of raw vectors to `binary`.
+#' * A list with the `arrow_keys_sorted` attribute that [arrow_to_r()]
+#'   gives a map to `map`.
+#' * Any other list to `list<T>`, with `T` from its elements.
+#' * A data frame to a `struct`.
+#'
+#' A class registered with [arrow_register()] goes through its `from`
+#' handler. A matrix is written as a `fixed_size_list` with
+#' `schema = arrow_matrix()`. The attributes `arrow_extension`,
+#' `arrow_extension_metadata` and `arrow_field_metadata` become field
+#' metadata. Any other class is a `zuarrow_type_error`.
 #'
 #' With a `schema`, the values are written as that type and checked: an
 #' integer that does not fit `int8`, or a double that is not a whole
@@ -58,14 +62,22 @@ arrow_array <- function(x, schema = NULL) {
   x <- zar_prebuild(x, call)
   schema <- zar_schema_for(x, schema, call)
   prepared <- zar_prepare(x, schema, call)
-  n <- zar_nrow(x)
-  zar_check(.Call(zar_c_from_r, zar_batch(prepared, 0, n, call), schema, 0, n))
+  n <- zar_nrow(x, call)
+  zar_check(
+    .Call(zar_c_from_r, zar_batch(prepared, 0, n, call), schema, 0, n),
+    call = call
+  )
 }
 
 #' @rdname arrow_array
 #' @export
 arrow_stream <- function(x, batch = 65536L, schema = NULL) {
-  call <- sys.call()
+  zar_stream_from_r(x, batch, schema, sys.call())
+}
+
+# arrow_stream() with the condition call of the exported function that
+# uses it (#124).
+zar_stream_from_r <- function(x, batch, schema, call) {
   if (
     !is.numeric(batch) ||
       length(batch) != 1L ||
@@ -78,22 +90,25 @@ arrow_stream <- function(x, batch = 65536L, schema = NULL) {
   x <- zar_prebuild(x, call)
   schema <- zar_schema_for(x, schema, call)
   prepared <- zar_prepare(x, schema, call)
-  n <- zar_nrow(x)
+  n <- zar_nrow(x, call)
   starts <- if (n == 0) numeric() else seq(0, n - 1, by = batch)
   arrays <- lapply(starts, function(start) {
     len <- min(batch, n - start)
-    zar_check(.Call(
-      zar_c_from_r,
-      zar_batch(prepared, start, len, call),
-      schema,
-      start,
-      len
-    ))
+    zar_check(
+      .Call(
+        zar_c_from_r,
+        zar_batch(prepared, start, len, call),
+        schema,
+        start,
+        len
+      ),
+      call = call
+    )
   })
-  zar_check(.Call(zar_c_stream_from_arrays, schema, arrays))
+  zar_check(.Call(zar_c_stream_from_arrays, schema, arrays), call = call)
 }
 
-zar_schema_for <- function(x, schema, call = sys.call(-1)) {
+zar_schema_for <- function(x, schema, call) {
   if (inherits(schema, "zuarrow_matrix")) {
     if (!is.matrix(x)) {
       zar_abort(
@@ -112,7 +127,7 @@ zar_schema_for <- function(x, schema, call = sys.call(-1)) {
       call = call
     ))
   }
-  arrow_schema(schema)
+  zar_as_schema(schema, call)
 }
 
 # The most bytes utf8's 32-bit offsets address. An internal option lowers it
@@ -158,9 +173,9 @@ zar_prebuild <- function(x, call = NULL) {
   x
 }
 
-zar_nrow <- function(x) {
+zar_nrow <- function(x, call) {
   if (inherits(x, "zar_prebuilt")) {
-    return(zar_check(.Call(zar_c_array_info, x$array))$length)
+    return(zar_check(.Call(zar_c_array_info, x$array), call = call)$length)
   }
   if (is.data.frame(x)) {
     .row_names_info(x, 2L)
@@ -175,7 +190,8 @@ zar_nrow <- function(x) {
 # and matrices become a zar_list_prep, flattened once (C never calls R),
 # and data frames are prepared column by column (section 6.4).
 zar_prepare <- function(x, schema, call = NULL) {
-  zar_prepare_spec(x, zar_check(.Call(zar_c_schema_to_spec, schema)), call)
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema), call = call)
+  zar_prepare_spec(x, spec, call)
 }
 
 zar_prepare_spec <- function(x, spec, call = NULL) {
@@ -196,8 +212,7 @@ zar_prepare_spec <- function(x, spec, call = NULL) {
     attributes(out) <- attributes(x)
     return(out)
   }
-  variable_list <- spec$format %in% c("+l", "+L", "+m")
-  is_list_type <- variable_list || startsWith(spec$format, "+w:")
+  is_list_type <- zar_is_list_format(spec$format)
   if (is_list_type && is.matrix(x)) {
     width <- ncol(x)
     return(structure(
@@ -250,6 +265,12 @@ zar_fill_null_lists <- function(x, nulls, width, child) {
   x
 }
 
+# Whether a format is a list, a large list, a map or a fixed-size list,
+# the types whose R values are list columns or matrices.
+zar_is_list_format <- function(format) {
+  format %in% c("+l", "+L", "+m") || startsWith(format, "+w:")
+}
+
 # An empty R vector of the type a spec describes, for a list column with
 # no values at all.
 zar_empty_like <- function(spec) {
@@ -260,12 +281,11 @@ zar_empty_like <- function(spec) {
     names(columns) <- paste0("V", seq_along(columns))
     return(structure(columns, class = "data.frame", row.names = integer()))
   }
-  if (spec$format %in% c("+l", "+L", "+m") || startsWith(spec$format, "+w:")) {
+  if (zar_is_list_format(spec$format)) {
     return(list())
   }
   switch(
     spec$format,
-    n = NULL,
     b = logical(),
     i = integer(),
     g = double(),
@@ -357,7 +377,10 @@ zar_with_field_metadata <- function(spec, x, call = NULL) {
 
 zar_infer_type <- function(x, name, call = NULL) {
   if (inherits(x, "zar_prebuilt")) {
-    spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(x$array)))
+    spec <- zar_check(
+      .Call(zar_c_schema_to_spec, zar_as_schema(x$array, call)),
+      call = call
+    )
     spec$name <- name
     return(spec)
   }
@@ -366,7 +389,10 @@ zar_infer_type <- function(x, name, call = NULL) {
     # The whole column, as zar_prebuild() builds it: a handler may pick the
     # type from the values (#113).
     array <- zar_from_handler(handler, x, call)
-    spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(array)))
+    spec <- zar_check(
+      .Call(zar_c_schema_to_spec, zar_as_schema(array, call)),
+      call = call
+    )
     spec$name <- name
     return(spec)
   }

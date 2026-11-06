@@ -142,7 +142,10 @@ arrow_register <- function(
   ) {
     zar_abort(
       "registry",
-      "`to` must be a function of `(array, schema)` or `(array, schema, lossy)`.",
+      paste(
+        "`to` must be a function of `(array, schema)` or",
+        "`(array, schema, lossy)`."
+      ),
       call = call
     )
   }

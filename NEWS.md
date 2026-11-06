@@ -19,6 +19,8 @@
 * `zuarrow_info()` reports the versions zuarrow is built from.
 * Every error inherits from `zuarrow_error`, and the lossy warning from
   `zuarrow_warning`.
+* An error names the function or S3 method you called, such as
+  `arrow_stream()` or `as.data.frame()`, never an internal helper (#124).
 
 ## Converting to and from R
 

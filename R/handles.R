@@ -30,13 +30,18 @@
 #' arrow_schema(data.frame(x = 1:3, y = c("a", "b", "c")))
 #' format(arrow_schema(as.Date("2026-10-21")))
 arrow_schema <- function(x) {
-  call <- sys.call()
+  zar_as_schema(x, sys.call())
+}
+
+# arrow_schema() with the condition call of the exported function that
+# uses it (#124).
+zar_as_schema <- function(x, call) {
   if (zar_is_schema(x) && inherits(x, "zuarrow_schema")) {
-    zar_check_live(x)
+    zar_check_live(x, call = call)
     return(x)
   }
   if (zar_is_handle(x)) {
-    return(zar_check(.Call(zar_c_schema_copy, x)))
+    return(zar_check(.Call(zar_c_schema_copy, x), call = call))
   }
   if (is.character(x) && length(x) == 1L && is.null(attributes(x))) {
     if (is.na(x) || !nzchar(x)) {
@@ -46,10 +51,13 @@ arrow_schema <- function(x) {
         call = call
       )
     }
-    return(zar_check(.Call(zar_c_schema_from_spec, zar_spec(x))))
+    return(zar_check(
+      .Call(zar_c_schema_from_spec, zar_spec(x)),
+      call = call
+    ))
   }
   spec <- zar_infer_spec(x, name = "", call = call)
-  zar_check(.Call(zar_c_schema_from_spec, spec))
+  zar_check(.Call(zar_c_schema_from_spec, spec), call = call)
 }
 
 zar_is_schema <- function(x) inherits(x, "nanoarrow_schema")
@@ -76,7 +84,7 @@ zar_field_names <- function(fields) {
   vapply(fields, function(f) if (is.na(f$name)) "" else f$name, "")
 }
 
-zar_check_live <- function(x, call = sys.call(-1)) {
+zar_check_live <- function(x, call) {
   status <- .Call(zar_c_handle_status, x)
   if (status != "live") {
     zar_abort(

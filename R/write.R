@@ -1,5 +1,10 @@
 # Writing the Arrow IPC formats (design section 6.8).
 
+zar_write_formats <- c("file", "stream")
+
+# The codecs in the order of the C writer's codes, 0 for none.
+zar_codecs <- c("none", "lz4", "zstd")
+
 #' Write the Arrow IPC formats
 #'
 #' `arrow_write()` writes a data frame, a `struct` array or a stream as an
@@ -43,8 +48,8 @@
 arrow_write <- function(
   data,
   x = NULL,
-  format = c("file", "stream"),
-  compression = c("none", "lz4", "zstd"),
+  format = zar_write_formats,
+  compression = zar_codecs,
   level = NULL,
   batch = 65536L,
   dictionary = TRUE,
@@ -58,14 +63,9 @@ arrow_write <- function(
       "file"
     }
   } else {
-    zar_arg_match(format, c("file", "stream"), "format", call)
+    zar_arg_match(format, zar_write_formats, "format", call)
   }
-  compression <- zar_arg_match(
-    compression,
-    c("none", "lz4", "zstd"),
-    "compression",
-    call
-  )
+  compression <- zar_arg_match(compression, zar_codecs, "compression", call)
   if (
     !is.null(level) &&
       (!is.numeric(level) ||
@@ -101,7 +101,7 @@ arrow_write <- function(
       source$schema,
       list(
         format == "file",
-        match(compression, c("none", "lz4", "zstd")) - 1L,
+        match(compression, zar_codecs) - 1L,
         as.integer(level %||% NA)
       )
     ),
@@ -132,7 +132,10 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
   if (is.data.frame(data)) {
     # Registered columns are built once here, so the schema is their arrays'.
     data <- zar_prebuild(data, call)
-    spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(data)))
+    spec <- zar_check(
+      .Call(zar_c_schema_to_spec, zar_schema_for(data, NULL, call)),
+      call = call
+    )
     if (!dictionary) {
       spec <- zar_without_dictionaries(spec)
     }
@@ -140,12 +143,16 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
       spec$metadata <- zar_metadata_raw(metadata, call = call)
     }
     schema <- zar_check(.Call(zar_c_schema_from_spec, spec), call = call)
-    stream <- arrow_stream(data, batch = batch, schema = schema)
+    stream <- zar_stream_from_r(data, batch, schema, call)
   } else if (zar_is_array(data)) {
     # A borrowed array, so the stream does not consume the caller's.
     borrowed <- zar_check(.Call(zar_c_array_borrow, data), call = call)
     stream <- zar_check(
-      .Call(zar_c_stream_from_arrays, arrow_schema(data), list(borrowed)),
+      .Call(
+        zar_c_stream_from_arrays,
+        zar_as_schema(data, call),
+        list(borrowed)
+      ),
       call = call
     )
   } else if (zar_is_stream(data)) {
@@ -157,8 +164,8 @@ zar_write_source <- function(data, batch, dictionary, metadata, call) {
       call = call
     )
   }
-  schema <- arrow_schema(stream)
-  if (!zar_is_struct(schema)) {
+  schema <- zar_as_schema(stream, call)
+  if (!zar_is_struct(schema, call)) {
     zar_abort(
       "type",
       "Only a struct array or stream can be written.",

@@ -962,6 +962,19 @@ base error from reading `$length` of a failure. A spec that cannot become
 a schema is a `zuarrow_type_error` (#132); only a failed allocation is a
 bare `zuarrow_error`.
 
+*Decided 2026-11-06 (#124):* every condition zuarrow raises carries, as
+its `call`, the call of the exported function or S3 method the user
+called: `arrow_stream(...)`, not `FUN(X[[i]], ...)`, and
+`as.data.frame.zuarrow_array(...)`, not the `arrow_to_r()` it once
+forwarded to. Each exported function takes `sys.call()` once and passes
+it to every helper, `zar_check()` included; an exported function that
+another one uses, such as `arrow_schema()` or `arrow_stream()`, has an
+internal twin taking `call` (`zar_as_schema()`, `zar_stream_from_r()`).
+A condition raised by a registered handler's own code keeps its own call.
+This is because the call is the first line of the error a user reads, and
+an internal helper's tells them nothing they can act on. Tests check
+`conditionCall()`, never the message.
+
 ## 9. Testing
 
 `testthat` 3e. One file per subsection of §6. Four oracles, none a
