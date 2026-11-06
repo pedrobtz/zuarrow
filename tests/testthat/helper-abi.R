@@ -76,12 +76,31 @@ abi_exports <- function() {
 
 abi_imports <- function() {
   if (.Platform$OS.type == "windows") {
-    out <- abi_objdump()
-    rows <- out[grepl("^\\s+[0-9a-f]+\\s+[0-9]+\\s+\\S+$", out)]
-    return(sub("^.*\\s", "", trimws(rows)))
+    return(abi_objdump_imports(abi_objdump()))
   }
   out <- abi_run(abi_tool("nm"), c("-u", shQuote(abi_dll_path())))
   abi_clean(sub("^.*\\s", "", trimws(out[nzchar(out)])))
+}
+
+# The member names of objdump -p's import tables. Each DLL's table starts at
+# a "vma:" header and ends at a blank line. Its rows are the address, then
+# the hint, or with binutils 2.41 and later the ordinal and the hint, then
+# the name, so the name is the last field whatever the column count.
+abi_objdump_imports <- function(out) {
+  out <- sub("\\s+$", "", out)
+  start <- grep("^\\s*vma:", out)
+  if (length(start) == 0L) {
+    abi_unavailable("objdump printed no import table")
+  }
+  names <- character()
+  for (i in start) {
+    j <- i + 1L
+    while (j <= length(out) && nzchar(trimws(out[j]))) {
+      names <- c(names, sub("^.*\\s", "", trimws(out[j])))
+      j <- j + 1L
+    }
+  }
+  names
 }
 
 # The symbols R CMD check's compiled-code check reports, across platforms,
