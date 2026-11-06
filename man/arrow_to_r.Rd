@@ -99,7 +99,9 @@ precision. The column carries the Arrow format string in its
 becomes \code{bit64}'s \code{integer64}, exactly, when \code{bit64} is loaded.
 }
 
-Intervals and unions have no R form and always fail.
+Intervals and unions have no R form and always fail, unless a handler
+registered with \code{\link[=arrow_register]{arrow_register()}} for the column's extension name
+converts it.
 
 \code{to} names the R type a column must become: \code{character()}, \code{double()},
 \code{integer()}, or \code{\link[=arrow_matrix]{arrow_matrix()}} for a \code{fixed_size_list}. A target that

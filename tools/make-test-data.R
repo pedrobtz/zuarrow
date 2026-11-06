@@ -9,6 +9,9 @@
 # version on 2026-10-27. Update the version here when regenerating them.
 # The crash-* files are not written here: they are inputs the fuzz target
 # found, and tests/testthat/crash-expected.csv records what each pins.
+# Nor is geometry-union.arrows, which tools/make-union-fixture.py writes
+# with pyarrow 26.0.1, because the arrow package has no way to build a
+# union array.
 stopifnot(requireNamespace("arrow", quietly = TRUE))
 message("writing with arrow ", utils::packageVersion("arrow"))
 out <- "tests/testthat/data"

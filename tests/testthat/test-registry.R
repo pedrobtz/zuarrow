@@ -1055,3 +1055,187 @@ test_that("an extension over an exact storage type stays exact (#133)", {
   dict$dictionary <- zspec("L")
   expect_false(storage_exact(dict))
 })
+
+# Unions through a registered extension handler (#171).
+
+test_that("a registered extension over a union receives the union array", {
+  for (dense in c(TRUE, FALSE)) {
+    seen <- new.env()
+    local_registration("test.union", to = function(array, schema) {
+      seen$spec <- test_array_to_spec(array)
+      seen$format <- format_of(schema)
+      seen$valid <- arrow_validate(array, "full")
+      union_rows_text(array)
+    })
+    out <- arrow_to_r(union_ext_array(dense))
+    expect_identical(out, c("10", "x", "20", "y"), info = dense)
+    expect_identical(seen$format, if (dense) "+ud:3,7" else "+us:3,7")
+    expect_true(seen$valid)
+    # Type ids, a dense union's offsets and the children are the input's.
+    input <- union_ext_array_spec(dense)
+    expect_identical(seen$spec$buffers, input$buffers, info = dense)
+    expect_identical(
+      lapply(seen$spec$children, `[[`, "buffers"),
+      lapply(input$children, `[[`, "buffers"),
+      info = dense
+    )
+    expect_identical(seen$spec$null_count, 0)
+  }
+})
+
+test_that("a sliced union reaches its handler with its offset", {
+  for (dense in c(TRUE, FALSE)) {
+    seen <- new.env()
+    local_registration("test.union", to = function(array, schema) {
+      seen$spec <- test_array_to_spec(array)
+      seen$valid <- arrow_validate(array, "full")
+      union_rows_text(array)
+    })
+    # A sliced array.
+    out <- arrow_to_r(union_ext_array(dense, offset = 1, length = 2))
+    expect_identical(out, c("x", "20"), info = dense)
+    expect_identical(seen$spec$offset, 1)
+    expect_identical(seen$spec$length, 2)
+    expect_true(seen$valid)
+
+    # A field of a sliced record batch: the union takes the batch's offset,
+    # its children stay whole, and its null count stays 0.
+    schema <- test_schema(zspec(
+      "+s",
+      children = list(zspec("i", "id"), union_ext_spec(dense, field = "u"))
+    ))
+    batch <- test_array(
+      schema,
+      2,
+      list(NULL),
+      offset = 2,
+      children = list(
+        test_array_spec(4, list(NULL, le_int(1:4, 4L))),
+        union_ext_array_spec(dense, length = 4)
+      )
+    )
+    out <- arrow_to_r(batch)
+    expect_identical(out$id, 3:4)
+    expect_identical(out$u, c("20", "y"), info = dense)
+    expect_identical(seen$spec$offset, 2)
+    expect_identical(seen$spec$null_count, 0)
+    expect_identical(
+      lapply(seen$spec$children, `[[`, "length"),
+      lapply(union_ext_array_spec(dense)$children, `[[`, "length")
+    )
+    expect_true(seen$valid)
+  }
+})
+
+test_that("a union handler applies at any depth and to every batch", {
+  local_registration("test.union", to = function(array, schema) {
+    union_rows_text(array)
+  })
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec(
+      "+s",
+      "s",
+      children = list(union_ext_spec(TRUE, field = "u"))
+    ))
+  ))
+  batch <- function(offset) {
+    test_array(
+      schema,
+      2,
+      list(NULL),
+      offset = offset,
+      children = list(test_array_spec(
+        4,
+        list(NULL),
+        children = list(union_ext_array_spec(TRUE, length = 4))
+      ))
+    )
+  }
+  out <- arrow_to_r(test_stream(schema, list(batch(0), batch(2))))
+  expect_identical(out$s$u, c("10", "x", "20", "y"))
+
+  # A stream of union arrays, no record batch around them.
+  stream <- test_stream(
+    test_schema(union_ext_spec(FALSE)),
+    list(union_ext_array(FALSE), union_ext_array(FALSE, offset = 3))
+  )
+  expect_identical(arrow_to_r(stream), c("10", "x", "20", "y", "y"))
+})
+
+test_that("a union without a handler still fails as before", {
+  union <- union_ext_array(TRUE)
+  expect_error(arrow_to_r(union), class = "zuarrow_lossy_error")
+  expect_snapshot(arrow_to_r(union), error = TRUE)
+  # A handler for another extension name does not claim it.
+  local_registration("other.union", to = function(array, schema) "never")
+  expect_error(arrow_to_r(union), class = "zuarrow_lossy_error")
+  expect_snapshot(arrow_to_r(union), error = TRUE)
+  # Nor does an inexact handler under the default policy.
+  local_registration(
+    "test.union",
+    to = function(array, schema) rep("loose", 4),
+    exact = FALSE
+  )
+  expect_error(arrow_to_r(union), class = "zuarrow_lossy_error")
+  expect_warning(
+    out <- arrow_to_r(union, lossy = "warn"),
+    class = "zuarrow_lossy_warning"
+  )
+  expect_identical(out, rep("loose", 4))
+})
+
+test_that("a prototype of a registered class converts a plain union", {
+  local_registration(
+    "test.union",
+    to = function(array, schema) {
+      structure(union_rows_text(array), class = "test_union")
+    },
+    from = function(x) union_ext_array(TRUE),
+    class = "test_union"
+  )
+  plain <- union_ext_spec(TRUE)
+  plain$metadata <- NULL
+  spec <- union_ext_array_spec(TRUE)
+  union <- test_array(
+    test_schema(plain),
+    4,
+    spec$buffers,
+    children = spec$children
+  )
+  expect_error(arrow_to_r(union), class = "zuarrow_lossy_error")
+  out <- arrow_to_r(union, to = structure(character(), class = "test_union"))
+  expect_identical(unclass(out), c("10", "x", "20", "y"))
+
+  # Writing is unchanged: the union the `from` handler returns is written
+  # as it is (#104) and reads back through the `to` handler.
+  df <- data.frame(id = 1:4)
+  df$g <- out
+  back <- arrow_read(arrow_write(df, NULL, format = "stream"))
+  expect_identical(back$g, out)
+})
+
+test_that("a geoarrow.geometry union reads through a registration", {
+  path <- test_data("geometry-union.arrows")
+  # Nothing registered: the union column fails.
+  expect_error(arrow_read(path), class = "zuarrow_lossy_error")
+
+  local_registration("geoarrow.geometry", to = geometry_wkt)
+  wkt <- c(
+    "POINT (1 2)",
+    "LINESTRING (0 0, 1 1)",
+    "POINT Z (3 4 5)",
+    "POINT (5 6)",
+    "POINT Z (-1 -2 -3)",
+    "LINESTRING (2 3, 4 5, 6 7)"
+  )
+  out <- arrow_read(path)
+  expect_identical(out$id, 1:6)
+  expect_identical(out$geom, wkt)
+
+  # The lazy reader, one batch at a time and as a whole.
+  stream <- arrow_read(path, lazy = TRUE)
+  expect_identical(arrow_next(stream)$geom, wkt[1:4])
+  expect_identical(arrow_to_r(stream)$geom, wkt[5:6])
+  expect_identical(arrow_to_r(arrow_read(path, lazy = TRUE))$geom, wkt)
+})

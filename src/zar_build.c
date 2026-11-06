@@ -221,3 +221,82 @@ SEXP zar_c_test_release(SEXP x, SEXP tag) {
   }
   return R_NilValue;
 }
+
+/* The inverse of zar_array_fill(): an array as the spec list(length,
+   null_count, offset, buffers, children, dictionary), each buffer the raw
+   bytes nanoarrow's view sizes it to, so tests can read the layout a
+   registered handler receives (#171). */
+static int64_t zar_view_buffer_size(const struct ArrowArrayView *view,
+                                    int64_t i) {
+  int32_t nv = view->n_variadic_buffers;
+  if (view->storage_type == NANOARROW_TYPE_STRING_VIEW ||
+      view->storage_type == NANOARROW_TYPE_BINARY_VIEW) {
+    if (i < 2) return view->buffer_views[i].size_bytes;
+    if (i < 2 + nv) return view->variadic_buffer_sizes[i - 2];
+    return (int64_t)nv * (int64_t)sizeof(int64_t);
+  }
+  return i < NANOARROW_MAX_FIXED_BUFFERS ? view->buffer_views[i].size_bytes : 0;
+}
+
+static SEXP zar_view_to_spec(const struct ArrowArrayView *view) {
+  const struct ArrowArray *array = view->array;
+  const char *names[] = {"length",   "null_count", "offset", "buffers",
+                         "children", "dictionary", ""};
+  SEXP out = PROTECT(Rf_mkNamed(VECSXP, names));
+  SET_VECTOR_ELT(out, 0, Rf_ScalarReal((double)array->length));
+  SET_VECTOR_ELT(out, 1, Rf_ScalarReal((double)array->null_count));
+  SET_VECTOR_ELT(out, 2, Rf_ScalarReal((double)array->offset));
+  SET_VECTOR_ELT(out, 3, Rf_allocVector(VECSXP, (R_xlen_t)array->n_buffers));
+  SEXP buffers = VECTOR_ELT(out, 3);
+  for (int64_t i = 0; i < array->n_buffers; i++) {
+    if (array->buffers[i] == NULL) continue;
+    int64_t size = zar_view_buffer_size(view, i);
+    SET_VECTOR_ELT(buffers, (R_xlen_t)i,
+                   Rf_allocVector(RAWSXP, (R_xlen_t)size));
+    if (size > 0) {
+      memcpy(RAW(VECTOR_ELT(buffers, (R_xlen_t)i)), array->buffers[i],
+             (size_t)size);
+    }
+  }
+  SET_VECTOR_ELT(out, 4,
+                 Rf_allocVector(VECSXP, (R_xlen_t)array->n_children));
+  SEXP children = VECTOR_ELT(out, 4);
+  for (int64_t i = 0; i < array->n_children; i++) {
+    SET_VECTOR_ELT(children, (R_xlen_t)i,
+                   zar_view_to_spec(view->children[i]));
+  }
+  if (view->dictionary != NULL) {
+    SET_VECTOR_ELT(out, 5, zar_view_to_spec(view->dictionary));
+  }
+  UNPROTECT(1);
+  return out;
+}
+
+static SEXP zar_view_to_spec_call(void *data) {
+  return zar_view_to_spec((const struct ArrowArrayView *)data);
+}
+
+static void zar_view_reset(void *data) {
+  ArrowArrayViewReset((struct ArrowArrayView *)data);
+}
+
+SEXP zar_c_test_array_to_spec(SEXP x) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  SEXP tag = zar_array_schema_xptr(x, &error);
+  if (tag == NULL) return zar_failure_from_error("handle", &error);
+  struct ArrowSchema *schema = zar_schema_from_xptr(tag, &error);
+  if (schema == NULL) return zar_failure_from_error("handle", &error);
+  struct ArrowArrayView view;
+  int code = ArrowArrayViewInitFromSchema(&view, schema, &error);
+  if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(&view, array, &error);
+  if (code != NANOARROW_OK) {
+    ArrowArrayViewReset(&view);
+    return zar_failure_from_error("format", &error);
+  }
+  /* The view is reset however the R allocations end, a longjmp included. */
+  return R_ExecWithCleanup(zar_view_to_spec_call, &view, zar_view_reset,
+                           &view);
+}

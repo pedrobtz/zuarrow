@@ -972,7 +972,11 @@ SEXP zar_c_array_child(SEXP x, SEXP r_k) {
   *dst = *src;
   dst->offset = src->offset + array->offset;
   dst->length = array->length;
-  if (src->n_buffers > 0 && src->buffers[0] == NULL) {
+  /* A union has no validity bitmap, so its null count is always 0: its
+     first buffer is the type ids (#171). */
+  const char *format = schema->children[k]->format;
+  int is_union = format != NULL && strncmp(format, "+u", 2) == 0;
+  if (is_union || (src->n_buffers > 0 && src->buffers[0] == NULL)) {
     dst->null_count = 0;
   } else if (array->offset != 0 || array->length != src->length) {
     dst->null_count = -1;

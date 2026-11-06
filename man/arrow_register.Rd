@@ -97,6 +97,14 @@ its index or run-end type, and \code{to} receives an array of its decoded
 values, one per row. Values of a fixed width, binary or string decode;
 any other layout is a \code{zuarrow_type_error}.
 
+A union has no R form, but an extension over a \code{dense_union} or a
+\code{sparse_union}, such as \code{geoarrow.geometry}, can be registered. Its \code{to}
+receives the union array as nanoarrow lays it out: the type ids, a dense
+union's offsets and every child, whole. A sliced union keeps its offset,
+and the children are not sliced, as the Arrow format lays it out. Its
+null count is 0, since a union has no validity bitmap. With no handler
+for its extension name, a union column is a \code{zuarrow_lossy_error}.
+
 Registered handlers apply to the top-level columns of a data frame and
 to the fields of nested data frames, at any depth, not to the items of a
 list column. A field under a null row of its data frame is \code{NA}.
