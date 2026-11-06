@@ -54,10 +54,10 @@ abi_objdump <- function(path = abi_dll_path()) {
 }
 
 # On Windows every DLL links the mingw-w64 runtime, whose startup code
-# imports abort, exit and the stdio table itself. R CMD check reads the
-# package's object files there, not the DLL, so it never sees them. These
-# are the imports of an empty DLL built with the same toolchain, so the
-# guard can count only what zuarrow adds.
+# imports abort, exit and the stdio table itself. R CMD check keeps only the
+# DLL symbols that the package's own object files reference (symbols.rds),
+# so it never reports them. These are the imports of an empty DLL built
+# with the same toolchain, so the guard can count only what zuarrow adds.
 abi_runtime_imports <- function() {
   if (.Platform$OS.type != "windows") {
     return(character())
