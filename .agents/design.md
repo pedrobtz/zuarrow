@@ -483,7 +483,7 @@ calling the types lossy outright while §6.3 checks them by value.
 | `time32`, `time64` | `difftime` | `zutempo` |
 | `duration` | `difftime` | `zutempo` |
 | `interval` (all three) | none; always an error | `zutempo` |
-| `dense_union`, `sparse_union` | none; always an error | none planned |
+| `dense_union`, `sparse_union` | none; always an error, unless a registered extension handler claims the field (§6.10) | none planned |
 
 Every row but the last two also has an exact character form, which
 `lossy = "character"` selects (§6.3).
@@ -804,6 +804,23 @@ type is: `arrow.bool8`, `arrow.json` and `arrow.uuid` refuse an inexact
 registration, and an inexact registration of any other name that matches
 a column whose storage converts exactly is a `zuarrow_registry_error`
 when the policy would use it.
+
+*Decided 2026-11-06 (#171):* an extension over a `dense_union` or
+`sparse_union` storage type is dispatched to its registered `to` handler
+like any other storage type, at the top level and in struct fields at any
+depth, sliced or not, in `arrow_to_r()`, `arrow_read()` and every stream;
+a prototype of a registered class in `to` selects that handler for a
+plain union too. The handler receives the union array as nanoarrow lays
+it out: the type ids, a dense union's offsets and every child, unsliced,
+with the slice in the array's offset and a null count of 0. This follows
+the precedence rule (the extension name wins) and #133: a union has no
+exact default, so an exact registration makes a lossy default exact,
+which the family rule allows, and an inexact one is used only under
+`"warn"` or `"allow"`. A union with no handler for its extension name is
+still a `zuarrow_lossy_error`, and the conformance suite's `union` case
+still raises it. Writing is unchanged: a union array, from a handle or
+from a `from` handler, is written as it is (#104). zugeo asked for this
+for `geoarrow.geometry`, whose mixed columns are dense unions.
 
 Decided 2026-11-03 under X4 and X5 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6):
 

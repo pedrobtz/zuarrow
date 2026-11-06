@@ -100,6 +100,14 @@ zar_format_pattern <- paste0(
 #' values, one per row. Values of a fixed width, binary or string decode;
 #' any other layout is a `zuarrow_type_error`.
 #'
+#' A union has no R form, but an extension over a `dense_union` or a
+#' `sparse_union`, such as `geoarrow.geometry`, can be registered. Its `to`
+#' receives the union array as nanoarrow lays it out: the type ids, a dense
+#' union's offsets and every child, whole. A sliced union keeps its offset,
+#' and the children are not sliced, as the Arrow format lays it out. Its
+#' null count is 0, since a union has no validity bitmap. With no handler
+#' for its extension name, a union column is a `zuarrow_lossy_error`.
+#'
 #' Registered handlers apply to the top-level columns of a data frame and
 #' to the fields of nested data frames, at any depth, not to the items of a
 #' list column. A field under a null row of its data frame is `NA`.

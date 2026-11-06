@@ -26,7 +26,9 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' * `"allow"` converts to the nearest R type silently. An `int64` column
 #'   becomes `bit64`'s `integer64`, exactly, when `bit64` is loaded.
 #'
-#' Intervals and unions have no R form and always fail.
+#' Intervals and unions have no R form and always fail, unless a handler
+#' registered with [arrow_register()] for the column's extension name
+#' converts it.
 #'
 #' `to` names the R type a column must become: `character()`, `double()`,
 #' `integer()`, or [arrow_matrix()] for a `fixed_size_list`. A target that
