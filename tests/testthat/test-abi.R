@@ -22,7 +22,11 @@ test_that("no symbol CRAN's compiled-code check reports is referenced", {
   # The object calls R's API, so an empty or unparsed listing is a broken
   # tool or pattern, not a clean object.
   expect_true("Rf_allocVector" %in% imports)
-  expect_identical(intersect(imports, abi_forbidden), character())
+  runtime <- sub("^_+", "", abi_runtime_imports())
+  expect_identical(
+    intersect(setdiff(imports, runtime), abi_forbidden),
+    character()
+  )
 })
 
 test_that("objdump import tables parse with and without an ordinal column", {

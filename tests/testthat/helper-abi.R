@@ -49,8 +49,38 @@ abi_clean <- function(x) {
   x
 }
 
-abi_objdump <- function() {
-  abi_run(abi_tool("objdump"), c("-p", shQuote(abi_dll_path())))
+abi_objdump <- function(path = abi_dll_path()) {
+  abi_run(abi_tool("objdump"), c("-p", shQuote(path)))
+}
+
+# On Windows every DLL links the mingw-w64 runtime, whose startup code
+# imports abort, exit and the stdio table itself. R CMD check reads the
+# package's object files there, not the DLL, so it never sees them. These
+# are the imports of an empty DLL built with the same toolchain, so the
+# guard can count only what zuarrow adds.
+abi_runtime_imports <- function() {
+  if (.Platform$OS.type != "windows") {
+    return(character())
+  }
+  dir <- tempfile("abi-baseline")
+  dir.create(dir)
+  on.exit(unlink(dir, recursive = TRUE), add = TRUE)
+  writeLines("void zar_abi_baseline(void) {}", file.path(dir, "baseline.c"))
+  r <- file.path(R.home("bin"), "R")
+  status <- withr::with_dir(
+    dir,
+    suppressWarnings(system2(
+      r,
+      c("CMD", "SHLIB", "baseline.c"),
+      stdout = FALSE,
+      stderr = FALSE
+    ))
+  )
+  dll <- file.path(dir, paste0("baseline", .Platform$dynlib.ext))
+  if (!identical(status, 0L) || !file.exists(dll)) {
+    abi_unavailable("R CMD SHLIB could not build the baseline DLL")
+  }
+  abi_objdump_imports(abi_objdump(dll))
 }
 
 abi_exports <- function() {
