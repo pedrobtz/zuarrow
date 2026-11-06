@@ -80,15 +80,21 @@ arrow_to_r <- function(
   lossy = zar_lossy_policies,
   copy = TRUE
 ) {
-  call <- sys.call()
+  zar_to_r(x, to, lossy, copy, sys.call())
+}
+
+# arrow_to_r() with the condition call of the exported function or method
+# that uses it (#124).
+zar_to_r <- function(x, to, lossy, copy, call) {
   lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
   zar_check_flag(copy, "copy", call)
   if (zar_is_array(x)) {
     zar_check_live(x, call = call)
-    return(zar_convert(list(x), arrow_schema(x), to, lossy, call, copy = copy))
+    schema <- zar_as_schema(x, call)
+    return(zar_convert(list(x), schema, to, lossy, call, copy = copy))
   }
   if (zar_is_stream(x)) {
-    schema <- arrow_schema(x)
+    schema <- zar_as_schema(x, call)
     batches <- zar_stream_batches(x, call)
     return(zar_convert(batches, schema, to, lossy, call, copy = copy))
   }
@@ -117,7 +123,8 @@ arrow_next <- function(
   if (is.null(batch)) {
     return(NULL)
   }
-  zar_convert(list(batch), arrow_schema(stream), to, lossy, call, copy = copy)
+  schema <- zar_as_schema(stream, call)
+  zar_convert(list(batch), schema, to, lossy, call, copy = copy)
 }
 
 #' @rdname arrow_to_r
@@ -137,18 +144,15 @@ as.data.frame.zuarrow_array_stream <- function(
   lossy = zar_lossy_policies,
   copy = TRUE
 ) {
-  call <- sys.call()
-  zar_check_row_names(row.names, call)
-  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
-  out <- arrow_to_r(x, to = to, lossy = lossy, copy = copy)
-  if (!is.data.frame(out)) {
-    zar_abort(
-      "type",
-      "Only a stream of struct converts to a data frame.",
-      call = call
-    )
-  }
-  out
+  zar_as_data_frame(
+    x,
+    row.names,
+    to,
+    lossy,
+    copy,
+    "a stream of struct",
+    sys.call()
+  )
 }
 
 #' @rdname arrow_to_r
@@ -162,14 +166,20 @@ as.data.frame.zuarrow_array <- function(
   lossy = zar_lossy_policies,
   copy = TRUE
 ) {
-  call <- sys.call()
-  zar_check_row_names(row.names, call)
-  lossy <- zar_arg_match(lossy, zar_lossy_policies, "lossy", call)
-  out <- arrow_to_r(x, to = to, lossy = lossy, copy = copy)
+  zar_as_data_frame(x, row.names, to, lossy, copy, "a struct array", sys.call())
+}
+
+# The as.data.frame() methods; `what` names a handle that converts to a
+# data frame.
+zar_as_data_frame <- function(x, row.names, to, lossy, copy, what, call) {
+  if (!is.null(row.names)) {
+    zar_abort("type", "`row.names` must be `NULL`.", call = call)
+  }
+  out <- zar_to_r(x, to, lossy, copy, call)
   if (!is.data.frame(out)) {
     zar_abort(
       "type",
-      "Only a struct array converts to a data frame.",
+      sprintf("Only %s converts to a data frame.", what),
       call = call
     )
   }
@@ -189,13 +199,7 @@ as.vector.zuarrow_array <- function(x, mode = "any") {
       call = call
     )
   }
-  arrow_to_r(x)
-}
-
-zar_check_row_names <- function(row.names, call) {
-  if (!is.null(row.names)) {
-    zar_abort("type", "`row.names` must be `NULL`.", call = call)
-  }
+  zar_to_r(x, NULL, "error", TRUE, call)
 }
 
 zar_bit64_loaded <- function() isNamespaceLoaded("bit64")
@@ -245,6 +249,7 @@ zar_to_code <- function(proto, call) {
   )
 }
 
+# The prototype of an array's `to`: itself, or the one element of a list.
 zar_single_prototype <- function(to) {
   if (is.list(to) && !is.object(to)) to[[1L]] else to
 }
@@ -254,17 +259,14 @@ zar_to_codes <- function(to, names, frame, call) {
     return(integer())
   }
   if (!frame) {
-    if (is.list(to) && !is.object(to)) {
-      if (length(to) != 1L) {
-        zar_abort(
-          "type",
-          "`to` must be a single prototype for an array.",
-          call = call
-        )
-      }
-      to <- to[[1L]]
+    if (is.list(to) && !is.object(to) && length(to) != 1L) {
+      zar_abort(
+        "type",
+        "`to` must be a single prototype for an array.",
+        call = call
+      )
     }
-    return(zar_to_code(to, call))
+    return(zar_to_code(zar_single_prototype(to), call))
   }
   if (!is.list(to) || is.null(names(to)) || any(!nzchar(names(to)))) {
     zar_abort("type", "`to` must be a named list of prototypes.", call = call)
@@ -297,7 +299,7 @@ zar_convert <- function(
   copy = TRUE,
   prefix = ""
 ) {
-  spec <- zar_check(.Call(zar_c_schema_to_spec, schema))
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema), call = call)
   frame <- identical(spec$format, "+s")
   fields <- if (frame) spec$children else list(spec)
   names <- zar_field_names(fields)
@@ -306,35 +308,7 @@ zar_convert <- function(
     codes <- integer(length(fields))
   }
 
-  # Registered handlers convert their columns in R (section 6.10); an
-  # inexact one only when the policy accepts loss. A struct with a handled
-  # field at any depth is converted in R too, field by field. A prototype of
-  # a registered class in `to` names its handler outright.
-  handlers <- lapply(seq_along(fields), function(k) {
-    if (codes[[k]] == 9L) {
-      proto <- if (frame) to[[names[[k]]]] else zar_single_prototype(to)
-      h <- zar_handler_for_prototype(proto)
-      h$decode <- !is.null(zar_encoded_values(fields[[k]]))
-      if (!h$exact && lossy %in% c("error", "character")) {
-        zar_abort(
-          "type",
-          sprintf(
-            paste(
-              "The registration of `%s` that `to` names is not exact;",
-              "use `lossy = \"warn\"` or `\"allow\"` to accept that."
-            ),
-            h$key
-          ),
-          call = call
-        )
-      }
-      return(h)
-    }
-    if (codes[[k]] != 0L) {
-      return(NULL)
-    }
-    zar_field_handler(fields[[k]], lossy, call)
-  })
+  handlers <- zar_column_handlers(fields, names, codes, to, frame, lossy, call)
   handled <- !vapply(handlers, is.null, NA)
   codes[handled] <- 9L
 
@@ -398,6 +372,45 @@ zar_convert <- function(
   if (!frame) {
     return(out$columns[[1L]])
   }
+  zar_data_frame(out, spec)
+}
+
+# Each column's registered handler, or NULL for a column the C kernel
+# converts. Registered handlers convert their columns in R (section
+# 6.10); an inexact one only when the policy accepts loss. A struct with a
+# handled field at any depth is converted in R too, field by field. A
+# prototype of a registered class in `to` names its handler outright.
+zar_column_handlers <- function(fields, names, codes, to, frame, lossy, call) {
+  lapply(seq_along(fields), function(k) {
+    if (codes[[k]] == 9L) {
+      proto <- if (frame) to[[names[[k]]]] else zar_single_prototype(to)
+      h <- zar_handler_for_prototype(proto)
+      h$decode <- !is.null(zar_encoded_values(fields[[k]]))
+      if (!h$exact && lossy %in% c("error", "character")) {
+        zar_abort(
+          "type",
+          sprintf(
+            paste(
+              "The registration of `%s` that `to` names is not exact;",
+              "use `lossy = \"warn\"` or `\"allow\"` to accept that."
+            ),
+            h$key
+          ),
+          call = call
+        )
+      }
+      return(h)
+    }
+    if (codes[[k]] != 0L) {
+      return(NULL)
+    }
+    zar_field_handler(fields[[k]], lossy, call)
+  })
+}
+
+# The converted columns of a struct as a data frame, with the schema's
+# metadata.
+zar_data_frame <- function(out, spec) {
   df <- out$columns
   names(df) <- out$names
   attr(df, "row.names") <- .set_row_names(as.integer(out$rows))
@@ -481,7 +494,7 @@ zar_convert_struct_field <- function(
   })
   out <- zar_convert(
     children,
-    zar_field_schema(schema, k),
+    zar_field_schema(schema, k, call),
     NULL,
     lossy,
     call,
@@ -543,8 +556,8 @@ zar_apply_handler <- function(
   call
 ) {
   columns <- if (length(arrays) == 0L) {
-    field_schema <- if (frame) zar_field_schema(schema, k) else schema
-    list(zar_empty_array(field_schema))
+    field_schema <- if (frame) zar_field_schema(schema, k, call) else schema
+    list(zar_empty_array(field_schema, call))
   } else if (frame) {
     lapply(arrays, function(a) {
       zar_check(.Call(zar_c_array_child, a, k - 1L), call = call)
@@ -583,13 +596,14 @@ zar_apply_handler <- function(
   out
 }
 
-zar_field_schema <- function(schema, k) {
-  spec <- zar_check(.Call(zar_c_schema_to_spec, schema))$children[[k]]
-  zar_check(.Call(zar_c_schema_from_spec, spec))
+zar_field_schema <- function(schema, k, call) {
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema), call = call)
+  field <- spec$children[[k]]
+  zar_check(.Call(zar_c_schema_from_spec, field), call = call)
 }
 
 # A zero-length array of a schema, for a handler when there are no batches.
-zar_empty_array <- function(schema) {
+zar_empty_array <- function(schema, call) {
   empty_spec <- function(spec) {
     list(
       length = 0,
@@ -604,8 +618,11 @@ zar_empty_array <- function(schema) {
       }
     )
   }
-  spec <- zar_check(.Call(zar_c_schema_to_spec, schema))
-  zar_check(.Call(zar_c_array_from_buffers, schema, empty_spec(spec)))
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema), call = call)
+  zar_check(
+    .Call(zar_c_array_from_buffers, schema, empty_spec(spec)),
+    call = call
+  )
 }
 
 # Field metadata other than the extension keys becomes the column's

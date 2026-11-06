@@ -4,7 +4,7 @@
 \alias{arrow_validate}
 \title{Validate a handle}
 \usage{
-arrow_validate(x, level = c("full", "default", "minimal"))
+arrow_validate(x, level = zar_validation_levels)
 }
 \arguments{
 \item{x}{A schema, array or stream handle.}

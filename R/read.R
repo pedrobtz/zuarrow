@@ -136,7 +136,7 @@ arrow_read <- function(
   if (lazy) {
     return(stream)
   }
-  schema <- arrow_schema(stream)
+  schema <- zar_as_schema(stream, call)
   batches <- zar_stream_batches(stream, call)
   zar_convert(
     batches,
@@ -152,13 +152,7 @@ arrow_read <- function(
 # A reader over one source, with only `columns` decoded.
 zar_open_reader <- function(x, columns, lazy, limits, call) {
   source <- zar_read_source(x, limits, call)
-  bounds <- limits[c(
-    "max_message",
-    "max_depth",
-    "max_batch_rows",
-    "max_bytes",
-    "max_dictionary"
-  )]
+  bounds <- limits[names(formals(arrow_limits))]
   stream <- zar_check(
     .Call(
       zar_c_reader_open,
@@ -211,9 +205,9 @@ zar_read_list <- function(x, columns, lazy, to, lossy, limits, copy, call) {
     }
     streams[[i]] <- zar_open_reader(source, columns, lazy, limits, call)
   }
-  schema <- arrow_schema(streams[[1L]])
+  schema <- zar_as_schema(streams[[1L]], call)
   for (i in seq_along(streams)[-1L]) {
-    if (!arrow_equal(arrow_schema(streams[[i]]), schema)) {
+    if (!arrow_equal(zar_as_schema(streams[[i]], call), schema)) {
       zar_abort(
         "format",
         sprintf("Stream %d's schema differs from the first stream's.", i),
@@ -266,6 +260,9 @@ zar_read_source <- function(x, limits, call) {
   )
 }
 
+# The bytes read from a connection at a time, 1 MiB.
+zar_connection_block <- 1048576L
+
 # A connection is read through R's connection API in blocks, so a gzipped
 # file or a socket arrives as it is read, up to max_bytes.
 zar_read_connection <- function(con, limits, call) {
@@ -277,7 +274,7 @@ zar_read_connection <- function(con, limits, call) {
   total <- 0
   repeat {
     block <- zar_io(
-      readBin(con, raw(), 1048576L),
+      readBin(con, raw(), zar_connection_block),
       "Can't read the connection",
       call
     )
@@ -288,7 +285,7 @@ zar_read_connection <- function(con, limits, call) {
     if (total > limits$max_bytes) {
       zar_abort(
         "limit",
-        "The connection holds more than max_bytes.",
+        "The connection holds more than `max_bytes`.",
         call = call
       )
     }
@@ -298,7 +295,10 @@ zar_read_connection <- function(con, limits, call) {
 }
 
 zar_column_index <- function(stream, columns, call) {
-  spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(stream)))
+  spec <- zar_check(
+    .Call(zar_c_schema_to_spec, zar_as_schema(stream, call)),
+    call = call
+  )
   names <- zar_field_names(spec$children)
   if (is.character(columns)) {
     idx <- match(columns, names)

@@ -28,7 +28,10 @@ arrow_metadata <- function(x) {
       call = call
     )
   }
-  raw <- zar_check(.Call(zar_c_schema_metadata, arrow_schema(x)))
+  raw <- zar_check(
+    .Call(zar_c_schema_metadata, zar_as_schema(x, call)),
+    call = call
+  )
   zar_metadata_values(raw)
 }
 
@@ -73,10 +76,10 @@ zar_metadata_values <- function(raw) {
     )
   }
   raw <- zar_metadata_raw(value, call = call)
-  zar_check(.Call(zar_c_schema_with_metadata, x, raw))
+  zar_check(.Call(zar_c_schema_with_metadata, x, raw), call = call)
 }
 
-zar_metadata_raw <- function(value, call = sys.call(-1)) {
+zar_metadata_raw <- function(value, call) {
   if (is.null(value) || length(value) == 0L) {
     return(NULL)
   }

@@ -157,6 +157,7 @@ zar_exact_target <- function(format) {
   NULL
 }
 
-zar_is_struct <- function(schema) {
-  identical(zar_check(.Call(zar_c_schema_to_spec, schema))$format, "+s")
+zar_is_struct <- function(schema, call) {
+  spec <- zar_check(.Call(zar_c_schema_to_spec, schema), call = call)
+  identical(spec$format, "+s")
 }
