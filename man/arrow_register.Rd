@@ -59,7 +59,8 @@ exact format string, then the pattern registered first. So a
 \code{decimal128(38, 0)} column is read by a \code{"d:*"} registration, even where
 it holds integers; naming a prototype of another registered class in the
 \code{to} of \code{\link[=arrow_to_r]{arrow_to_r()}} is how a caller opts into that class's handler
-instead.
+instead. A package that registers a pattern again, as on a reload,
+keeps its place among the patterns; \code{arrow_unregister()} forgets it.
 
 \code{to} converts Arrow to R: a function of \verb{(array, schema)}, the column's
 array and schema handles, returning an R vector of the array's length.
@@ -72,14 +73,22 @@ to its \code{NA} sentinel: an error under \code{"error"}, \code{NA} with a warni
 \code{zuarrow_registry_error}.
 
 \code{from} converts R to Arrow: a function of \code{(x)} returning an array
-handle, used for every object that inherits from \code{class}.
+handle of \code{x}'s length, used for every object that inherits from
+\code{class}. It receives the whole column, and the column's type is that
+array's, in \code{\link[=arrow_schema]{arrow_schema()}} too. An array of another length is a
+\code{zuarrow_registry_error}. Where several registrations' classes match an
+object, the one whose class comes first in \code{class(x)} is used, for \code{from}
+and for a prototype in the \code{to} of \code{\link[=arrow_to_r]{arrow_to_r()}}.
 
 Inside \code{to}, \code{arrow_to_r()} on the same column uses the built-in
 conversion, so a handler can start from it.
 
 A registration declares whether it is exact. One that is not is used
 only under \code{lossy = "warn"} or \code{"allow"}, and may not replace a type
-whose built-in conversion is exact. Registering a key again replaces the
+whose built-in conversion is exact. An extension is exact when its
+storage type is: an inexact registration for \code{arrow.bool8}, \code{arrow.json}
+or \code{arrow.uuid} is refused, and one that would read a column of exact
+storage is a \code{zuarrow_registry_error}. Registering a key again replaces the
 earlier registration, with a message naming both packages when another
 package owned it.
 

@@ -157,7 +157,9 @@ zar_infer_type <- function(x, name, call = NULL) {
   }
   handler <- zar_handler_for_class(x)
   if (!is.null(handler)) {
-    array <- zar_from_handler(handler, x[0L], call)
+    # The whole column, as zar_prebuild() builds it: a handler may pick the
+    # type from the values (#113).
+    array <- zar_from_handler(handler, x, call)
     spec <- zar_check(.Call(zar_c_schema_to_spec, arrow_schema(array)))
     spec$name <- name
     return(spec)
@@ -471,6 +473,21 @@ zar_from_handler <- function(handler, x, call = NULL) {
       sprintf(
         "The `from` handler for `%s` did not return an array handle.",
         handler$key
+      ),
+      call = call
+    )
+  }
+  # A handler builds a live array of one value per element, at the top level
+  # as in a data frame (#123). A released array is a handle error.
+  n <- zar_check(.Call(zar_c_array_info, array), call = call)$length
+  if (n != length(x)) {
+    zar_abort(
+      "registry",
+      sprintf(
+        "The `from` handler for `%s` built %.0f values, not %.0f.",
+        handler$key,
+        n,
+        length(x)
       ),
       call = call
     )

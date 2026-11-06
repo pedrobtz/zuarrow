@@ -333,7 +333,7 @@ zar_convert <- function(
     if (codes[[k]] != 0L) {
       return(NULL)
     }
-    zar_field_handler(fields[[k]], lossy)
+    zar_field_handler(fields[[k]], lossy, call)
   })
   handled <- !vapply(handlers, is.null, NA)
   codes[handled] <- 9L
@@ -411,27 +411,40 @@ zar_convert <- function(
 
 # The handler for a field, or list(nested = TRUE) for a struct one of
 # whose fields, at any depth, has a handler; NULL otherwise.
-zar_field_handler <- function(field, lossy) {
+zar_field_handler <- function(field, lossy, call = NULL) {
   # A dictionary or run-end encoded field is looked up by its value type,
   # never by its index or run-end type, and its handler gets the decoded
   # values (#93).
   values <- zar_encoded_values(field)
-  h <- if (is.null(values)) {
-    zar_handler_for(field$format, zar_extension_name(field))
-  } else {
-    extension <- zar_extension_name(field)
-    if (!nzchar(extension)) {
-      extension <- zar_extension_name(values)
-    }
-    zar_handler_for(values$format, extension)
+  storage <- if (is.null(values)) field$format else values$format
+  extension <- zar_extension_name(field)
+  if (!is.null(values) && !nzchar(extension)) {
+    extension <- zar_extension_name(values)
   }
+  h <- zar_handler_for(storage, extension)
   if (!is.null(h) && (h$exact || !lossy %in% c("error", "character"))) {
+    # An extension is exact when its storage type is (#133): an inexact
+    # registration may not make it lossy.
+    if (!h$exact && h$kind == "extension" && zar_storage_exact(field)) {
+      zar_abort(
+        "registry",
+        sprintf(
+          paste(
+            "The registration of `%s` is not exact, but its storage type",
+            "`%s` converts exactly."
+          ),
+          h$key,
+          storage
+        ),
+        call = call
+      )
+    }
     h$decode <- !is.null(values)
     return(h)
   }
   if (identical(field$format, "+s")) {
     for (child in field$children) {
-      if (!is.null(zar_field_handler(child, lossy))) {
+      if (!is.null(zar_field_handler(child, lossy, call))) {
         return(list(key = field$format, nested = TRUE, exact = TRUE))
       }
     }
