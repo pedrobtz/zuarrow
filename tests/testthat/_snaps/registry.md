@@ -13,3 +13,19 @@
       Error in `arrow_to_r()`:
       ! Column `s$b` (Arrow format `l`) can't be converted to R exactly: row 1 holds 9007199254740994. Load zuint to read it exactly, or use `lossy = "character"` for its exact text, or `lossy = "allow"` to accept the loss.
 
+# a union without a handler still fails as before
+
+    Code
+      arrow_to_r(union)
+    Condition
+      Error in `arrow_to_r()`:
+      ! Column 1 (Arrow format `+ud:3,7`) can't be converted to R exactly: dense_union has no R form. Arrow intervals and unions have no R form.
+
+---
+
+    Code
+      arrow_to_r(union)
+    Condition
+      Error in `arrow_to_r()`:
+      ! Column 1 (Arrow format `+ud:3,7`) can't be converted to R exactly: dense_union has no R form. Arrow intervals and unions have no R form.
+
