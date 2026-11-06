@@ -34,7 +34,11 @@ jobs:
       # tests, and step 500 ran 10 minutes, just over the budget. Cost
       # scales as about 1/step, so 1000 is about 5 minutes.
       quick-step: 1000
-      timeout-minutes: 240
+      # 2026-11-06: step 20 took 198 of 240 minutes on main (136 in tests),
+      # and #172's run passed every file but was killed at 240 on a slower
+      # runner. 360 is GitHub's limit for a hosted job; sample more loops
+      # (helper-gctorture.R) before it is reached.
+      timeout-minutes: 360
       # ZUARROW_GCTORTURE makes the loops that repeat one path run a fixed
       # sample (helper-gctorture.R); every path still runs.
       env: |
