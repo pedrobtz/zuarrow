@@ -109,7 +109,8 @@ exact format string, then the pattern registered first. So a
 <code>decimal128(38, 0)</code> column is read by a <code>"d:*"</code> registration, even where
 it holds integers; naming a prototype of another registered class in the
 <code>to</code> of <code><a href="arrow_to_r.html">arrow_to_r()</a></code> is how a caller opts into that class's handler
-instead.</p>
+instead. A package that registers a pattern again, as on a reload,
+keeps its place among the patterns; <code>arrow_unregister()</code> forgets it.</p>
 <p><code>to</code> converts Arrow to R: a function of <code>(array, schema)</code>, the column's
 array and schema handles, returning an R vector of the array's length.
 It may be implemented in C against nanoarrow's <code>r.h</code> layout. It is called
@@ -120,12 +121,20 @@ to its <code>NA</code> sentinel: an error under <code>"error"</code>, <code>NA</
 <code>"warn"</code>. A <code>to</code> that cannot be called with two or three arguments is a
 <code>zuarrow_registry_error</code>.</p>
 <p><code>from</code> converts R to Arrow: a function of <code>(x)</code> returning an array
-handle, used for every object that inherits from <code>class</code>.</p>
+handle of <code>x</code>'s length, used for every object that inherits from
+<code>class</code>. It receives the whole column, and the column's type is that
+array's, in <code><a href="arrow_schema.html">arrow_schema()</a></code> too. An array of another length is a
+<code>zuarrow_registry_error</code>. Where several registrations' classes match an
+object, the one whose class comes first in <code>class(x)</code> is used, for <code>from</code>
+and for a prototype in the <code>to</code> of <code><a href="arrow_to_r.html">arrow_to_r()</a></code>.</p>
 <p>Inside <code>to</code>, <code><a href="arrow_to_r.html">arrow_to_r()</a></code> on the same column uses the built-in
 conversion, so a handler can start from it.</p>
 <p>A registration declares whether it is exact. One that is not is used
 only under <code>lossy = "warn"</code> or <code>"allow"</code>, and may not replace a type
-whose built-in conversion is exact. Registering a key again replaces the
+whose built-in conversion is exact. An extension is exact when its
+storage type is: an inexact registration for <code>arrow.bool8</code>, <code>arrow.json</code>
+or <code>arrow.uuid</code> is refused, and one that would read a column of exact
+storage is a <code>zuarrow_registry_error</code>. Registering a key again replaces the
 earlier registration, with a message naming both packages when another
 package owned it.</p>
 <p>A dictionary or run-end encoded column is matched by its value type, not

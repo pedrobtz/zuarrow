@@ -73,7 +73,9 @@ exact format string, then the pattern registered first. So a
 it holds integers; naming a prototype of another registered class in the
 `to` of
 [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
-is how a caller opts into that class's handler instead.
+is how a caller opts into that class's handler instead. A package that
+registers a pattern again, as on a reload, keeps its place among the
+patterns; `arrow_unregister()` forgets it.
 
 `to` converts Arrow to R: a function of `(array, schema)`, the column's
 array and schema handles, returning an R vector of the array's length.
@@ -87,7 +89,15 @@ under `"warn"`. A `to` that cannot be called with two or three arguments
 is a `zuarrow_registry_error`.
 
 `from` converts R to Arrow: a function of `(x)` returning an array
-handle, used for every object that inherits from `class`.
+handle of `x`'s length, used for every object that inherits from
+`class`. It receives the whole column, and the column's type is that
+array's, in
+[`arrow_schema()`](https://pedrobtz.github.io/zuarrow/reference/arrow_schema.md)
+too. An array of another length is a `zuarrow_registry_error`. Where
+several registrations' classes match an object, the one whose class
+comes first in `class(x)` is used, for `from` and for a prototype in the
+`to` of
+[`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md).
 
 Inside `to`,
 [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
@@ -96,9 +106,12 @@ from it.
 
 A registration declares whether it is exact. One that is not is used
 only under `lossy = "warn"` or `"allow"`, and may not replace a type
-whose built-in conversion is exact. Registering a key again replaces the
-earlier registration, with a message naming both packages when another
-package owned it.
+whose built-in conversion is exact. An extension is exact when its
+storage type is: an inexact registration for `arrow.bool8`, `arrow.json`
+or `arrow.uuid` is refused, and one that would read a column of exact
+storage is a `zuarrow_registry_error`. Registering a key again replaces
+the earlier registration, with a message naming both packages when
+another package owned it.
 
 A dictionary or run-end encoded column is matched by its value type, not
 its index or run-end type, and `to` receives an array of its decoded
