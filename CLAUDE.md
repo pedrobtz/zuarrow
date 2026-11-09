@@ -3,6 +3,16 @@
 This file provides guidance to Claude Code (claude.ai/code) when working
 with code in this repository.
 
+## Shared conventions
+
+The portfolio’s shared rules are synced into `.claude/shared/` from
+`pedrobtz/packages:claude/shared/`. Never edit them here. Where this
+file and a shared file disagree, this file wins for zuarrow.
+
+@.claude/shared/workflow.md @.claude/shared/r-package.md
+@.claude/shared/ci.md @.claude/shared/native-code.md
+@.claude/shared/correctness.md
+
 ## What this is
 
 `zuarrow` moves columns between R and the Apache Arrow columnar format:
@@ -18,9 +28,9 @@ naming the column and the exact target. The default is never `warn` or
 The one hard dependency is `zukomp` (`Imports` and `LinkingTo`), which
 supplies the IPC codecs. `nanoarrow`, `arrow`, `DBI` and `duckdb` are
 not dependencies at all, not even `Suggests`: they are test oracles that
-run in CI only (see Testing conventions). The package is not a query
-engine, not Parquet, not a table object model, not transport (Flight,
-ADBC, PyCapsule) and not a replacement for `nanoarrow`: its handles are
+run in CI only (see Testing). The package is not a query engine, not
+Parquet, not a table object model, not transport (Flight, ADBC,
+PyCapsule) and not a replacement for `nanoarrow`: its handles are
 nanoarrow’s handles, so a session with both loaded passes objects
 between them without conversion.
 
@@ -34,80 +44,53 @@ to overturn, and its §15 open questions are still open.
 
 ## Current state
 
-Stages 0 to 9 of `.agents/roadmap.md` are merged. Stage 10 (v0.1.0
-readiness) is in progress, and Stage 11 (Review) follows it. The first
-critical review (2026-10-27, issues labelled `review`) has been fixed.
+Verified 2026-11-09: every stage of `.agents/roadmap.md`, 0 to 11, is
+merged and its issue closed, Stage 11 (Review) on 2026-11-05. What
+remains is the [CRAN-submission issue
+(#12)](https://github.com/pedrobtz/zuarrow/issues/12).
 
-The version stays at `0.0.0.9000` until submission (decided 2026-11-05);
-setting `0.1.0` is a step of the CRAN-submission issue (#12). It builds
-on zukomp’s development version through `Remotes:`. Submission waits for
-zukomp 0.2.0, the release with the codecs, to reach CRAN, which can
-happen 2026-11-27 at the earliest. The first step of the CRAN-submission
-issue (#12) is then to remove `Remotes:` and set `zukomp (>= 0.2.0)`.
-Stage 10 also wants an upstream nanoarrow pull request for vendored
-patch 0004.
+The first critical review (2026-10-27, issues labelled `review`) has
+been fixed. Stage 10 wanted an upstream nanoarrow pull request for
+vendored patch 0004; that was not rechecked on 2026-11-09.
 
 `decimal`’s registration (decimal#24) is optional. It is tested when
 `decimal` provides it, and 0.1.0 does not wait for it (design §12).
 
-## Stage tracking
+## Versions and dependents
 
-Progress toward the next version is tracked as GitHub sub-issues, so the
-parent issue shows a progress bar such as “6 of 7”.
+The current version’s parent issue is [v0.1.0
+(#1)](https://github.com/pedrobtz/zuarrow/issues/1); submission is
+tracked in [CRAN-submission
+(#12)](https://github.com/pedrobtz/zuarrow/issues/12).
 
-- **One parent issue per target version**, titled with the bare version,
-  for example `v0.1.0`. `v0.1.0` issue: created by `pkg-roadmap`.
-- **One sub-issue per roadmap stage**, titled as the roadmap titles it,
-  for example `Stage 3 — R interface`, and linking to that section. The
-  number of stages is whatever the roadmap has; there is no fixed scale.
-- **Every tracking issue carries the `stage` label**, so it can be told
-  apart from bug and feature issues and left out of open-issue counts.
-- **Close a stage by merging its pull request.** Put `Closes #<n>` in
-  the body of the stage’s pull request. Never close a stage whose exit
-  criteria are not met; record a deviation in the roadmap first.
-- **The roadmap stays authoritative.** The issues record which stages
-  are done, not what a stage requires. Adding, removing or renaming a
-  stage means editing the roadmap and the sub-issues in the same change.
-- **Each stage has a CI tier, `quick` or `full`.** The roadmap sets it,
-  and `quick` is the default. See Continuous integration for what each
-  means. The second-to-last stage, `Full CI`, runs the full set and
-  fixes what it finds before `v0.1.0 readiness`.
-- Close the parent issue when CRAN accepts the version and it is tagged.
-  Opening a parent issue implies at least one stage sub-issue; a parent
-  with no sub-issues shows no progress on the board.
+The design (§3) names `zuint`, `decimal` and `zutempo` as packages that
+register exact types with zuarrow at load, and `zuggml`, `zuflow`,
+`zutable`, `qio` and `quak` as consumers of its stream handles.
 
-## Versioning
-
-A new package develops at `0.0.0.9000` and targets `0.1.0` for its first
-CRAN release. Set `Version: 0.1.0` and the matching `NEWS.md` heading
-when the package enters `Pre-flight`. Bump to `0.1.0.9000` only after
-CRAN accepts it, never before: a `.9000` version above an unreleased
-`0.1.0` heading is wrong.
-
-Until the first release the R API may change freely. Sibling packages
-can still depend on this one before CRAN does, through `Remotes:` or
-`LinkingTo:`. The design (§3) names `zuint`, `decimal` and `zutempo` as
-packages that register exact types with zuarrow at load, and `zuggml`,
-`zuflow`, `zutable`, `qio` and `quak` as consumers of its stream
-handles. zuarrow itself waits on the `zukomp` release that ships the lz4
+zuarrow itself waits on `zukomp` 0.2.0, the release that ships the lz4
 and zstd codecs
 ([zukomp#55](https://github.com/pedrobtz/zukomp/issues/55)); that
-release reaches CRAN first and sets the `LinkingTo` floor. A package
-that others wait on should reach CRAN first.
+release reaches CRAN first and sets the `LinkingTo` floor, which can
+happen 2026-11-27 at the earliest. Until then, verified 2026-11-09,
+`DESCRIPTION` builds on zukomp’s development version through
+`Remotes: pedrobtz/zukomp`, with `zukomp (> 0.1.0)` in `Imports` and
+`LinkingTo`. Once it is on CRAN, the first step of \#12 is to remove
+`Remotes:` and set `zukomp (>= 0.2.0)`.
+
+Deviations from `.claude/shared/workflow.md`; this file wins for
+zuarrow:
+
+- **The version stays at `0.0.0.9000` until submission** (decided
+  2026-11-05), not `0.1.0` from `Pre-flight`. Setting `0.1.0` is a step
+  of \#12.
+- **No `cran-release.yaml` yet.** `CRAN-SUBMISSION` is still
+  git-ignored, and a release is tagged by hand with `pkg-post-cran`: the
+  bare version `0.1.0` (no `v`) on the submitted commit, the GitHub
+  release, the bump to `0.1.0.9000`, closing \#1.
 
 ## Commands
 
-Run from the package root.
-
-``` sh
-Rscript -e 'devtools::load_all()'                # compile src/ and load
-Rscript -e 'devtools::document()'                # roxygen -> NAMESPACE, man/
-Rscript -e 'devtools::test()'                    # full testthat suite
-Rscript -e 'devtools::test(filter = "<name>")'   # one test file
-Rscript -e 'devtools::test(shuffle = TRUE)'      # order independence
-Rscript -e 'devtools::check()'                   # R CMD check
-air format .                                     # format R sources
-```
+Beyond the shared `devtools` commands:
 
 ``` sh
 tools/update-vendor                              # re-vendor nanoarrow, rewrite PROVENANCE
@@ -264,149 +247,68 @@ test or CI leg will catch late. Add more as stages establish them.
   use as an undeclared dependency. The `oracles` workflow runs those
   files with `ZUARROW_ORACLES=true`, where a missing oracle fails.
 
-## Testing conventions
+## Testing
 
-- **Self-sufficient.** Every test builds its own inputs inside the
-  `test_that()` block. No file-scope objects.
-- **Self-contained.** Global state goes through `withr::local_*()`,
-  randomised input through
-  [`withr::local_seed()`](https://withr.r-lib.org/reference/with_seed.html).
-  Tests write only under
-  [`tempdir()`](https://rdrr.io/r/base/tempfile.html).
-- **Assert on condition classes, never message text.** Use
-  `expect_error(..., class = "<pkg>_<kind>_error")`. Wording belongs in
-  snapshot tests.
-- **Order independence.** `devtools::test(shuffle = TRUE)` is part of
-  the definition of done. It rewrites `_snaps/*.md` in the order the
-  tests ran even when every snapshot matches (r-lib/testthat#2364).
-  Discard a diff that only moves sections,
-  `git checkout -- tests/testthat/_snaps`, and never commit one.
-- **Borrow a conformance suite before writing one.** Mainstream
-  implementations in Python, Java, Go or Node usually ship a test
-  corpus. Use it as an oracle rather than inventing cases by hand. The
-  design (§9) names four oracles: `apache/arrow-testing`‘s IPC golden
-  files and crash corpus, fetched at a pinned commit into
-  `tests/testthat/fixtures/`, plus `nanoarrow` and `arrow` for
-  interchange. The golden files do not cover big-endian reading or the
-  codecs’ own correctness.
-- **Helpers live in `tests/testthat/helper-*.R`.**
-  `tests/testthat/README.md` records the C error branches no test can
-  reach, and why.
-- **Keep the suite inside the CRAN time budget.** The whole suite took
-  15 s on 2026-11-04 with the fixtures fetched and every oracle
-  installed: `devtools::test(shuffle = TRUE)`, macOS x86_64, R 4.5.2.
-  Under gctorture it runs a sample of the repeated loops
-  (`helper-gctorture.R`).
-
-## Definition of done
-
-[`devtools::document()`](https://devtools.r-lib.org/reference/document.html)
-and
-[`devtools::check()`](https://devtools.r-lib.org/reference/check.html)
-clean, meaning 0 errors, 0 warnings and 0 notes. The one allowed note is
-“New submission” before the first release.
-`devtools::test(shuffle = TRUE)` green. CI green at the change’s tier:
-the quick profile for a `quick` roadmap stage or an ordinary pull
-request, the full profile for a `full` stage, `Full CI`, and every
-release, plus a dispatched step-20 gctorture run where the gctorture
-section below asks for one. A user-facing change also needs a test,
-roxygen documentation and a `NEWS.md` entry.
-
-## Releasing to CRAN
-
-- **CI is the pre-submission check.** The `pedrobtz/r-actions` R CMD
-  check runs `--as-cran` on the CRAN-like runners and containers, and it
-  replaces win-builder, the macOS builder and R-hub. None of them is a
-  release step, and `cran-comments.md` lists the CI legs as its test
-  environments.
-- **Entering `Pre-flight`.** The roadmap’s feature stages are done, the
-  version is set as in Versioning, `NEWS.md` and `cran-comments.md` are
-  written, and CI is green. Only submission work remains.
-- **Before submitting,** run `pkg-critical-review` once the roadmap is
-  implemented and fix what it files, then `pkg-cran-review`, and resolve
-  every finding. Both skills are in `pedrobtz/r-skills`.
-- **The pretest is automated and does not read `cran-comments.md`.** A
-  NOTE that is explained but not fixed gets the upload archived. Fix the
-  NOTE, as under Vendored native code, instead of justifying it.
-- **After acceptance,** `pkg-post-cran` tags the submitted commit with
-  the bare version, `0.1.0` (no `v`), publishes the GitHub release,
-  bumps to `0.1.0.9000`, closes the version’s parent issue and moves the
-  board card.
+- **Shuffled runs rewrite snapshots.** `devtools::test(shuffle = TRUE)`
+  rewrites `_snaps/*.md` in the order the tests ran even when every
+  snapshot matches (r-lib/testthat#2364). Discard a diff that only moves
+  sections, `git checkout -- tests/testthat/_snaps`, and never commit
+  one.
+- **Conformance oracles.** The design (§9) names four oracles:
+  `apache/arrow-testing`‘s IPC golden files and crash corpus, fetched at
+  a pinned commit into `tests/testthat/fixtures/`, plus `nanoarrow` and
+  `arrow` for interchange. The golden files do not cover big-endian
+  reading or the codecs’ own correctness.
+- **Unreachable branches.** `tests/testthat/README.md` records the C
+  error branches no test can reach, and why.
+- **Runtime.** The whole suite took 15 s on 2026-11-04 with the fixtures
+  fetched and every oracle installed: `devtools::test(shuffle = TRUE)`,
+  macOS x86_64, R 4.5.2. Under gctorture it runs a sample of the
+  repeated loops (`helper-gctorture.R`).
 
 ## Editing rules
 
-- roxygen comments are the source. Never edit `man/` or `NAMESPACE` by
-  hand.
-- Edit `README.Rmd`, not the generated `README.md`.
-- Keep prose simple and short. One idea per sentence.
-- Wrap roxygen text at 80 characters and run `air format .` on R
-  sources.
-- Use `lower_snake_case`, and prefix internal native symbols with `zar_`
-  (`ZAR_` for macros), the prefix the design fixes in §3.
-- Keep hard runtime dependencies at zero unless a recorded design
-  decision says otherwise. Here D2 records `zukomp`.
-- Export and document public functions. Do not create roxygen topics for
-  internal ones.
+- Internal native symbols use the `zar_` prefix (`ZAR_` for macros), the
+  prefix the design fixes in §3.
+- The one hard runtime dependency is `zukomp`, recorded as design D2.
 
 ## Continuous integration
 
-Workflows come from `pedrobtz/r-actions`. Call those reusable workflows
-instead of writing bespoke ones, and pin a released tag rather than
-`main`. Pin a workflow that holds a write token, such as `coverage.yml`,
-to a commit, with the tag in a comment. The `R-CMD-check` workflow must
-call `r-cmd-check.yml`, because a hand-rolled one does not count as the
-pre-submission check. This package calls `r-cmd-check.yml@v1` from
-`.github/workflows/R-CMD-check.yaml` and `coverage.yml@v1` from
-`.github/workflows/coverage.yaml`; `.github/workflows/pkgdown.yaml` is
-the `r-lib/actions` pkgdown workflow.
-`.github/workflows/native-checks.yaml` calls the sanitizers, valgrind,
-lto, rchk, analyzers and cran-special, and
-`.github/workflows/gctorture.yaml` calls gctorture.
+This package calls `r-cmd-check.yml@v1` from
+`.github/workflows/R-CMD-check.yaml` and `coverage.yml` (pinned to a
+commit) from `.github/workflows/coverage.yaml`;
+`.github/workflows/pkgdown.yaml` is the `r-lib/actions` pkgdown
+workflow. `.github/workflows/native-checks.yaml` calls the sanitizers,
+valgrind, lto, rchk, analyzers and cran-special, and
+`.github/workflows/gctorture.yaml` calls gctorture. Its own and other
+callers:
 
-Small edits get a small run. The shared workflows look at the files a
-pull request changes, compared with its merge base:
+- **`oracles.yaml`** runs the `*-ci-*.R` tests from the source tree on
+  Ubuntu with every oracle installed and `ZUARROW_ORACLES=true`.
+  r-actions has no workflow that runs tests outside the tarball, hence
+  one of its own.
+- **`fuzz.yaml`** fuzzes the IPC reader built without R
+  (`ZAR_STANDALONE`): short runs on pull requests, a long run nightly,
+  and a dispatch for the hour clean on the release candidate that design
+  §12 wants: `gh workflow run fuzz.yaml --ref <branch>`. Its seed commit
+  is kept in step with `tests/testthat/fixtures-files.txt`.
+- **`vendor.yaml`** re-derives `src/vendor/nanoarrow` with
+  `tools/verify-vendor` and fails a pull request that changes the
+  vendored files without `src/vendor/PROVENANCE`.
+  **`vendor-upstream.yaml`** checks weekly for a new nanoarrow release.
 
-- **Markdown only**, such as `README.md`, `NEWS.md` or
-  `cran-comments.md`, skips every check. Only coverage and the pkgdown
-  site run.
-- **`DESCRIPTION` or `README.Rmd` as well**, and nothing else, adds one
-  R CMD check on Ubuntu R-release.
-- **Any other file** runs everything.
-
-So put a README or `DESCRIPTION` touch-up in its own pull request. Once
-a pull request changes code, every later push to it runs every workflow.
-
-### Quick by default, full by exception
-
-The full profile is slow. Waiting on it between roadmap stages was the
-main thing slowing roadmaps down, so:
-
-- **Pull requests run the quick profile.** It should finish in under
-  five minutes. If it doesn’t, trim `quick-containers` in the caller
-  workflows; never cut the full profile.
-- **A `full` roadmap stage takes the `full-ci` label** and merges only
-  on a green full run. The roadmap gives the reason in the stage’s
-  `**CI.**` line, for example first compiled code, a `PROTECT` or
-  finalizer change, a vendored library, or a Windows-only path.
-- **Merges run quick too.** The callers pass `profile: auto`, so a push
-  to `main` runs the quick profile. The full set runs on the weekly
-  schedule (Monday) and when dispatched:
-  `gh workflow run R-CMD-check.yaml --ref main` and
-  `gh workflow run native-checks.yaml --ref main`. Dispatch it once at
-  the end of a series of merges, on the last merge commit, not after
-  each one.
-- **A failure only the full set shows** goes on the `Full CI` stage
-  issue as a comment with the run link, and is fixed there. A failure
-  the quick profile also shows is fixed now.
-- **`Full CI`, `v0.1.0 readiness` and the release commit wait** for a
-  green dispatched full run on their merge commit.
+The callers’ file names end in `.yaml`, so the full set is dispatched
+with `gh workflow run R-CMD-check.yaml --ref main` and
+`gh workflow run native-checks.yaml --ref main`; it also runs weekly on
+Monday.
 
 ### gctorture: wide on every push, step 20 on a schedule
 
 gctorture at step 20 is the most sensitive setting and by far the
-slowest job: 36 minutes to over two hours on sibling packages. It does
-not gate merges. Its own caller, `.github/workflows/gctorture.yaml`,
-copied from r-actions’ `examples/gctorture.yml`, runs it in two ways:
+slowest job, so its job has GitHub’s six-hour limit
+(`timeout-minutes: 360`). It does not gate merges. Its own caller,
+`.github/workflows/gctorture.yaml`, copied from r-actions’
+`examples/gctorture.yml`, runs it in two ways:
 
 - **Every push and pull request runs the wide `quick-step` under a
   10-minute budget** (`test-timeout-minutes`). Past the budget the check
@@ -422,7 +324,8 @@ copied from r-actions’ `examples/gctorture.yml`, runs it in two ways:
   `PROTECT`s, finalizers or external-pointer handles, and before
   `Full CI`, `v0.1.0 readiness` and the release commit:
   `gh workflow run gctorture.yaml --ref <branch>`. A green run on that
-  commit is the evidence; a nightly run on another commit is not.
+  commit is the evidence; a nightly run on another commit is not. That
+  run is part of the definition of done for such a change.
 - **Sample repetition, keep every path.** gctorture finds an unprotected
   `SEXP` by running the path that holds it, not by running it again.
   Under gctorture, loops that repeat one path (fuzz iterations, property
@@ -430,8 +333,6 @@ copied from r-actions’ `examples/gctorture.yml`, runs it in two ways:
   sets an environment variable for it, `ZUARROW_GCTORTURE=true`, and
   `helper-gctorture.R` reads it. Every type, branch and error path still
   runs.
-- Locally, run `gctorture(TRUE)` on the code a C change touches when it
-  is cheap; the step-20 run is the authority.
 
 ## Vendored native code
 
@@ -453,103 +354,14 @@ not vendored; they come from `zukomp` (D2).
   order. `tools/update-vendor` writes the tree and `PROVENANCE`;
   `tools/verify-vendor` re-derives and fails on any byte of difference,
   and `--canary` proves it would catch a missing patch.
-
-- **Patches.** `0001-no-suppressing-pragmas` removes flatcc’s
+- **Patches.** `src/vendor/PROVENANCE` lists the series, 0001 to 0016,
+  in the order applied. `0001-no-suppressing-pragmas` removes flatcc’s
   `#pragma diagnostic ignored` lines (a NOTE); `0002-unused-locals`
   fixes the two generated macros whose unused locals `-Wall` then
   reports (R CMD check counts “warning: unused” as significant). Every
   patched file carries a “Modified for the zuarrow R package” notice.
-
 - **Visibility.** `src/Makevars` defines `NANOARROW_DLL` empty, because
   nanoarrow otherwise marks its API `visibility("default")` and hidden
   visibility would not hide it. `src/zuarrow-win.def` exports
   `R_init_zuarrow` alone on Windows. `test-abi.R` checks both, and that
   nothing CRAN’s compiled-code check reports is referenced.
-
-- Pin a stable upstream release, never `master` or a release candidate.
-
-- Record the tag, the commit and the checksums, and write down the
-  update procedure so the next bump is mechanical.
-
-- Keep upstream `LICENSE` and `NOTICE` under `src/vendor/<lib>/`,
-  declare the vendored code in `DESCRIPTION` and `inst/COPYRIGHTS`.
-
-- Keep the vendor tree clearly separated from first-party source, and
-  record every local patch and why it exists.
-
-- **CRAN’s compiled-code check applies to vendored code too.** No
-  `stdout` or `stderr`, no `printf`, `abort`, `exit` or system RNG may
-  be linked, even behind a debug switch that never runs. Remove them
-  with a patch in `tools/patches/`, list it in `src/vendor/PROVENANCE`,
-  and make the vendor-verify script check “upstream plus exactly these
-  patches”. Avoid diagnostic-suppressing pragmas too, because they draw
-  their own NOTE. zuhtml is the reference:
-  `tools/patches/0002-no-stdio.patch` and `tools/verify-vendor`. zuxml’s
-  first upload was archived because it justified such a symbol instead
-  of patching it.
-
-- Guard against regressions in CI: run `nm -u` on the built objects and
-  fail on any of those symbols, so an upstream bump cannot bring them
-  back.
-
-## Commits and pull requests
-
-Short, imperative, sentence-case commit subjects, optionally scoped.
-Keep each commit focused and do not sweep in unrelated files. A pull
-request explains the user-visible outcome and the rationale, links
-related issues, lists the checks that were run and the tests that were
-skipped, and flags platform-sensitive or vendored changes. Performance
-claims need evidence.
-
-Never commit or push to the default branch. Work on a branch, open a
-pull request, and leave it for review. Do not merge a pull request
-unless you are told to.
-
-When you find a defect, in this package or in an upstream tool, open an
-issue for it rather than only working around it.
-
-## Working with skills
-
-The portfolio’s workflow skills live in `pedrobtz/r-skills` (`pkg-init`,
-`pkg-roadmap`, `pkg-implement`, `pkg-critical-review`,
-`pkg-cran-review`, `pkg-post-cran`, `pkg-readme`); the general process
-skills are [Superpowers](https://github.com/obra/superpowers).
-`building-a-package.md` in `pedrobtz/packages` walks through them in
-order. Both sets defer to this file where they overlap, so the
-settlements are recorded here.
-
-- **One design.** The specification is `.agents/design.md`, adopted from
-  the package’s RFC in `pedrobtz/packages/rfcs`. A package with an
-  adopted design is past `brainstorming`; a design change goes through
-  the RFC, not a new spec. Superpowers’ default
-  `docs/superpowers/specs/` is not used.
-- **Plans at two levels.** `.agents/roadmap.md` holds the stages, one
-  mergeable pull request each, with exit criteria and a CI tier
-  (`pkg-roadmap`). Inside a stage, `writing-plans` breaks the work into
-  tasks of one test cycle each, saved as `.agents/plans/stage-<n>.md`.
-  The roadmap stays authoritative; a plan is scratch and is not kept in
-  sync.
-- **Build and merge.** `pkg-implement` runs the stage loop: branch
-  `stage-<n>-<slug>` from the stage issue, implement the plan with
-  `test-driven-development`
-  (`Rscript -e 'devtools::test(filter = "<name>")'` is the red/green
-  command), open the pull request, merge on green at the stage’s CI
-  tier. The confirmation the user gives at the start of that loop is the
-  “told to merge” that Commits and pull requests requires, so the
-  `finishing-a-development-branch` menu is not presented for stage pull
-  requests. Any other pull request still waits for review.
-- **Failures and claims.** A failing check or test goes through
-  `systematic-debugging` before a fix. “Green”, “done” and “ready for
-  CRAN” are claimed only after `verification-before-completion`: run the
-  command, read the output.
-- **Review.** `requesting-code-review` gates tasks inside a stage.
-  `pkg-critical-review` reviews the whole package once the roadmap is
-  implemented, with Posit’s reviewers, and files issues. CRAN’s reviewer
-  email and GitHub review threads go through `receiving-code-review`.
-- **Keep scratch out of the tarball.** `R CMD build` reads
-  `.Rbuildignore`, not `.gitignore`. It must list `^\.agents$`,
-  `^\.superpowers$` (the Superpowers task ledger), `^\.worktrees$` (if
-  git worktrees are kept in the package directory; a sibling directory
-  avoids the question), `^\.claude$`, `^CLAUDE\.md$`, `^AGENTS\.md$`,
-  `^CRAN-SUBMISSION$` and `^cran-comments\.md$`. A stray top-level file
-  is a NOTE, and the pretest archives on NOTEs.

@@ -37,58 +37,45 @@
 <!-- markdownlint-disable-next-line MD013 -->
 <p>This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.</p>
 <div class="section level2">
+<h2 id="shared-conventions">Shared conventions<a class="anchor" aria-label="anchor" href="#shared-conventions"></a></h2>
+<p>The portfolio’s shared rules are synced into <code>.claude/shared/</code> from <code>pedrobtz/packages:claude/shared/</code>. Never edit them here. Where this file and a shared file disagree, this file wins for zuarrow.</p>
+<p>@.claude/shared/workflow.md @.claude/shared/r-package.md @.claude/shared/ci.md @.claude/shared/native-code.md @.claude/shared/correctness.md</p>
+</div>
+<div class="section level2">
 <h2 id="what-this-is">What this is<a class="anchor" aria-label="anchor" href="#what-this-is"></a></h2>
 <p><code>zuarrow</code> moves columns between R and the Apache Arrow columnar format: the C Data Interface in memory and the IPC stream and file formats on disk. It converts every Arrow type in the 1.x format to an R vector and back, reads and writes both IPC framings with LZ4 and zstd bodies, and keeps a registry that says which R class is the exact form of which Arrow type. The rule behind every conversion is <strong>exact or error</strong>: a value crosses without change or the call raises <code>zuarrow_lossy_error</code> naming the column and the exact target. The default is never <code>warn</code> or <code>allow</code>.</p>
-<p>The one hard dependency is <code>zukomp</code> (<code>Imports</code> and <code>LinkingTo</code>), which supplies the IPC codecs. <code>nanoarrow</code>, <code>arrow</code>, <code>DBI</code> and <code>duckdb</code> are not dependencies at all, not even <code>Suggests</code>: they are test oracles that run in CI only (see Testing conventions). The package is not a query engine, not Parquet, not a table object model, not transport (Flight, ADBC, PyCapsule) and not a replacement for <code>nanoarrow</code>: its handles are nanoarrow’s handles, so a session with both loaded passes objects between them without conversion.</p>
+<p>The one hard dependency is <code>zukomp</code> (<code>Imports</code> and <code>LinkingTo</code>), which supplies the IPC codecs. <code>nanoarrow</code>, <code>arrow</code>, <code>DBI</code> and <code>duckdb</code> are not dependencies at all, not even <code>Suggests</code>: they are test oracles that run in CI only (see Testing). The package is not a query engine, not Parquet, not a table object model, not transport (Flight, ADBC, PyCapsule) and not a replacement for <code>nanoarrow</code>: its handles are nanoarrow’s handles, so a session with both loaded passes objects between them without conversion.</p>
 <p>The specification is <a href=".agents/design.html"><code>.agents/design.md</code></a>, adopted from <a href="https://github.com/pedrobtz/packages/blob/main/rfcs/started/0041-zuarrow-arrow-columns-exact-or-error.md" class="external-link">RFC 0041</a> in <code>pedrobtz/packages</code>. It outranks this file: <code>CLAUDE.md</code> orients, the design decides. Its §13 decisions are all marked (C), the maintainer’s to overturn, and its §15 open questions are still open.</p>
 </div>
 <div class="section level2">
 <h2 id="current-state">Current state<a class="anchor" aria-label="anchor" href="#current-state"></a></h2>
-<p>Stages 0 to 9 of <code>.agents/roadmap.md</code> are merged. Stage 10 (v0.1.0 readiness) is in progress, and Stage 11 (Review) follows it. The first critical review (2026-10-27, issues labelled <code>review</code>) has been fixed.</p>
-<p>The version stays at <code>0.0.0.9000</code> until submission (decided 2026-11-05); setting <code>0.1.0</code> is a step of the CRAN-submission issue (#12). It builds on zukomp’s development version through <code>Remotes:</code>. Submission waits for zukomp 0.2.0, the release with the codecs, to reach CRAN, which can happen 2026-11-27 at the earliest. The first step of the CRAN-submission issue (#12) is then to remove <code>Remotes:</code> and set <code>zukomp (&gt;= 0.2.0)</code>. Stage 10 also wants an upstream nanoarrow pull request for vendored patch 0004.</p>
+<p>Verified 2026-11-09: every stage of <code>.agents/roadmap.md</code>, 0 to 11, is merged and its issue closed, Stage 11 (Review) on 2026-11-05. What remains is the <a href="https://github.com/pedrobtz/zuarrow/issues/12" class="external-link">CRAN-submission issue (#12)</a>.</p>
+<p>The first critical review (2026-10-27, issues labelled <code>review</code>) has been fixed. Stage 10 wanted an upstream nanoarrow pull request for vendored patch 0004; that was not rechecked on 2026-11-09.</p>
 <p><code>decimal</code>’s registration (decimal#24) is optional. It is tested when <code>decimal</code> provides it, and 0.1.0 does not wait for it (design §12).</p>
 </div>
 <div class="section level2">
-<h2 id="stage-tracking">Stage tracking<a class="anchor" aria-label="anchor" href="#stage-tracking"></a></h2>
-<p>Progress toward the next version is tracked as GitHub sub-issues, so the parent issue shows a progress bar such as “6 of 7”.</p>
+<h2 id="versions-and-dependents">Versions and dependents<a class="anchor" aria-label="anchor" href="#versions-and-dependents"></a></h2>
+<p>The current version’s parent issue is <a href="https://github.com/pedrobtz/zuarrow/issues/1" class="external-link">v0.1.0 (#1)</a>; submission is tracked in <a href="https://github.com/pedrobtz/zuarrow/issues/12" class="external-link">CRAN-submission (#12)</a>.</p>
+<p>The design (§3) names <code>zuint</code>, <code>decimal</code> and <code>zutempo</code> as packages that register exact types with zuarrow at load, and <code>zuggml</code>, <code>zuflow</code>, <code>zutable</code>, <code>qio</code> and <code>quak</code> as consumers of its stream handles.</p>
+<p>zuarrow itself waits on <code>zukomp</code> 0.2.0, the release that ships the lz4 and zstd codecs (<a href="https://github.com/pedrobtz/zukomp/issues/55" class="external-link">zukomp#55</a>); that release reaches CRAN first and sets the <code>LinkingTo</code> floor, which can happen 2026-11-27 at the earliest. Until then, verified 2026-11-09, <code>DESCRIPTION</code> builds on zukomp’s development version through <code>Remotes: pedrobtz/zukomp</code>, with <code>zukomp (&gt; 0.1.0)</code> in <code>Imports</code> and <code>LinkingTo</code>. Once it is on CRAN, the first step of #12 is to remove <code>Remotes:</code> and set <code>zukomp (&gt;= 0.2.0)</code>.</p>
+<p>Deviations from <code>.claude/shared/workflow.md</code>; this file wins for zuarrow:</p>
 <ul><li>
-<strong>One parent issue per target version</strong>, titled with the bare version, for example <code>v0.1.0</code>. <code>v0.1.0</code> issue: created by <code>pkg-roadmap</code>.</li>
+<strong>The version stays at <code>0.0.0.9000</code> until submission</strong> (decided 2026-11-05), not <code>0.1.0</code> from <code>Pre-flight</code>. Setting <code>0.1.0</code> is a step of #12.</li>
 <li>
-<strong>One sub-issue per roadmap stage</strong>, titled as the roadmap titles it, for example <code>Stage 3 — R interface</code>, and linking to that section. The number of stages is whatever the roadmap has; there is no fixed scale.</li>
-<li>
-<strong>Every tracking issue carries the <code>stage</code> label</strong>, so it can be told apart from bug and feature issues and left out of open-issue counts.</li>
-<li>
-<strong>Close a stage by merging its pull request.</strong> Put <code>Closes #&lt;n&gt;</code> in the body of the stage’s pull request. Never close a stage whose exit criteria are not met; record a deviation in the roadmap first.</li>
-<li>
-<strong>The roadmap stays authoritative.</strong> The issues record which stages are done, not what a stage requires. Adding, removing or renaming a stage means editing the roadmap and the sub-issues in the same change.</li>
-<li>
-<strong>Each stage has a CI tier, <code>quick</code> or <code>full</code>.</strong> The roadmap sets it, and <code>quick</code> is the default. See Continuous integration for what each means. The second-to-last stage, <code>Full CI</code>, runs the full set and fixes what it finds before <code>v0.1.0 readiness</code>.</li>
-<li>Close the parent issue when CRAN accepts the version and it is tagged. Opening a parent issue implies at least one stage sub-issue; a parent with no sub-issues shows no progress on the board.</li>
+<strong>No <code>cran-release.yaml</code> yet.</strong> <code>CRAN-SUBMISSION</code> is still git-ignored, and a release is tagged by hand with <code>pkg-post-cran</code>: the bare version <code>0.1.0</code> (no <code>v</code>) on the submitted commit, the GitHub release, the bump to <code>0.1.0.9000</code>, closing #1.</li>
 </ul></div>
 <div class="section level2">
-<h2 id="versioning">Versioning<a class="anchor" aria-label="anchor" href="#versioning"></a></h2>
-<p>A new package develops at <code>0.0.0.9000</code> and targets <code>0.1.0</code> for its first CRAN release. Set <code>Version: 0.1.0</code> and the matching <code>NEWS.md</code> heading when the package enters <code>Pre-flight</code>. Bump to <code>0.1.0.9000</code> only after CRAN accepts it, never before: a <code>.9000</code> version above an unreleased <code>0.1.0</code> heading is wrong.</p>
-<p>Until the first release the R API may change freely. Sibling packages can still depend on this one before CRAN does, through <code>Remotes:</code> or <code>LinkingTo:</code>. The design (§3) names <code>zuint</code>, <code>decimal</code> and <code>zutempo</code> as packages that register exact types with zuarrow at load, and <code>zuggml</code>, <code>zuflow</code>, <code>zutable</code>, <code>qio</code> and <code>quak</code> as consumers of its stream handles. zuarrow itself waits on the <code>zukomp</code> release that ships the lz4 and zstd codecs (<a href="https://github.com/pedrobtz/zukomp/issues/55" class="external-link">zukomp#55</a>); that release reaches CRAN first and sets the <code>LinkingTo</code> floor. A package that others wait on should reach CRAN first.</p>
-</div>
-<div class="section level2">
 <h2 id="commands">Commands<a class="anchor" aria-label="anchor" href="#commands"></a></h2>
-<p>Run from the package root.</p>
-<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::load_all()'</span>                <span class="co"># compile src/ and load</span></span>
-<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::document()'</span>                <span class="co"># roxygen -&gt; NAMESPACE, man/</span></span>
-<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test()'</span>                    <span class="co"># full testthat suite</span></span>
-<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test(filter = "&lt;name&gt;")'</span>   <span class="co"># one test file</span></span>
-<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test(shuffle = TRUE)'</span>      <span class="co"># order independence</span></span>
-<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::check()'</span>                   <span class="co"># R CMD check</span></span>
-<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a><span class="ex">air</span> format .                                     <span class="co"># format R sources</span></span></code></pre></div>
-<div class="sourceCode" id="cb2"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb2-1"><a href="#cb2-1" tabindex="-1"></a><span class="ex">tools/update-vendor</span>                              <span class="co"># re-vendor nanoarrow, rewrite PROVENANCE</span></span>
-<span id="cb2-2"><a href="#cb2-2" tabindex="-1"></a><span class="ex">tools/verify-vendor</span>                              <span class="co"># vendored tree is upstream plus patches</span></span>
-<span id="cb2-3"><a href="#cb2-3" tabindex="-1"></a><span class="ex">tools/verify-vendor</span> <span class="at">--canary</span>                     <span class="co"># the verifier catches a missing patch</span></span>
-<span id="cb2-4"><a href="#cb2-4" tabindex="-1"></a><span class="ex">tools/run-benchmarks</span> [--rows N] [--reps R]       <span class="co"># design §10 timings, as Markdown rows</span></span>
-<span id="cb2-5"><a href="#cb2-5" tabindex="-1"></a><span class="ex">tools/bench-types</span> [--rows N] [--reps R]          <span class="co"># per-type conversion against nanoarrow</span></span>
-<span id="cb2-6"><a href="#cb2-6" tabindex="-1"></a><span class="va">NOT_CRAN</span><span class="op">=</span>true <span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test(filter = "abi")'</span>   <span class="co"># symbol checks (skip on CRAN)</span></span>
-<span id="cb2-7"><a href="#cb2-7" tabindex="-1"></a></span>
-<span id="cb2-8"><a href="#cb2-8" tabindex="-1"></a><span class="ex">tools/fetch-fixtures</span>                             <span class="co"># arrow-testing corpus into tests/testthat/fixtures</span></span>
-<span id="cb2-9"><a href="#cb2-9" tabindex="-1"></a><span class="ex">Rscript</span> tools/make-test-data.R                   <span class="co"># regenerate tests/testthat/data with arrow</span></span></code></pre></div>
+<p>Beyond the shared <code>devtools</code> commands:</p>
+<div class="sourceCode" id="cb1"><pre class="sourceCode sh"><code class="sourceCode bash"><span id="cb1-1"><a href="#cb1-1" tabindex="-1"></a><span class="ex">tools/update-vendor</span>                              <span class="co"># re-vendor nanoarrow, rewrite PROVENANCE</span></span>
+<span id="cb1-2"><a href="#cb1-2" tabindex="-1"></a><span class="ex">tools/verify-vendor</span>                              <span class="co"># vendored tree is upstream plus patches</span></span>
+<span id="cb1-3"><a href="#cb1-3" tabindex="-1"></a><span class="ex">tools/verify-vendor</span> <span class="at">--canary</span>                     <span class="co"># the verifier catches a missing patch</span></span>
+<span id="cb1-4"><a href="#cb1-4" tabindex="-1"></a><span class="ex">tools/run-benchmarks</span> [--rows N] [--reps R]       <span class="co"># design §10 timings, as Markdown rows</span></span>
+<span id="cb1-5"><a href="#cb1-5" tabindex="-1"></a><span class="ex">tools/bench-types</span> [--rows N] [--reps R]          <span class="co"># per-type conversion against nanoarrow</span></span>
+<span id="cb1-6"><a href="#cb1-6" tabindex="-1"></a><span class="va">NOT_CRAN</span><span class="op">=</span>true <span class="ex">Rscript</span> <span class="at">-e</span> <span class="st">'devtools::test(filter = "abi")'</span>   <span class="co"># symbol checks (skip on CRAN)</span></span>
+<span id="cb1-7"><a href="#cb1-7" tabindex="-1"></a></span>
+<span id="cb1-8"><a href="#cb1-8" tabindex="-1"></a><span class="ex">tools/fetch-fixtures</span>                             <span class="co"># arrow-testing corpus into tests/testthat/fixtures</span></span>
+<span id="cb1-9"><a href="#cb1-9" tabindex="-1"></a><span class="ex">Rscript</span> tools/make-test-data.R                   <span class="co"># regenerate tests/testthat/data with arrow</span></span></code></pre></div>
 <p>Oracles 1 and 2 need the <code>arrow-testing</code> corpus. Fetch it with <code>tools/fetch-fixtures</code>, or set <code>ZUARROW_FETCH_FIXTURES=true</code> and the tests download it under <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code>, as CI does; without either they skip. <code>tests/testthat/data/</code> holds small files written by <code>arrow</code> and every input the fuzz target has crashed on, so those tests run everywhere.</p>
 </div>
 <div class="section level2">
@@ -131,122 +118,53 @@
 <strong>Oracle packages stay out of the tarball.</strong> A test or helper that uses <code>nanoarrow</code>, <code>arrow</code>, <code>DBI</code> or <code>duckdb</code> goes in a <code>test-ci-*.R</code> or <code>helper-ci-*.R</code> file, which <code>.Rbuildignore</code> excludes, and guards with <code>skip_without_oracle()</code>. Anywhere else, R CMD check reports the use as an undeclared dependency. The <code>oracles</code> workflow runs those files with <code>ZUARROW_ORACLES=true</code>, where a missing oracle fails.</li>
 </ul></div>
 <div class="section level2">
-<h2 id="testing-conventions">Testing conventions<a class="anchor" aria-label="anchor" href="#testing-conventions"></a></h2>
+<h2 id="testing">Testing<a class="anchor" aria-label="anchor" href="#testing"></a></h2>
 <ul><li>
-<strong>Self-sufficient.</strong> Every test builds its own inputs inside the <code>test_that()</code> block. No file-scope objects.</li>
+<strong>Shuffled runs rewrite snapshots.</strong> <code>devtools::test(shuffle = TRUE)</code> rewrites <code>_snaps/*.md</code> in the order the tests ran even when every snapshot matches (r-lib/testthat#2364). Discard a diff that only moves sections, <code>git checkout -- tests/testthat/_snaps</code>, and never commit one.</li>
 <li>
-<strong>Self-contained.</strong> Global state goes through <code>withr::local_*()</code>, randomised input through <code><a href="https://withr.r-lib.org/reference/with_seed.html" class="external-link">withr::local_seed()</a></code>. Tests write only under <code><a href="https://rdrr.io/r/base/tempfile.html" class="external-link">tempdir()</a></code>.</li>
+<strong>Conformance oracles.</strong> The design (§9) names four oracles: <code>apache/arrow-testing</code>‘s IPC golden files and crash corpus, fetched at a pinned commit into <code>tests/testthat/fixtures/</code>, plus <code>nanoarrow</code> and <code>arrow</code> for interchange. The golden files do not cover big-endian reading or the codecs’ own correctness.</li>
 <li>
-<strong>Assert on condition classes, never message text.</strong> Use <code>expect_error(..., class = "&lt;pkg&gt;_&lt;kind&gt;_error")</code>. Wording belongs in snapshot tests.</li>
+<strong>Unreachable branches.</strong> <code>tests/testthat/README.md</code> records the C error branches no test can reach, and why.</li>
 <li>
-<strong>Order independence.</strong> <code>devtools::test(shuffle = TRUE)</code> is part of the definition of done. It rewrites <code>_snaps/*.md</code> in the order the tests ran even when every snapshot matches (r-lib/testthat#2364). Discard a diff that only moves sections, <code>git checkout -- tests/testthat/_snaps</code>, and never commit one.</li>
-<li>
-<strong>Borrow a conformance suite before writing one.</strong> Mainstream implementations in Python, Java, Go or Node usually ship a test corpus. Use it as an oracle rather than inventing cases by hand. The design (§9) names four oracles: <code>apache/arrow-testing</code>‘s IPC golden files and crash corpus, fetched at a pinned commit into <code>tests/testthat/fixtures/</code>, plus <code>nanoarrow</code> and <code>arrow</code> for interchange. The golden files do not cover big-endian reading or the codecs’ own correctness.</li>
-<li>
-<strong>Helpers live in <code>tests/testthat/helper-*.R</code>.</strong> <code>tests/testthat/README.md</code> records the C error branches no test can reach, and why.</li>
-<li>
-<strong>Keep the suite inside the CRAN time budget.</strong> The whole suite took 15 s on 2026-11-04 with the fixtures fetched and every oracle installed: <code>devtools::test(shuffle = TRUE)</code>, macOS x86_64, R 4.5.2. Under gctorture it runs a sample of the repeated loops (<code>helper-gctorture.R</code>).</li>
-</ul></div>
-<div class="section level2">
-<h2 id="definition-of-done">Definition of done<a class="anchor" aria-label="anchor" href="#definition-of-done"></a></h2>
-<p><code><a href="https://devtools.r-lib.org/reference/document.html" class="external-link">devtools::document()</a></code> and <code><a href="https://devtools.r-lib.org/reference/check.html" class="external-link">devtools::check()</a></code> clean, meaning 0 errors, 0 warnings and 0 notes. The one allowed note is “New submission” before the first release. <code>devtools::test(shuffle = TRUE)</code> green. CI green at the change’s tier: the quick profile for a <code>quick</code> roadmap stage or an ordinary pull request, the full profile for a <code>full</code> stage, <code>Full CI</code>, and every release, plus a dispatched step-20 gctorture run where the gctorture section below asks for one. A user-facing change also needs a test, roxygen documentation and a <code>NEWS.md</code> entry.</p>
-</div>
-<div class="section level2">
-<h2 id="releasing-to-cran">Releasing to CRAN<a class="anchor" aria-label="anchor" href="#releasing-to-cran"></a></h2>
-<ul><li>
-<strong>CI is the pre-submission check.</strong> The <code>pedrobtz/r-actions</code> R CMD check runs <code>--as-cran</code> on the CRAN-like runners and containers, and it replaces win-builder, the macOS builder and R-hub. None of them is a release step, and <code>cran-comments.md</code> lists the CI legs as its test environments.</li>
-<li>
-<strong>Entering <code>Pre-flight</code>.</strong> The roadmap’s feature stages are done, the version is set as in Versioning, <code>NEWS.md</code> and <code>cran-comments.md</code> are written, and CI is green. Only submission work remains.</li>
-<li>
-<strong>Before submitting,</strong> run <code>pkg-critical-review</code> once the roadmap is implemented and fix what it files, then <code>pkg-cran-review</code>, and resolve every finding. Both skills are in <code>pedrobtz/r-skills</code>.</li>
-<li>
-<strong>The pretest is automated and does not read <code>cran-comments.md</code>.</strong> A NOTE that is explained but not fixed gets the upload archived. Fix the NOTE, as under Vendored native code, instead of justifying it.</li>
-<li>
-<strong>After acceptance,</strong> <code>pkg-post-cran</code> tags the submitted commit with the bare version, <code>0.1.0</code> (no <code>v</code>), publishes the GitHub release, bumps to <code>0.1.0.9000</code>, closes the version’s parent issue and moves the board card.</li>
+<strong>Runtime.</strong> The whole suite took 15 s on 2026-11-04 with the fixtures fetched and every oracle installed: <code>devtools::test(shuffle = TRUE)</code>, macOS x86_64, R 4.5.2. Under gctorture it runs a sample of the repeated loops (<code>helper-gctorture.R</code>).</li>
 </ul></div>
 <div class="section level2">
 <h2 id="editing-rules">Editing rules<a class="anchor" aria-label="anchor" href="#editing-rules"></a></h2>
-<ul><li>roxygen comments are the source. Never edit <code>man/</code> or <code>NAMESPACE</code> by hand.</li>
-<li>Edit <code>README.Rmd</code>, not the generated <code>README.md</code>.</li>
-<li>Keep prose simple and short. One idea per sentence.</li>
-<li>Wrap roxygen text at 80 characters and run <code>air format .</code> on R sources.</li>
-<li>Use <code>lower_snake_case</code>, and prefix internal native symbols with <code>zar_</code> (<code>ZAR_</code> for macros), the prefix the design fixes in §3.</li>
-<li>Keep hard runtime dependencies at zero unless a recorded design decision says otherwise. Here D2 records <code>zukomp</code>.</li>
-<li>Export and document public functions. Do not create roxygen topics for internal ones.</li>
+<ul><li>Internal native symbols use the <code>zar_</code> prefix (<code>ZAR_</code> for macros), the prefix the design fixes in §3.</li>
+<li>The one hard runtime dependency is <code>zukomp</code>, recorded as design D2.</li>
 </ul></div>
 <div class="section level2">
 <h2 id="continuous-integration">Continuous integration<a class="anchor" aria-label="anchor" href="#continuous-integration"></a></h2>
-<p>Workflows come from <code>pedrobtz/r-actions</code>. Call those reusable workflows instead of writing bespoke ones, and pin a released tag rather than <code>main</code>. Pin a workflow that holds a write token, such as <code>coverage.yml</code>, to a commit, with the tag in a comment. The <code>R-CMD-check</code> workflow must call <code>r-cmd-check.yml</code>, because a hand-rolled one does not count as the pre-submission check. This package calls <code>r-cmd-check.yml@v1</code> from <code>.github/workflows/R-CMD-check.yaml</code> and <code>coverage.yml@v1</code> from <code>.github/workflows/coverage.yaml</code>; <code>.github/workflows/pkgdown.yaml</code> is the <code>r-lib/actions</code> pkgdown workflow. <code>.github/workflows/native-checks.yaml</code> calls the sanitizers, valgrind, lto, rchk, analyzers and cran-special, and <code>.github/workflows/gctorture.yaml</code> calls gctorture.</p>
-<p>Small edits get a small run. The shared workflows look at the files a pull request changes, compared with its merge base:</p>
+<p>This package calls <code>r-cmd-check.yml@v1</code> from <code>.github/workflows/R-CMD-check.yaml</code> and <code>coverage.yml</code> (pinned to a commit) from <code>.github/workflows/coverage.yaml</code>; <code>.github/workflows/pkgdown.yaml</code> is the <code>r-lib/actions</code> pkgdown workflow. <code>.github/workflows/native-checks.yaml</code> calls the sanitizers, valgrind, lto, rchk, analyzers and cran-special, and <code>.github/workflows/gctorture.yaml</code> calls gctorture. Its own and other callers:</p>
 <ul><li>
-<strong>Markdown only</strong>, such as <code>README.md</code>, <code>NEWS.md</code> or <code>cran-comments.md</code>, skips every check. Only coverage and the pkgdown site run.</li>
+<strong><code>oracles.yaml</code></strong> runs the <code>*-ci-*.R</code> tests from the source tree on Ubuntu with every oracle installed and <code>ZUARROW_ORACLES=true</code>. r-actions has no workflow that runs tests outside the tarball, hence one of its own.</li>
 <li>
-<strong><code>DESCRIPTION</code> or <code>README.Rmd</code> as well</strong>, and nothing else, adds one R CMD check on Ubuntu R-release.</li>
+<strong><code>fuzz.yaml</code></strong> fuzzes the IPC reader built without R (<code>ZAR_STANDALONE</code>): short runs on pull requests, a long run nightly, and a dispatch for the hour clean on the release candidate that design §12 wants: <code>gh workflow run fuzz.yaml --ref &lt;branch&gt;</code>. Its seed commit is kept in step with <code>tests/testthat/fixtures-files.txt</code>.</li>
 <li>
-<strong>Any other file</strong> runs everything.</li>
-</ul><p>So put a README or <code>DESCRIPTION</code> touch-up in its own pull request. Once a pull request changes code, every later push to it runs every workflow.</p>
-<div class="section level3">
-<h3 id="quick-by-default-full-by-exception">Quick by default, full by exception<a class="anchor" aria-label="anchor" href="#quick-by-default-full-by-exception"></a></h3>
-<p>The full profile is slow. Waiting on it between roadmap stages was the main thing slowing roadmaps down, so:</p>
-<ul><li>
-<strong>Pull requests run the quick profile.</strong> It should finish in under five minutes. If it doesn’t, trim <code>quick-containers</code> in the caller workflows; never cut the full profile.</li>
-<li>
-<strong>A <code>full</code> roadmap stage takes the <code>full-ci</code> label</strong> and merges only on a green full run. The roadmap gives the reason in the stage’s <code>**CI.**</code> line, for example first compiled code, a <code>PROTECT</code> or finalizer change, a vendored library, or a Windows-only path.</li>
-<li>
-<strong>Merges run quick too.</strong> The callers pass <code>profile: auto</code>, so a push to <code>main</code> runs the quick profile. The full set runs on the weekly schedule (Monday) and when dispatched: <code>gh workflow run R-CMD-check.yaml --ref main</code> and <code>gh workflow run native-checks.yaml --ref main</code>. Dispatch it once at the end of a series of merges, on the last merge commit, not after each one.</li>
-<li>
-<strong>A failure only the full set shows</strong> goes on the <code>Full CI</code> stage issue as a comment with the run link, and is fixed there. A failure the quick profile also shows is fixed now.</li>
-<li>
-<strong><code>Full CI</code>, <code>v0.1.0 readiness</code> and the release commit wait</strong> for a green dispatched full run on their merge commit.</li>
-</ul></div>
+<strong><code>vendor.yaml</code></strong> re-derives <code>src/vendor/nanoarrow</code> with <code>tools/verify-vendor</code> and fails a pull request that changes the vendored files without <code>src/vendor/PROVENANCE</code>. <strong><code>vendor-upstream.yaml</code></strong> checks weekly for a new nanoarrow release.</li>
+</ul><p>The callers’ file names end in <code>.yaml</code>, so the full set is dispatched with <code>gh workflow run R-CMD-check.yaml --ref main</code> and <code>gh workflow run native-checks.yaml --ref main</code>; it also runs weekly on Monday.</p>
 <div class="section level3">
 <h3 id="gctorture-wide-on-every-push-step-20-on-a-schedule">gctorture: wide on every push, step 20 on a schedule<a class="anchor" aria-label="anchor" href="#gctorture-wide-on-every-push-step-20-on-a-schedule"></a></h3>
-<p>gctorture at step 20 is the most sensitive setting and by far the slowest job: 36 minutes to over two hours on sibling packages. It does not gate merges. Its own caller, <code>.github/workflows/gctorture.yaml</code>, copied from r-actions’ <code>examples/gctorture.yml</code>, runs it in two ways:</p>
+<p>gctorture at step 20 is the most sensitive setting and by far the slowest job, so its job has GitHub’s six-hour limit (<code>timeout-minutes: 360</code>). It does not gate merges. Its own caller, <code>.github/workflows/gctorture.yaml</code>, copied from r-actions’ <code>examples/gctorture.yml</code>, runs it in two ways:</p>
 <ul><li>
 <strong>Every push and pull request runs the wide <code>quick-step</code> under a 10-minute budget</strong> (<code>test-timeout-minutes</code>). Past the budget the check fails red. Widen the step to get back under it; don’t skip tests to fit.</li>
 <li>
 <strong>Step 20 runs on a schedule</strong>: daily while the roadmap is in active development, weekly once the package is released and changes slow down. Changing the <code>cron</code> line is the switch. A red scheduled run opens an issue labelled <code>gctorture</code>, and the next green run closes it. That issue is fixed like any other defect, before the next stage merges.</li>
 <li>
-<strong>Dispatch step 20 on the branch before merging</strong> a change to <code>PROTECT</code>s, finalizers or external-pointer handles, and before <code>Full CI</code>, <code>v0.1.0 readiness</code> and the release commit: <code>gh workflow run gctorture.yaml --ref &lt;branch&gt;</code>. A green run on that commit is the evidence; a nightly run on another commit is not.</li>
+<strong>Dispatch step 20 on the branch before merging</strong> a change to <code>PROTECT</code>s, finalizers or external-pointer handles, and before <code>Full CI</code>, <code>v0.1.0 readiness</code> and the release commit: <code>gh workflow run gctorture.yaml --ref &lt;branch&gt;</code>. A green run on that commit is the evidence; a nightly run on another commit is not. That run is part of the definition of done for such a change.</li>
 <li>
 <strong>Sample repetition, keep every path.</strong> gctorture finds an unprotected <code>SEXP</code> by running the path that holds it, not by running it again. Under gctorture, loops that repeat one path (fuzz iterations, property cases, the same input across versions) run a fixed sample. The caller sets an environment variable for it, <code>ZUARROW_GCTORTURE=true</code>, and <code>helper-gctorture.R</code> reads it. Every type, branch and error path still runs.</li>
-<li>Locally, run <code>gctorture(TRUE)</code> on the code a C change touches when it is cheap; the step-20 run is the authority.</li>
 </ul></div>
 </div>
 <div class="section level2">
 <h2 id="vendored-native-code">Vendored native code<a class="anchor" aria-label="anchor" href="#vendored-native-code"></a></h2>
 <p>The nanoarrow C library’s core and ipc components, Apache-2.0, release <code>apache-arrow-nanoarrow-0.9.0</code> (commit <code>9fad802</code>), live under <code>src/vendor/nanoarrow/</code> (design §7, D1), with the flatcc runtime nanoarrow bundles. <code>src/vendor/PROVENANCE</code> holds the tag, commit, archive SHA-512, the SHA-256 of every file and the patch list; <code>inst/COPYRIGHTS</code> and <code>LICENSE.note</code> carry the notices, including three MIT and one BSD flatcc header. Its integration-testing header goes into the test harness only, never into <code>zuarrow.so</code> (D18). lz4 and zstd are not vendored; they come from <code>zukomp</code> (D2).</p>
-<ul><li><p><strong>The tree is derived, never edited.</strong> <code>tools/derive-vendor</code> downloads the release, checks the SHA-512 Apache publishes, runs upstream’s <code>ci/scripts/bundle.py --symbol-namespace=zuarrow --with-ipc --with-flatcc</code>, splits the generated FlatBuffers code into <code>nanoarrow_ipc_flatcc_generated.h</code> and applies <code>tools/patches/</code> in order. <code>tools/update-vendor</code> writes the tree and <code>PROVENANCE</code>; <code>tools/verify-vendor</code> re-derives and fails on any byte of difference, and <code>--canary</code> proves it would catch a missing patch.</p></li>
-<li><p><strong>Patches.</strong> <code>0001-no-suppressing-pragmas</code> removes flatcc’s <code>#pragma diagnostic ignored</code> lines (a NOTE); <code>0002-unused-locals</code> fixes the two generated macros whose unused locals <code>-Wall</code> then reports (R CMD check counts “warning: unused” as significant). Every patched file carries a “Modified for the zuarrow R package” notice.</p></li>
-<li><p><strong>Visibility.</strong> <code>src/Makevars</code> defines <code>NANOARROW_DLL</code> empty, because nanoarrow otherwise marks its API <code>visibility("default")</code> and hidden visibility would not hide it. <code>src/zuarrow-win.def</code> exports <code>R_init_zuarrow</code> alone on Windows. <code>test-abi.R</code> checks both, and that nothing CRAN’s compiled-code check reports is referenced.</p></li>
-<li><p>Pin a stable upstream release, never <code>master</code> or a release candidate.</p></li>
-<li><p>Record the tag, the commit and the checksums, and write down the update procedure so the next bump is mechanical.</p></li>
-<li><p>Keep upstream <code>LICENSE</code> and <code>NOTICE</code> under <code>src/vendor/&lt;lib&gt;/</code>, declare the vendored code in <code>DESCRIPTION</code> and <code>inst/COPYRIGHTS</code>.</p></li>
-<li><p>Keep the vendor tree clearly separated from first-party source, and record every local patch and why it exists.</p></li>
-<li><p><strong>CRAN’s compiled-code check applies to vendored code too.</strong> No <code>stdout</code> or <code>stderr</code>, no <code>printf</code>, <code>abort</code>, <code>exit</code> or system RNG may be linked, even behind a debug switch that never runs. Remove them with a patch in <code>tools/patches/</code>, list it in <code>src/vendor/PROVENANCE</code>, and make the vendor-verify script check “upstream plus exactly these patches”. Avoid diagnostic-suppressing pragmas too, because they draw their own NOTE. zuhtml is the reference: <code>tools/patches/0002-no-stdio.patch</code> and <code>tools/verify-vendor</code>. zuxml’s first upload was archived because it justified such a symbol instead of patching it.</p></li>
-<li><p>Guard against regressions in CI: run <code>nm -u</code> on the built objects and fail on any of those symbols, so an upstream bump cannot bring them back.</p></li>
-</ul></div>
-<div class="section level2">
-<h2 id="commits-and-pull-requests">Commits and pull requests<a class="anchor" aria-label="anchor" href="#commits-and-pull-requests"></a></h2>
-<p>Short, imperative, sentence-case commit subjects, optionally scoped. Keep each commit focused and do not sweep in unrelated files. A pull request explains the user-visible outcome and the rationale, links related issues, lists the checks that were run and the tests that were skipped, and flags platform-sensitive or vendored changes. Performance claims need evidence.</p>
-<p>Never commit or push to the default branch. Work on a branch, open a pull request, and leave it for review. Do not merge a pull request unless you are told to.</p>
-<p>When you find a defect, in this package or in an upstream tool, open an issue for it rather than only working around it.</p>
-</div>
-<div class="section level2">
-<h2 id="working-with-skills">Working with skills<a class="anchor" aria-label="anchor" href="#working-with-skills"></a></h2>
-<p>The portfolio’s workflow skills live in <code>pedrobtz/r-skills</code> (<code>pkg-init</code>, <code>pkg-roadmap</code>, <code>pkg-implement</code>, <code>pkg-critical-review</code>, <code>pkg-cran-review</code>, <code>pkg-post-cran</code>, <code>pkg-readme</code>); the general process skills are <a href="https://github.com/obra/superpowers" class="external-link">Superpowers</a>. <code>building-a-package.md</code> in <code>pedrobtz/packages</code> walks through them in order. Both sets defer to this file where they overlap, so the settlements are recorded here.</p>
 <ul><li>
-<strong>One design.</strong> The specification is <code>.agents/design.md</code>, adopted from the package’s RFC in <code>pedrobtz/packages/rfcs</code>. A package with an adopted design is past <code>brainstorming</code>; a design change goes through the RFC, not a new spec. Superpowers’ default <code>docs/superpowers/specs/</code> is not used.</li>
+<strong>The tree is derived, never edited.</strong> <code>tools/derive-vendor</code> downloads the release, checks the SHA-512 Apache publishes, runs upstream’s <code>ci/scripts/bundle.py --symbol-namespace=zuarrow --with-ipc --with-flatcc</code>, splits the generated FlatBuffers code into <code>nanoarrow_ipc_flatcc_generated.h</code> and applies <code>tools/patches/</code> in order. <code>tools/update-vendor</code> writes the tree and <code>PROVENANCE</code>; <code>tools/verify-vendor</code> re-derives and fails on any byte of difference, and <code>--canary</code> proves it would catch a missing patch.</li>
 <li>
-<strong>Plans at two levels.</strong> <code>.agents/roadmap.md</code> holds the stages, one mergeable pull request each, with exit criteria and a CI tier (<code>pkg-roadmap</code>). Inside a stage, <code>writing-plans</code> breaks the work into tasks of one test cycle each, saved as <code>.agents/plans/stage-&lt;n&gt;.md</code>. The roadmap stays authoritative; a plan is scratch and is not kept in sync.</li>
+<strong>Patches.</strong> <code>src/vendor/PROVENANCE</code> lists the series, 0001 to 0016, in the order applied. <code>0001-no-suppressing-pragmas</code> removes flatcc’s <code>#pragma diagnostic ignored</code> lines (a NOTE); <code>0002-unused-locals</code> fixes the two generated macros whose unused locals <code>-Wall</code> then reports (R CMD check counts “warning: unused” as significant). Every patched file carries a “Modified for the zuarrow R package” notice.</li>
 <li>
-<strong>Build and merge.</strong> <code>pkg-implement</code> runs the stage loop: branch <code>stage-&lt;n&gt;-&lt;slug&gt;</code> from the stage issue, implement the plan with <code>test-driven-development</code> (<code>Rscript -e 'devtools::test(filter = "&lt;name&gt;")'</code> is the red/green command), open the pull request, merge on green at the stage’s CI tier. The confirmation the user gives at the start of that loop is the “told to merge” that Commits and pull requests requires, so the <code>finishing-a-development-branch</code> menu is not presented for stage pull requests. Any other pull request still waits for review.</li>
-<li>
-<strong>Failures and claims.</strong> A failing check or test goes through <code>systematic-debugging</code> before a fix. “Green”, “done” and “ready for CRAN” are claimed only after <code>verification-before-completion</code>: run the command, read the output.</li>
-<li>
-<strong>Review.</strong> <code>requesting-code-review</code> gates tasks inside a stage. <code>pkg-critical-review</code> reviews the whole package once the roadmap is implemented, with Posit’s reviewers, and files issues. CRAN’s reviewer email and GitHub review threads go through <code>receiving-code-review</code>.</li>
-<li>
-<strong>Keep scratch out of the tarball.</strong> <code>R CMD build</code> reads <code>.Rbuildignore</code>, not <code>.gitignore</code>. It must list <code>^\.agents$</code>, <code>^\.superpowers$</code> (the Superpowers task ledger), <code>^\.worktrees$</code> (if git worktrees are kept in the package directory; a sibling directory avoids the question), <code>^\.claude$</code>, <code>^CLAUDE\.md$</code>, <code>^AGENTS\.md$</code>, <code>^CRAN-SUBMISSION$</code> and <code>^cran-comments\.md$</code>. A stray top-level file is a NOTE, and the pretest archives on NOTEs.</li>
+<strong>Visibility.</strong> <code>src/Makevars</code> defines <code>NANOARROW_DLL</code> empty, because nanoarrow otherwise marks its API <code>visibility("default")</code> and hidden visibility would not hide it. <code>src/zuarrow-win.def</code> exports <code>R_init_zuarrow</code> alone on Windows. <code>test-abi.R</code> checks both, and that nothing CRAN’s compiled-code check reports is referenced.</li>
 </ul></div>
 </div>
 
