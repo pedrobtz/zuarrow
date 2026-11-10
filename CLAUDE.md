@@ -265,6 +265,9 @@ calls gctorture. Its own and other callers:
   hour clean on the release candidate that design §12 wants:
   `gh workflow run fuzz.yaml --ref <branch>`. Its seed commit is kept in
   step with `tests/testthat/fixtures-files.txt`.
+- **`assurance.yaml`** calls r-actions' `assurance.yml`, which holds
+  `.agents/assurance.md` to `.claude/shared/assurance.md`: every `done`
+  backed by a workflow, every gap by an issue labelled `assurance`.
 - **`vendor.yaml`** re-derives `src/vendor/nanoarrow` with
   `tools/verify-vendor` and fails a pull request that changes the vendored
   files without `src/vendor/PROVENANCE`. **`vendor-upstream.yaml`** checks
