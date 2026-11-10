@@ -14,6 +14,7 @@ a shared file disagree, this file wins for zuarrow.
 @.claude/shared/ci.md
 @.claude/shared/native-code.md
 @.claude/shared/correctness.md
+@.claude/shared/assurance.md
 
 ## What this is
 
