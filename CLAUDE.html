@@ -39,7 +39,7 @@
 <div class="section level2">
 <h2 id="shared-conventions">Shared conventions<a class="anchor" aria-label="anchor" href="#shared-conventions"></a></h2>
 <p>The portfolio’s shared rules are synced into <code>.claude/shared/</code> from <code>pedrobtz/packages:claude/shared/</code>. Never edit them here. Where this file and a shared file disagree, this file wins for zuarrow.</p>
-<p>@.claude/shared/workflow.md @.claude/shared/r-package.md @.claude/shared/ci.md @.claude/shared/native-code.md @.claude/shared/correctness.md</p>
+<p>@.claude/shared/workflow.md @.claude/shared/r-package.md @.claude/shared/ci.md @.claude/shared/native-code.md @.claude/shared/correctness.md @.claude/shared/assurance.md</p>
 </div>
 <div class="section level2">
 <h2 id="what-this-is">What this is<a class="anchor" aria-label="anchor" href="#what-this-is"></a></h2>
@@ -140,6 +140,8 @@
 <strong><code>oracles.yaml</code></strong> runs the <code>*-ci-*.R</code> tests from the source tree on Ubuntu with every oracle installed and <code>ZUARROW_ORACLES=true</code>. r-actions has no workflow that runs tests outside the tarball, hence one of its own.</li>
 <li>
 <strong><code>fuzz.yaml</code></strong> fuzzes the IPC reader built without R (<code>ZAR_STANDALONE</code>): short runs on pull requests, a long run nightly, and a dispatch for the hour clean on the release candidate that design §12 wants: <code>gh workflow run fuzz.yaml --ref &lt;branch&gt;</code>. Its seed commit is kept in step with <code>tests/testthat/fixtures-files.txt</code>.</li>
+<li>
+<strong><code>assurance.yaml</code></strong> calls r-actions’ <code>assurance.yml</code>, which holds <code>.agents/assurance.md</code> to <code>.claude/shared/assurance.md</code>: every <code>done</code> backed by a workflow, every gap by an issue labelled <code>assurance</code>.</li>
 <li>
 <strong><code>vendor.yaml</code></strong> re-derives <code>src/vendor/nanoarrow</code> with <code>tools/verify-vendor</code> and fails a pull request that changes the vendored files without <code>src/vendor/PROVENANCE</code>. <strong><code>vendor-upstream.yaml</code></strong> checks weekly for a new nanoarrow release.</li>
 </ul><p>The callers’ file names end in <code>.yaml</code>, so the full set is dispatched with <code>gh workflow run R-CMD-check.yaml --ref main</code> and <code>gh workflow run native-checks.yaml --ref main</code>; it also runs weekly on Monday.</p>

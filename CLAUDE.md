@@ -11,7 +11,7 @@ file and a shared file disagree, this file wins for zuarrow.
 
 @.claude/shared/workflow.md @.claude/shared/r-package.md
 @.claude/shared/ci.md @.claude/shared/native-code.md
-@.claude/shared/correctness.md
+@.claude/shared/correctness.md @.claude/shared/assurance.md
 
 ## What this is
 
@@ -292,6 +292,9 @@ callers:
   and a dispatch for the hour clean on the release candidate that design
   §12 wants: `gh workflow run fuzz.yaml --ref <branch>`. Its seed commit
   is kept in step with `tests/testthat/fixtures-files.txt`.
+- **`assurance.yaml`** calls r-actions’ `assurance.yml`, which holds
+  `.agents/assurance.md` to `.claude/shared/assurance.md`: every `done`
+  backed by a workflow, every gap by an issue labelled `assurance`.
 - **`vendor.yaml`** re-derives `src/vendor/nanoarrow` with
   `tools/verify-vendor` and fails a pull request that changes the
   vendored files without `src/vendor/PROVENANCE`.
