@@ -26,7 +26,9 @@ arrow_limits(
 
 - max_depth:
 
-  The deepest nesting a schema may have.
+  The deepest nesting a schema may have, counting a top-level column as
+  one level. Whatever it says, a schema more than about 120 levels deep
+  is a limit error, because the FlatBuffers verifier checks no deeper.
 
 - max_batch_rows:
 

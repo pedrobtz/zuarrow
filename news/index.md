@@ -477,3 +477,24 @@
   `zuarrow_type_error`. Before, `arrow_schema(list(sum))` recursed until
   the C stack overflowed
   ([\#82](https://github.com/pedrobtz/zuarrow/issues/82)).
+
+- [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  reads a schema nested up to `max_depth` levels and refuses a deeper
+  one with a `zuarrow_limit_error`. Before, the bundled FlatBuffers
+  verifier ran out of its own budget from 49 levels, and its failure
+  took time exponential in the depth, so a stream of a few KB, or one
+  written by
+  [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md),
+  stalled the session
+  ([\#200](https://github.com/pedrobtz/zuarrow/issues/200)).
+
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  writes a field with no name with an empty name, as
+  [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  presents it. Before, an `NA` column name crashed R
+  ([\#201](https://github.com/pedrobtz/zuarrow/issues/201)).
+
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  writes metadata values whole. Before, schema, field and extension
+  metadata were cut at the first NUL byte
+  ([\#202](https://github.com/pedrobtz/zuarrow/issues/202)).
