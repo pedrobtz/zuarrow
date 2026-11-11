@@ -93,3 +93,31 @@ test_that("arrow_read() reads what arrow writes, at every compression", {
     expect_identical(without_metadata(arrow_read(path)), df, info = compression)
   }
 })
+
+# From test-registry.R (#189, #204).
+test_that("arrow_stream() exported to arrow outlives every R reference", {
+  skip_without_oracle("arrow")
+  skip_without_oracle("nanoarrow")
+  local_registration(
+    "g",
+    from = function(x) arrow_array(as.double(unclass(x))),
+    class = "fake_dbl"
+  )
+  n <- 5000L
+  expected <- data.frame(id = seq_len(n), v = as.double(seq_len(n)) * 10)
+  for (batch in c(n, 1000L)) {
+    reader <- local({
+      df <- expected
+      df$v <- structure(df$v, class = "fake_dbl")
+      stream <- arrow_stream(df, batch = batch)
+      arrow::as_record_batch_reader(
+        nanoarrow::as_nanoarrow_array_stream(stream)
+      )
+    })
+    heap_churn()
+    table <- reader$read_table()
+    rm(reader)
+    heap_churn()
+    expect_identical(as.data.frame(table), expected, info = batch)
+  }
+})

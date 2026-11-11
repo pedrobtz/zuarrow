@@ -218,3 +218,22 @@ test_ree_array <- function(format, run_ends, values) {
 test_release <- function(x, schema = FALSE) {
   invisible(.Call(zuarrow:::zar_c_test_release, x, schema))
 }
+
+# Moves an array or stream out of `x`, as nanoarrow's
+# nanoarrow_pointer_move() or a foreign consumer would, into `into`, a
+# released handle of the same kind, or into a new handle when `into` is
+# NULL. The new handle holds nothing in its protected field, so whatever
+# the struct points into must be its own. Returns the handle moved into.
+test_move <- function(x, into = NULL) {
+  zuarrow:::zar_check(.Call(zuarrow:::zar_c_test_move, x, into))
+}
+
+# Allocates and drops R vectors, so memory a dropped object freed is
+# reused, and a read of it shows other bytes.
+heap_churn <- function(n = 50L, size = 5000L) {
+  gc()
+  junk <- lapply(seq_len(n), function(i) numeric(size) + i)
+  rm(junk)
+  gc()
+  invisible()
+}

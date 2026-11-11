@@ -178,15 +178,39 @@ struct ArrowSchema *zar_schema_from_xptr(SEXP x, struct ArrowError *error) {
   return schema;
 }
 
+/* A child lent by zar_c_array_child(): release only marks it released,
+   because its buffers belong to the parent its handle's protected field
+   holds. */
+static void zar_release_lent(struct ArrowArray *array) {
+  array->release = NULL;
+}
+
+/* Whether the array behind handle `x` can be read: it is live, and so is
+   every parent it was lent by. A lent child's own release is never seen
+   when its parent is released, so the parents are checked too (#205). */
+static int zar_array_xptr_live(SEXP x) {
+  for (;;) {
+    struct ArrowArray *array =
+        TYPEOF(x) == EXTPTRSXP ? (struct ArrowArray *)R_ExternalPtrAddr(x) : NULL;
+    if (array == NULL || array->release == NULL) return 0;
+    if (array->release != &zar_release_lent) return 1;
+    x = R_ExternalPtrProtected(x);
+  }
+}
+
 struct ArrowArray *zar_array_from_xptr(SEXP x, struct ArrowError *error) {
   struct ArrowArray *array = (struct ArrowArray *)zar_xptr_addr(
       x, "nanoarrow_array", "an array", error);
-  if (array != NULL && array->release == NULL) {
-    ArrowErrorSet(error, "the array handle has been released");
+  if (array != NULL && !zar_array_xptr_live(x)) {
+    ArrowErrorSet(error, array->release == NULL
+                             ? "the array handle has been released"
+                             : "the array this field was lent by has been released");
     return NULL;
   }
   return array;
 }
+
+int zar_array_handle_live(SEXP x) { return zar_array_xptr_live(x); }
 
 struct ArrowArrayStream *zar_stream_from_xptr(SEXP x, struct ArrowError *error) {
   struct ArrowArrayStream *stream = (struct ArrowArrayStream *)zar_xptr_addr(
@@ -614,18 +638,60 @@ SEXP zar_c_array_info(SEXP x) {
 
 /* ---- reading a stream -------------------------------------------------- */
 
+/* A stream that has ended, wrapped so it answers every later get_next()
+   with the end itself and never asks its producer again (section 6.1).
+   The mark is the stream's own state, not its R handle's, so it moves
+   with the struct, and a live stream moved into the handle replaces it
+   (#220). Release never calls R. */
+static int zar_ended_get_schema(struct ArrowArrayStream *stream,
+                                struct ArrowSchema *out) {
+  struct ArrowArrayStream *inner = (struct ArrowArrayStream *)stream->private_data;
+  return inner->get_schema(inner, out);
+}
+
+static int zar_ended_get_next(struct ArrowArrayStream *stream,
+                              struct ArrowArray *out) {
+  (void)stream;
+  out->release = NULL;
+  return NANOARROW_OK;
+}
+
+static const char *zar_ended_last_error(struct ArrowArrayStream *stream) {
+  (void)stream;
+  return NULL;
+}
+
+static void zar_ended_release(struct ArrowArrayStream *stream) {
+  struct ArrowArrayStream *inner = (struct ArrowArrayStream *)stream->private_data;
+  if (inner->release != NULL) inner->release(inner);
+  free(inner);
+  stream->private_data = NULL;
+  stream->release = NULL;
+}
+
+/* Marks `stream` ended in place. Without memory it stays unmarked, and
+   its producer is asked again. */
+static void zar_mark_ended(struct ArrowArrayStream *stream) {
+  if (stream->get_next == &zar_ended_get_next) return;
+  struct ArrowArrayStream *inner =
+      (struct ArrowArrayStream *)malloc(sizeof(struct ArrowArrayStream));
+  if (inner == NULL) return;
+  ArrowArrayStreamMove(stream, inner);
+  stream->get_schema = &zar_ended_get_schema;
+  stream->get_next = &zar_ended_get_next;
+  stream->get_last_error = &zar_ended_last_error;
+  stream->release = &zar_ended_release;
+  stream->private_data = inner;
+}
+
 /* The next batch as an array handle whose tag is the stream's schema, or
-   NULL once the stream has ended (section 6.1). The end is remembered on
-   the handle, so a producer is never asked again after it said so. */
+   NULL once the stream has ended (section 6.1). */
 SEXP zar_c_stream_next(SEXP x) {
   struct ArrowError error;
   error.message[0] = '\0';
-  SEXP ended_sym = Rf_install("zuarrow_ended");
-  if (TYPEOF(x) == EXTPTRSXP && Rf_getAttrib(x, ended_sym) != R_NilValue) {
-    return R_NilValue;
-  }
   struct ArrowArrayStream *stream = zar_stream_from_xptr(x, &error);
   if (stream == NULL) return zar_failure_from_error("handle", &error);
+  if (stream->get_next == &zar_ended_get_next) return R_NilValue;
 
   SEXP schema = PROTECT(zar_schema_copy_of(x));
   if (Rf_inherits(schema, "zar_failure")) {
@@ -648,7 +714,7 @@ SEXP zar_c_stream_next(SEXP x) {
     return zar_failure_from_error(kind == NULL ? "handle" : kind, &error);
   }
   if (array->release == NULL) {
-    Rf_setAttrib(x, ended_sym, Rf_ScalarLogical(TRUE));
+    zar_mark_ended(stream);
     UNPROTECT(2);
     return R_NilValue;
   }
@@ -658,15 +724,53 @@ SEXP zar_c_stream_next(SEXP x) {
 
 /* ---- a field of a struct array, for a registered handler -------------- */
 
-/* A borrowed array: release only marks it released, because its buffers
-   belong to the parent the handle keeps alive. */
-static void zar_release_borrowed(struct ArrowArray *array) {
-  array->release = NULL;
+/* Copies every buffer of the array `view` sees into `dst`, which
+   ArrowArrayInitFromSchema() made from the same schema, and its children
+   and dictionary the same way. Offsets, lengths and null counts are kept,
+   so the copy reads as the source does. */
+static int zar_copy_buffers(const struct ArrowArrayView *view,
+                            struct ArrowArray *dst) {
+  dst->length = view->length;
+  dst->offset = view->offset;
+  dst->null_count = view->null_count;
+  int code = NANOARROW_OK;
+  for (int i = 0; code == NANOARROW_OK && i < NANOARROW_MAX_FIXED_BUFFERS; i++) {
+    enum ArrowBufferType type = view->layout.buffer_type[i];
+    if (type == NANOARROW_BUFFER_TYPE_NONE ||
+        type == NANOARROW_BUFFER_TYPE_VARIADIC_DATA ||
+        type == NANOARROW_BUFFER_TYPE_VARIADIC_SIZE) {
+      continue;
+    }
+    const struct ArrowBufferView *b = &view->buffer_views[i];
+    if (b->data.data != NULL && b->size_bytes > 0) {
+      code = ArrowBufferAppend(ArrowArrayBuffer(dst, i), b->data.data, b->size_bytes);
+    }
+  }
+  if (code == NANOARROW_OK && view->n_variadic_buffers > 0) {
+    code = ArrowArrayAddVariadicBuffers(dst, view->n_variadic_buffers);
+    for (int32_t i = 0; code == NANOARROW_OK && i < view->n_variadic_buffers; i++) {
+      if (view->variadic_buffer_sizes[i] > 0) {
+        code = ArrowBufferAppend(ArrowArrayBuffer(dst, NANOARROW_BINARY_VIEW_FIXED_BUFFERS + i),
+                                 view->variadic_buffers[i],
+                                 view->variadic_buffer_sizes[i]);
+      }
+    }
+  }
+  for (int64_t k = 0; code == NANOARROW_OK && k < view->n_children; k++) {
+    code = zar_copy_buffers(view->children[k], dst->children[k]);
+  }
+  if (code == NANOARROW_OK && view->dictionary != NULL) {
+    code = zar_copy_buffers(view->dictionary, dst->dictionary);
+  }
+  return code;
 }
 
-/* An array handle over the same buffers as `x`, for a consumer that moves
-   the array it is given, such as a stream. Releasing it leaves `x` alone;
-   its protected field holds `x`, so the buffers outlive it. */
+/* An array handle over a copy of `x`, for a consumer that moves the array
+   it is given, such as a stream: releasing it leaves `x` alone. It owns
+   every byte it points into, so it outlives `x` and any R object, and a
+   foreign consumer can move it out and release it on any thread without
+   R (#204). A shallow borrow would keep `x` alive only through the R
+   handle's protected field, which a moved struct leaves behind. */
 SEXP zar_c_array_borrow(SEXP x) {
   struct ArrowError error;
   error.message[0] = '\0';
@@ -674,13 +778,26 @@ SEXP zar_c_array_borrow(SEXP x) {
   if (array == NULL) return zar_failure_from_error("handle", &error);
   SEXP tag = zar_array_schema_xptr(x, &error);
   if (tag == NULL) return zar_failure_from_error("handle", &error);
+  struct ArrowSchema *schema = zar_schema_from_xptr(tag, &error);
+  if (schema == NULL) return zar_failure_from_error("handle", &error);
+
   SEXP out = PROTECT(zar_array_owning_xptr(tag));
   struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
-  *dst = *array;
-  dst->private_data = NULL;
-  dst->release = &zar_release_borrowed;
-  R_SetExternalPtrProtected(out, x);
+  struct ArrowArrayView view;
+  int code = ArrowArrayViewInitFromSchema(&view, schema, &error);
+  if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(&view, array, &error);
+  if (code == NANOARROW_OK) code = ArrowArrayInitFromSchema(dst, schema, &error);
+  if (code == NANOARROW_OK) code = zar_copy_buffers(&view, dst);
+  if (code == NANOARROW_OK) {
+    code = ArrowArrayFinishBuildingDefault(dst, &error);
+  }
+  ArrowArrayViewReset(&view);
   UNPROTECT(1);
+  if (code != NANOARROW_OK) {
+    /* The handle's finalizer releases a partly built copy. */
+    return zar_failure(code == ENOMEM ? NULL : "format",
+                       "the array could not be copied");
+  }
   return out;
 }
 
@@ -944,8 +1061,11 @@ SEXP zar_c_array_nulls(SEXP x) {
 
 /* Field k of a struct array as its own array handle (section 6.10). The
    child is sliced by the parent's offset and length; the handle's
-   protected field holds the parent, so the buffers outlive it. Null rows
-   of the parent are not applied to the field. */
+   protected field holds the parent, so the buffers outlive it, and every
+   reader of the handle checks the parent is still live, so a released
+   parent is a handle error, not a read of freed memory (#205). Null rows
+   of the parent are not applied to the field. The child is lent: a
+   consumer that moves it out of its handle gets no owner with it. */
 SEXP zar_c_array_child(SEXP x, SEXP r_k) {
   struct ArrowError error;
   error.message[0] = '\0';
@@ -982,7 +1102,7 @@ SEXP zar_c_array_child(SEXP x, SEXP r_k) {
     dst->null_count = -1;
   }
   dst->private_data = NULL;
-  dst->release = &zar_release_borrowed;
+  dst->release = &zar_release_lent;
   R_SetExternalPtrProtected(out, x);
   UNPROTECT(2);
   return out;
