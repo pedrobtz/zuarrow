@@ -488,7 +488,7 @@ test_that("a sliced union is written as the values it holds", {
   )
 })
 
-test_that("a sliced run-end encoded column is a type error", {
+test_that("a sliced run-end encoded column is written as its rows", {
   schema <- test_schema(zspec(
     "+s",
     children = list(zspec(
@@ -511,7 +511,7 @@ test_that("a sliced run-end encoded column is a type error", {
       )
     ))
   )
-  expect_error(arrow_write(batch, NULL), class = "zuarrow_type_error")
+  expect_identical(arrow_read(arrow_write(batch, NULL)), data.frame(r = 5L))
 })
 
 test_that("a view layout is a type error", {

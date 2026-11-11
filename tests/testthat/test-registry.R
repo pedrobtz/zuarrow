@@ -556,21 +556,99 @@ test_that("copied slices keep nulls and bits across batch boundaries", {
   for (batch in c(1, 3, 5, 10)) {
     bytes <- arrow_write(df, NULL, format = "stream", batch = batch)
     out <- arrow_read(bytes)
-    expect_identical(out$v, v, info = batch)
-    expect_identical(out$b, b, info = batch)
+    expect_identical(out$v, v, info = paste("batch", batch))
+    expect_identical(out$b, b, info = paste("batch", batch))
   }
 })
 
-test_that("a variable-width registered column is built per batch", {
+test_that("a variable-width registered column is cut from one array (#215)", {
+  calls <- 0L
   local_registration(
     "u",
-    from = function(x) arrow_array(unclass(x)),
-    class = "fake_text"
+    from = function(x) {
+      calls <<- calls + 1L
+      arrow_array(paste0(unclass(x), "/", attr(x, "unit") %||% "?"))
+    },
+    class = "fake_unit"
   )
   df <- data.frame(id = 1:5)
-  df$t <- structure(c("a", "bb", NA, "dddd", "e"), class = "fake_text")
-  bytes <- arrow_write(df, NULL, format = "stream", batch = 2)
-  expect_identical(arrow_read(bytes)$t, unclass(df$t))
+  df$t <- structure(c(1.5, NA, 3.5, 4.5, 5.5), class = "fake_unit", unit = "kg")
+  expected <- paste0(unclass(df$t), "/kg")
+  one <- arrow_write(df, NULL, format = "stream")
+  for (batch in c(1, 2, 4)) {
+    calls <- 0L
+    bytes <- arrow_write(df, NULL, format = "stream", batch = batch)
+    expect_identical(calls, 1L, info = paste("batch", batch))
+    expect_identical(
+      arrow_read(bytes),
+      arrow_read(one),
+      info = paste("batch", batch)
+    )
+    expect_identical(
+      arrow_read(bytes)$t,
+      expected,
+      info = paste("batch", batch)
+    )
+    stream <- arrow_stream(df, batch = batch)
+    expect_identical(
+      as.data.frame(stream)$t,
+      expected,
+      info = paste("batch", batch)
+    )
+  }
+})
+
+test_that("a registered column of any layout is cut into batches (#215)", {
+  # A list, a struct, a dictionary and a run-end encoding, each built once.
+  local_registration(
+    "+l",
+    from = function(x) arrow_array(unclass(x)),
+    class = "fake_list"
+  )
+  local_registration(
+    "+s",
+    from = function(x) {
+      arrow_array(data.frame(v = unclass(x), n = nchar(unclass(x))))
+    },
+    class = "fake_point"
+  )
+  local_registration(
+    "i",
+    from = function(x) arrow_array(factor(unclass(x), levels = c("p", "q"))),
+    class = "fake_code"
+  )
+  df <- data.frame(id = 1:5)
+  df$l <- structure(list(1:2, NULL, integer(), 3L, 4:6), class = "fake_list")
+  df$p <- structure(c("a", NA, "ccc", "dd", "e"), class = "fake_point")
+  df$k <- structure(c("p", "q", NA, "q", "p"), class = "fake_code")
+  one <- arrow_read(arrow_write(df, NULL, format = "stream"))
+  for (batch in c(1, 2, 3)) {
+    bytes <- arrow_write(df, NULL, format = "stream", batch = batch)
+    expect_identical(arrow_read(bytes), one, info = paste("batch", batch))
+    stream <- arrow_stream(df, batch = batch)
+    expect_identical(as.data.frame(stream), one, info = paste("batch", batch))
+  }
+})
+
+test_that("a run-end encoded registered column is cut at any row (#215)", {
+  local_registration(
+    "zar_test_ree",
+    from = function(x) {
+      values <- test_array_spec(3, list(NULL, le_int(c(10, 20, 30), 4L)))
+      test_ree_array("i", c(2, 5, 6), values)
+    },
+    class = "zar_test_ree"
+  )
+  df <- data.frame(id = 1:6)
+  df$r <- structure(1:6, class = "zar_test_ree")
+  expected <- c(10L, 10L, 20L, 20L, 20L, 30L)
+  for (batch in 1:6) {
+    info <- paste("batch", batch)
+    bytes <- arrow_write(df, NULL, format = "stream", batch = batch)
+    expect_identical(arrow_read(bytes)$r, expected, info = info)
+    stream <- arrow_stream(df, batch = batch)
+    expect_identical(as.data.frame(stream)$r, expected, info = info)
+  }
 })
 
 test_that("a package registering its own key again is silent", {
@@ -742,9 +820,10 @@ test_that("a `from` handler that returns no array is a registry error", {
   expect_error(arrow_array(x), class = "zuarrow_registry_error")
 })
 
-test_that("a handler whose nested type differs per batch is refused", {
+test_that("a handler whose nested type depends on the values writes in batches", {
   # list<int32> when every value fits, list<int64> otherwise: the top-level
   # format is "+l" either way, so only the child tells them apart (#100).
+  # Every batch is cut from the whole column's array (#215).
   local_registration(
     "+l",
     from = function(x) {
@@ -757,14 +836,15 @@ test_that("a handler whose nested type differs per batch is refused", {
   )
   df <- data.frame(id = 1:4)
   df$x <- structure(c(1, 2, 3e12, 4), class = "fake_nested")
-  expect_error(
-    arrow_to_r(arrow_stream(df, batch = 2), lossy = "allow"),
-    class = "zuarrow_registry_error"
+  expected <- list(1, 2, 3e12, 4)
+  stream <- arrow_stream(df, batch = 2)
+  expect_identical(
+    format(arrow_schema(stream)),
+    "struct<id: int32, x: list<item: int64>>"
   )
-  expect_error(
-    arrow_write(df, NULL, format = "stream", batch = 2),
-    class = "zuarrow_registry_error"
-  )
+  expect_identical(arrow_to_r(stream, lossy = "allow")$x, expected)
+  bytes <- arrow_write(df, NULL, format = "stream", batch = 2)
+  expect_identical(arrow_read(bytes, lossy = "allow")$x, expected)
 })
 
 test_that("a string dictionary's handler gets its decoded values", {
