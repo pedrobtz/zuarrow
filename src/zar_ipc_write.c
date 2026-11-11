@@ -250,6 +250,58 @@ static int zar_copy_offsets(struct ArrowBuffer *dst, const struct ArrowBufferVie
   return NANOARROW_OK;
 }
 
+static int zar_copy_node(const struct ArrowArrayView *v, struct ArrowArray *out,
+                         int64_t start, int64_t n, const char **kind,
+                         struct ArrowError *error);
+
+/* Rows [from, from + n) of a validated run-end encoded view: the runs that
+   cover them, their ends rebased to the first row and the last one cut at
+   `n`, and the values of those runs. */
+static int zar_copy_runs(const struct ArrowArrayView *v, struct ArrowArray *out,
+                         int64_t from, int64_t n, const char **kind,
+                         struct ArrowError *error) {
+  const struct ArrowArrayView *ends = v->children[0];
+  int64_t first = 0;
+  int64_t count = 0;
+  if (n > 0) {
+    /* The first run whose end is past `from`, then the first whose end
+       reaches `from + n`; run ends are strictly increasing. */
+    int64_t lo = 0, hi = ends->length - 1;
+    while (lo < hi) {
+      int64_t mid = lo + (hi - lo) / 2;
+      if (ArrowArrayViewGetIntUnsafe(ends, mid) > from) hi = mid; else lo = mid + 1;
+    }
+    first = lo;
+    hi = ends->length - 1;
+    while (lo < hi) {
+      int64_t mid = lo + (hi - lo) / 2;
+      if (ArrowArrayViewGetIntUnsafe(ends, mid) >= from + n) hi = mid; else lo = mid + 1;
+    }
+    count = lo - first + 1;
+  }
+  struct ArrowArray *out_ends = out->children[0];
+  struct ArrowBuffer *buffer = ArrowArrayBuffer(out_ends, 1);
+  for (int64_t i = 0; i < count; i++) {
+    int64_t end = ArrowArrayViewGetIntUnsafe(ends, first + i) - from;
+    if (end > n) end = n;
+    switch (ends->storage_type) {
+      case NANOARROW_TYPE_INT16:
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt16(buffer, (int16_t)end));
+        break;
+      case NANOARROW_TYPE_INT32:
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt32(buffer, (int32_t)end));
+        break;
+      default:
+        NANOARROW_RETURN_NOT_OK(ArrowBufferAppendInt64(buffer, end));
+        break;
+    }
+  }
+  out_ends->offset = 0;
+  out_ends->length = count;
+  out_ends->null_count = 0;
+  return zar_copy_node(v->children[1], out->children[1], first, count, kind, error);
+}
+
 /* Copies elements [start, start + n) of a validated view into `out`, an
    array initialised from the same schema, at offset zero. Sets `*kind`
    for a failure that is not an allocation's. */
@@ -331,9 +383,8 @@ static int zar_copy_node(const struct ArrowArrayView *v, struct ArrowArray *out,
       break;
     }
     case NANOARROW_TYPE_RUN_END_ENCODED:
-      ArrowErrorSet(error, "a sliced run-end encoded array cannot be written");
-      *kind = "type";
-      return ENOTSUP;
+      NANOARROW_RETURN_NOT_OK(zar_copy_runs(v, out, from, n, kind, error));
+      break;
     default: {
       /* One buffer of fixed-width values: booleans, numbers, temporal
          types, decimals, fixed-size binary and dictionary indices. */
@@ -341,7 +392,7 @@ static int zar_copy_node(const struct ArrowArrayView *v, struct ArrowArray *out,
       if (v->layout.buffer_type[1] != NANOARROW_BUFFER_TYPE_DATA ||
           v->layout.buffer_type[2] != NANOARROW_BUFFER_TYPE_NONE ||
           !(bits == 1 || (bits > 0 && bits % 8 == 0))) {
-        ArrowErrorSet(error, "a sliced array of type %s cannot be written",
+        ArrowErrorSet(error, "a sliced array of type %s cannot be copied",
                       ArrowTypeString(v->storage_type));
         *kind = "type";
         return ENOTSUP;
@@ -384,6 +435,61 @@ static int zar_unslice(const struct ArrowArrayView *view, const struct ArrowSche
     if (code != NANOARROW_OK) *kind = "format";
   }
   return code;
+}
+
+/* Rows [start, start + n) of an array handle as a new array at offset 0,
+   with its schema in the tag. A registered column is built once by its
+   `from` handler and each batch is cut from that array this way (section
+   6.10), so one batch and many give the same values. The copy has no
+   offset anywhere, so it can be written. A view layout, which cannot be
+   written, is a type failure. */
+SEXP zar_c_array_slice(SEXP x, SEXP r_start, SEXP r_n) {
+  struct ArrowError error;
+  error.message[0] = '\0';
+  struct ArrowArray *array = zar_array_from_xptr(x, &error);
+  if (array == NULL) return zar_failure_from_error("handle", &error);
+  SEXP tag = zar_array_schema_xptr(x, &error);
+  if (tag == NULL) return zar_failure_from_error("handle", &error);
+  struct ArrowSchema *schema = zar_schema_from_xptr(tag, &error);
+  if (schema == NULL) return zar_failure_from_error("handle", &error);
+
+  double start = Rf_asReal(r_start);
+  double n_real = Rf_asReal(r_n);
+  if (!(start >= 0) || !(n_real >= 0) || start + n_real > (double)array->length) {
+    return zar_failure("handle", "the slice is outside the array");
+  }
+
+  struct ArrowArrayView view;
+  if (ArrowArrayViewInitFromSchema(&view, schema, &error) != NANOARROW_OK) {
+    return zar_failure_from_error("format", &error);
+  }
+  /* The values are copied below: check every offset and range first. */
+  if (ArrowArrayViewSetArray(&view, array, &error) != NANOARROW_OK ||
+      zar_view_check_read(&view, &error) != NANOARROW_OK) {
+    ArrowArrayViewReset(&view);
+    return zar_failure_from_error("format", &error);
+  }
+
+  SEXP out = PROTECT(zar_array_owning_xptr(tag));
+  struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
+  const char *kind = "format";
+  int code = ArrowArrayInitFromSchema(dst, schema, &error);
+  if (code == NANOARROW_OK) {
+    kind = NULL;
+    code = zar_copy_node(&view, dst, (int64_t)start, (int64_t)n_real, &kind, &error);
+    if (code != NANOARROW_OK && kind == NULL) {
+      kind = "format";
+      ArrowErrorSet(&error, "the slice could not be copied");
+    }
+  }
+  if (code == NANOARROW_OK) {
+    code = ArrowArrayFinishBuildingDefault(dst, &error);
+    if (code != NANOARROW_OK) kind = "format";
+  }
+  ArrowArrayViewReset(&view);
+  UNPROTECT(1);
+  if (code != NANOARROW_OK) return zar_failure_from_error(kind, &error);
+  return out;
 }
 
 /* ---- dictionaries ----------------------------------------------------- */

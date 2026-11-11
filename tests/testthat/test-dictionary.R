@@ -181,3 +181,19 @@ test_that("invalid UTF-8 in a dictionary value is a format error", {
     )
   }
 })
+
+test_that("a zero-row factor keeps its levels on every route (#212)", {
+  f <- factor(character(), levels = c("u", "v"))
+  o <- factor(character(), levels = c("lo", "hi"), ordered = TRUE)
+  df <- data.frame(f = f, o = o, n = integer())
+  df$s <- data.frame(g = f)
+  expect_identical(arrow_to_r(arrow_array(df)), df)
+  expect_identical(as.data.frame(arrow_stream(df)), df)
+  for (format in c("file", "stream")) {
+    bytes <- arrow_write(df, NULL, format = format)
+    expect_identical(arrow_read(bytes), df, info = format)
+    path <- withr::local_tempfile(fileext = ".arrow")
+    arrow_write(df, path, format = format)
+    expect_identical(arrow_read(path), df, info = format)
+  }
+})

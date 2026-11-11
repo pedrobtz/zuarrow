@@ -575,14 +575,32 @@ zar_apply_handler <- function(
   active <- zar_registry$active
   zar_registry$active <- c(active, handler$key)
   on.exit(zar_registry$active <- active, add = TRUE)
-  pieces <- lapply(columns, function(a) {
-    if (isTRUE(handler$to_lossy)) {
+  pieces <- lapply(seq_along(columns), function(b) {
+    a <- columns[[b]]
+    piece <- if (isTRUE(handler$to_lossy)) {
       handler$to(a, arrow_schema(a), lossy)
     } else {
       handler$to(a, arrow_schema(a))
     }
+    # Each batch's piece is checked, so a surplus in one batch and a
+    # shortfall in another cannot shift rows (#216).
+    n <- zar_check(.Call(zar_c_array_info, a), call = call)$length
+    if (length(columns) > 1L && NROW(piece) != n) {
+      zar_abort(
+        "registry",
+        sprintf(
+          "The `to` handler for `%s` returned %d values for the %d rows of batch %d.",
+          handler$key,
+          NROW(piece),
+          as.integer(n),
+          b
+        ),
+        call = call
+      )
+    }
+    piece
   })
-  out <- if (length(pieces) == 1L) pieces[[1L]] else do.call(c, unname(pieces))
+  out <- zar_combine_pieces(pieces, handler$key, call)
   if (NROW(out) != rows) {
     zar_abort(
       "registry",
@@ -596,6 +614,69 @@ zar_apply_handler <- function(
     )
   }
   out
+}
+
+# A `to` handler's pieces, one per batch, as one vector: data frames column
+# by column, anything else with c(). Where c() drops the class, the
+# attributes every piece shares are kept, and pieces whose attributes
+# differ are refused, so several batches give what one batch gives (#198).
+zar_combine_pieces <- function(pieces, key, call) {
+  if (length(pieces) == 1L) {
+    return(pieces[[1L]])
+  }
+  first <- pieces[[1L]]
+  if (all(vapply(pieces, is.data.frame, NA))) {
+    widths <- vapply(pieces, length, 1L)
+    if (any(widths != length(first))) {
+      zar_pieces_differ(key, call)
+    }
+    columns <- lapply(seq_along(first), function(k) {
+      zar_combine_pieces(lapply(pieces, .subset2, k), key, call)
+    })
+    automatic <- vapply(pieces, function(p) .row_names_info(p) < 0L, NA)
+    attrs <- attributes(first)
+    attrs$row.names <- if (all(automatic)) {
+      .set_row_names(sum(vapply(pieces, nrow, 1L)))
+    } else {
+      unlist(lapply(pieces, row.names))
+    }
+    attributes(columns) <- attrs
+    return(columns)
+  }
+  out <- do.call(c, unname(pieces))
+  if (!is.null(oldClass(out))) {
+    # c() has a method for the class, which combined the pieces.
+    return(out)
+  }
+  shared <- function(p) {
+    attrs <- attributes(p)
+    attrs[setdiff(names(attrs), "names")]
+  }
+  attrs <- shared(first)
+  if (length(attrs) == 0L) {
+    return(out)
+  }
+  for (piece in pieces[-1L]) {
+    if (!identical(shared(piece), attrs)) {
+      zar_pieces_differ(key, call)
+    }
+  }
+  attributes(out) <- c(
+    if (!is.null(names(out))) list(names = names(out)),
+    attrs
+  )
+  out
+}
+
+zar_pieces_differ <- function(key, call) {
+  zar_abort(
+    "registry",
+    sprintf(
+      "The `to` handler for `%s` returned batches whose columns or attributes differ.",
+      key
+    ),
+    call = call
+  )
 }
 
 zar_field_schema <- function(schema, k, call) {
