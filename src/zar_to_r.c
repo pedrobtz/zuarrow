@@ -1109,7 +1109,10 @@ static void zar_format_instant(char *out, size_t n, int64_t value, int digits,
   int64_t frac = value % scale;
   if (frac < 0) frac += scale;
   int64_t days = zar_floor_div(secs, 86400);
-  int64_t sod = secs - days * 86400;
+  /* The remainder again: days * 86400 overflows when secs is near
+     INT64_MIN, as it is for a seconds timestamp at the end of its range. */
+  int64_t sod = secs % 86400;
+  if (sod < 0) sod += 86400;
   int len = zar_format_date(out, n, days);
   len += snprintf(out + len, n - (size_t)len, "T%02d:%02d:%02d",
                   (int)(sod / 3600), (int)(sod / 60 % 60), (int)(sod % 60));
