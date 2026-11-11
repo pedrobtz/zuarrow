@@ -255,3 +255,17 @@ test_that("a field lent by a released parent is a handle error (#205)", {
   test_release(parent)
   expect_error(arrow_to_r(child), class = "zuarrow_handle_error")
 })
+
+test_that("only a struct lends its fields (#173)", {
+  child <- function(parent) .Call(zuarrow:::zar_c_array_child, parent, 0L)
+  dense <- union_ext_array(TRUE)
+  expect_error(
+    zuarrow:::zar_check(child(dense)),
+    class = "zuarrow_handle_error"
+  )
+  list_array <- arrow_array(list(1:2, 3L))
+  expect_error(
+    zuarrow:::zar_check(child(list_array)),
+    class = "zuarrow_handle_error"
+  )
+})
