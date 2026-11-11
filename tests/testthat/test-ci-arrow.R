@@ -93,3 +93,20 @@ test_that("arrow_read() reads what arrow writes, at every compression", {
     expect_identical(without_metadata(arrow_read(path)), df, info = compression)
   }
 })
+
+test_that("libarrow reads a zero-row factor's levels from zuarrow (#212)", {
+  skip_without_oracle("arrow")
+  f <- factor(character(), levels = c("u", "v"))
+  df <- data.frame(f = f, n = integer())
+  for (format in c("file", "stream")) {
+    path <- withr::local_tempfile()
+    arrow_write(df, path, format = format)
+    table <- if (format == "file") {
+      arrow::read_ipc_file(path)
+    } else {
+      arrow::read_ipc_stream(path)
+    }
+    expect_identical(levels(table$f), c("u", "v"), info = format)
+    expect_identical(nrow(table), 0L, info = format)
+  }
+})

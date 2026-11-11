@@ -91,7 +91,9 @@ zar_stream_from_r <- function(x, batch, schema, call) {
   schema <- zar_schema_for(x, schema, call)
   prepared <- zar_prepare(x, schema, call)
   n <- zar_nrow(x, call)
-  starts <- if (n == 0) numeric() else seq(0, n - 1, by = batch)
+  # Zero rows are one zero-row batch, as in arrow_array(): a dictionary
+  # travels only with a batch, so a factor keeps its levels (#212).
+  starts <- if (n == 0) 0 else seq(0, n - 1, by = batch)
   arrays <- lapply(starts, function(start) {
     len <- min(batch, n - start)
     zar_check(
