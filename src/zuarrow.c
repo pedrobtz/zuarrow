@@ -35,6 +35,7 @@ SEXP zar_c_write(SEXP arrays, SEXP schema, SEXP opts);
 SEXP zar_c_to_r(SEXP arrays, SEXP schema, SEXP opts);
 SEXP zar_c_from_r(SEXP x, SEXP schema, SEXP start, SEXP n);
 SEXP zar_c_utf8_over(SEXP x, SEXP limit);
+SEXP zar_c_utf8_raw(SEXP x);
 
 #define ZAR_CALL(name, n) {#name, (DL_FUNC)&name, n}
 
@@ -73,6 +74,7 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_deferred_probe, 4),
     ZAR_CALL(zar_c_from_r, 4),
     ZAR_CALL(zar_c_utf8_over, 2),
+    ZAR_CALL(zar_c_utf8_raw, 1),
     {NULL, NULL, 0}};
 
 void attribute_visible R_init_zuarrow(DllInfo *dll) {

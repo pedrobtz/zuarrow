@@ -30,7 +30,9 @@ zar_codecs <- c("none", "lz4", "zstd")
 #' @param format `"file"` or `"stream"`.
 #' @param compression `"none"`, `"lz4"` or `"zstd"`.
 #' @param level `NULL` for the codec's default, or a level on its scale. A
-#'   level outside the codec's range is a `zuarrow_codec_error`.
+#'   level that is not a whole number in R's integer range is a
+#'   `zuarrow_type_error`, whatever the codec; one outside the codec's range
+#'   is a `zuarrow_codec_error`.
 #' @param batch The most rows in one record batch, for a data frame.
 #' @param dictionary Whether factors are written as dictionaries.
 #' @param metadata `NULL`, or a named character vector of schema metadata.
@@ -70,12 +72,13 @@ arrow_write <- function(
     !is.null(level) &&
       (!is.numeric(level) ||
         length(level) != 1L ||
-        is.na(level) ||
-        level != floor(level))
+        !is.finite(level) ||
+        level != floor(level) ||
+        abs(level) > .Machine$integer.max)
   ) {
     zar_abort(
       "type",
-      "`level` must be `NULL` or one whole number.",
+      "`level` must be `NULL` or one whole number in integer range.",
       call = call
     )
   }

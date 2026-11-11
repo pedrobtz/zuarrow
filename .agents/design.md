@@ -578,7 +578,9 @@ becomes a `factor` with the dictionary as levels in dictionary order and
 any other value type is decoded to the value type's R form, because a
 factor cannot carry it. On export a `factor` becomes
 `dictionary<int32, utf8>` with its levels as the dictionary, and
-`ordered = TRUE` sets the flag. A dictionary in a stream may be replaced
+`ordered = TRUE` sets the flag. A factor with an `NA` level is refused on
+export with a `zuarrow_type_error` naming the column, because a null
+dictionary entry would read back as character, not a factor (C; #211). A dictionary in a stream may be replaced
 or appended by delta batches between record batches (§6.7); within one
 decoded batch the levels are those in force when the batch arrived, and
 `rbind()`ing two batches with different levels is the caller's problem,

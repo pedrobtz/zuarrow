@@ -6,6 +6,8 @@
 #include <stdlib.h>
 #include <string.h>
 
+#include <R_ext/Riconv.h>
+
 #include "zar.h"
 
 /* ---- strings ------------------------------------------------------------ */
@@ -39,19 +41,54 @@ SEXP zar_failure_from_error(const char *kind, const struct ArrowError *error) {
   return zar_failure(kind, error->message);
 }
 
-/* translateCharUTF8() returns the CHARSXP's own bytes when no translation
-   is needed; then its length is known without a strlen(), and nothing has
-   checked the bytes. A translation from another encoding is valid by
-   construction. A "bytes" string is refused before translateCharUTF8()
-   can raise on it. */
+/* A native string's bytes in UTF-8, converted strictly from the session's
+   encoding: translateCharUTF8() would write a byte it cannot convert as
+   "<xx>" text, as it does for every non-ASCII byte in a C locale (#203).
+   NULL when any byte does not convert. The buffer is R_alloc()ed. */
+static const char *zar_native_utf8(SEXP s, size_t *len) {
+  void *cd = Riconv_open("UTF-8", "");
+  if (cd == (void *)-1) return NULL;
+  const char *in = CHAR(s);
+  size_t in_left = (size_t)LENGTH(s);
+  /* A character of any encoding R supports takes at most 4 UTF-8 bytes,
+     and never fewer bytes in the source. */
+  size_t cap = 4 * in_left + 1;
+  char *buf = R_alloc(cap, 1);
+  char *out = buf;
+  size_t out_left = cap - 1;
+  size_t done = Riconv(cd, &in, &in_left, &out, &out_left);
+  if (done == 0 && in_left == 0) {
+    done = Riconv(cd, NULL, NULL, &out, &out_left);
+  }
+  Riconv_close(cd);
+  /* Anything but a clean, reversible conversion of every byte fails. */
+  if (done != 0 || in_left != 0) return NULL;
+  *out = '\0';
+  *len = (size_t)(out - buf);
+  if (zar_utf8_invalid_at((const uint8_t *)buf, (int64_t)*len) >= 0) {
+    return NULL;
+  }
+  return buf;
+}
+
+/* A string's UTF-8 bytes, or NULL when it has none exactly.
+   translateCharUTF8() returns the CHARSXP's own bytes when no translation
+   is needed (UTF-8, ASCII, or native in a UTF-8 session); then its length
+   is known without a strlen(), and the bytes are checked. A latin1 string
+   translates exactly. A native string that needs translating is converted
+   strictly, never escaped. A "bytes" string is refused before
+   translateCharUTF8() can raise on it. */
 const char *zar_char_utf8(SEXP s, size_t *len) {
-  if (Rf_getCharCE(s) == CE_BYTES) return NULL;
+  cetype_t ce = Rf_getCharCE(s);
+  if (ce == CE_BYTES) return NULL;
   const char *u = Rf_translateCharUTF8(s);
   if (u == CHAR(s)) {
     *len = (size_t)LENGTH(s);
     if (zar_utf8_invalid_at((const uint8_t *)u, (int64_t)*len) >= 0) {
       return NULL;
     }
+  } else if (ce == CE_NATIVE) {
+    return zar_native_utf8(s, len);
   } else {
     *len = strlen(u);
   }

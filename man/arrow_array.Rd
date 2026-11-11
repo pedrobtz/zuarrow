@@ -14,7 +14,8 @@ arrow_stream(x, batch = 65536L, schema = NULL)
 
 \item{schema}{\code{NULL}, a format string or a schema handle.}
 
-\item{batch}{The largest number of rows in one batch.}
+\item{batch}{The largest number of rows in one batch, a positive whole
+number. \code{Inf} is a \code{zuarrow_type_error}.}
 }
 \value{
 \code{arrow_array()} returns an array handle; \code{arrow_stream()} a
@@ -30,10 +31,13 @@ Without a \code{schema}, each R class maps to one Arrow type:
 \itemize{
 \item \code{logical} to \code{bool}, \code{integer} to \code{int32}, \code{double} to \code{double}.
 \item \code{character} to \code{utf8}, or \code{large_utf8} past 2^31 - 1 bytes.
-\item \code{factor} to \verb{dictionary<int32, utf8>}.
+\item \code{factor} to \verb{dictionary<int32, utf8>}. A factor with an \code{NA} level is
+a \code{zuarrow_type_error}, because a dictionary value cannot be null.
 \item \code{Date} to \code{date32}, \code{POSIXct} to \code{timestamp[us]} in its time zone or
 UTC, \code{difftime} to \code{duration[us]}.
-\item A list of raw vectors to \code{binary}.
+\item A list of raw vectors to \code{binary}, or to \code{fixed_size_binary} when it
+has the \code{arrow_width} attribute that \code{\link[=arrow_to_r]{arrow_to_r()}} gives one. An
+element of another length is then a \code{zuarrow_type_error}.
 \item A list with the \code{arrow_keys_sorted} attribute that \code{\link[=arrow_to_r]{arrow_to_r()}}
 gives a map to \code{map}.
 \item Any other list to \verb{list<T>}, with \code{T} from its elements.
@@ -42,9 +46,17 @@ gives a map to \code{map}.
 
 A class registered with \code{\link[=arrow_register]{arrow_register()}} goes through its \code{from}
 handler. A matrix is written as a \code{fixed_size_list} with
-\code{schema = arrow_matrix()}. The attributes \code{arrow_extension},
-\code{arrow_extension_metadata} and \code{arrow_field_metadata} become field
-metadata. Any other class is a \code{zuarrow_type_error}.
+\code{schema = arrow_matrix()}, and only as a list type. A matrix with a
+class, such as a \code{Date} matrix, is a \code{zuarrow_type_error}. The attributes
+\code{arrow_extension}, \code{arrow_extension_metadata} and \code{arrow_field_metadata}
+become field metadata. Any other class is a \code{zuarrow_type_error}, and so
+is a \code{tzone}, \code{units} or \code{arrow_extension_metadata} attribute that R would
+not read as one value: one string, one of R's difftime units, one string
+or a raw vector.
+
+Strings are written as UTF-8. A string in the native encoding that has
+no exact UTF-8 form, as any non-ASCII one in a C locale, is a
+\code{zuarrow_type_error}, and so is invalid UTF-8.
 
 With a \code{schema}, the values are written as that type and checked: an
 integer that does not fit \code{int8}, or a double that is not a whole
