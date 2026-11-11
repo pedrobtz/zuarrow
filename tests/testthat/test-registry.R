@@ -1239,3 +1239,30 @@ test_that("a geoarrow.geometry union reads through a registration", {
   expect_identical(arrow_to_r(stream)$geom, wkt[5:6])
   expect_identical(arrow_to_r(arrow_read(path, lazy = TRUE))$geom, wkt)
 })
+
+test_that("a batch taken from arrow_stream() outlives the stream (#204)", {
+  local_registration(
+    "g",
+    from = function(x) arrow_array(as.double(unclass(x))),
+    class = "fake_dbl"
+  )
+  n <- 5000L
+  values <- as.double(seq_len(n)) * 10
+  make <- function() {
+    df <- data.frame(id = seq_len(n))
+    df$v <- structure(values, class = "fake_dbl")
+    # One batch, so the whole registered column is the batch's field.
+    arrow_stream(df, batch = n)
+  }
+
+  stream <- make()
+  batch <- zuarrow:::zar_check(.Call(zuarrow:::zar_c_stream_next, stream))
+  rm(stream)
+  heap_churn()
+  expect_identical(arrow_to_r(batch)$v, values)
+
+  # Moved out of its handle, the stream keeps nothing in R.
+  moved <- test_move(make())
+  heap_churn()
+  expect_identical(as.data.frame(moved)$v, values)
+})
