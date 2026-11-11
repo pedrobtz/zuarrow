@@ -139,6 +139,28 @@ static SEXP zar_class2(const char *first, const char *second) {
   return cls;
 }
 
+/* Raises the bare zuarrow_error of a failed allocation (design section 8,
+   #233). The owning constructors below have no handle yet to return a
+   failure through, so they raise, as Rf_error() did, but with the class
+   every other allocation failure has. Nothing native is owned here yet. */
+NORET static void zar_alloc_abort(const char *message) {
+  SEXP cond = PROTECT(Rf_allocVector(VECSXP, 2));
+  SEXP names = PROTECT(Rf_allocVector(STRSXP, 2));
+  SET_STRING_ELT(names, 0, Rf_mkChar("message"));
+  SET_STRING_ELT(names, 1, Rf_mkChar("call"));
+  Rf_setAttrib(cond, R_NamesSymbol, names);
+  SET_VECTOR_ELT(cond, 0, Rf_mkString(message));
+  SEXP cls = PROTECT(Rf_allocVector(STRSXP, 3));
+  SET_STRING_ELT(cls, 0, Rf_mkChar("zuarrow_error"));
+  SET_STRING_ELT(cls, 1, Rf_mkChar("error"));
+  SET_STRING_ELT(cls, 2, Rf_mkChar("condition"));
+  Rf_setAttrib(cond, R_ClassSymbol, cls);
+  SEXP expr = PROTECT(Rf_lang2(Rf_install("stop"), cond));
+  Rf_eval(expr, R_BaseEnv);
+  /* Not reached, as stop() does not return; Rf_error() keeps it so. */
+  Rf_error("%s", message);
+}
+
 /* The struct is allocated before the external pointer so that a failed
    R allocation cannot leak it: R_MakeExternalPtr is the only call that can
    longjmp between malloc() and the finalizer taking ownership, and the
@@ -147,7 +169,7 @@ SEXP zar_schema_owning_xptr(void) {
   struct ArrowSchema *schema =
       (struct ArrowSchema *)malloc(sizeof(struct ArrowSchema));
   if (schema == NULL) {
-    Rf_error("zuarrow: cannot allocate an ArrowSchema");
+    zar_alloc_abort("cannot allocate an ArrowSchema");
   }
   schema->release = NULL;
   SEXP xptr = PROTECT(R_MakeExternalPtr(schema, R_NilValue, R_NilValue));
@@ -162,7 +184,7 @@ SEXP zar_array_owning_xptr(SEXP schema_xptr) {
   struct ArrowArray *array =
       (struct ArrowArray *)malloc(sizeof(struct ArrowArray));
   if (array == NULL) {
-    Rf_error("zuarrow: cannot allocate an ArrowArray");
+    zar_alloc_abort("cannot allocate an ArrowArray");
   }
   array->release = NULL;
   SEXP xptr = PROTECT(R_MakeExternalPtr(array, schema_xptr, R_NilValue));
@@ -177,7 +199,7 @@ SEXP zar_stream_owning_xptr(void) {
   struct ArrowArrayStream *stream =
       (struct ArrowArrayStream *)malloc(sizeof(struct ArrowArrayStream));
   if (stream == NULL) {
-    Rf_error("zuarrow: cannot allocate an ArrowArrayStream");
+    zar_alloc_abort("cannot allocate an ArrowArrayStream");
   }
   stream->release = NULL;
   SEXP xptr = PROTECT(R_MakeExternalPtr(stream, R_NilValue, R_NilValue));
@@ -311,9 +333,9 @@ SEXP zar_schema_copy_of(SEXP x) {
     if (code != 0) {
       const char *msg = stream->get_last_error(stream);
       ArrowErrorSet(&error, "the stream could not report its schema: %s",
-                    msg == NULL ? strerror(code) : msg);
+                    msg == NULL || msg[0] == '\0' ? strerror(code) : msg);
       UNPROTECT(1);
-      return zar_failure_from_error("handle", &error);
+      return zar_failure_from_error(zar_code_kind(code, "handle"), &error);
     }
     UNPROTECT(1);
     return out;
@@ -325,9 +347,10 @@ SEXP zar_schema_copy_of(SEXP x) {
 
   SEXP out = PROTECT(zar_schema_owning_xptr());
   struct ArrowSchema *dst = (struct ArrowSchema *)R_ExternalPtrAddr(out);
-  if (ArrowSchemaDeepCopy(src, dst) != NANOARROW_OK) {
+  int code = ArrowSchemaDeepCopy(src, dst);
+  if (code != NANOARROW_OK) {
     UNPROTECT(1);
-    return zar_failure("handle", "the schema could not be copied");
+    return zar_failure(zar_code_kind(code, "handle"), "the schema could not be copied");
   }
   UNPROTECT(1);
   return out;
@@ -532,7 +555,7 @@ SEXP zar_c_schema_from_spec(SEXP spec) {
   if (code != NANOARROW_OK) {
     /* A spec that cannot become a schema: a missing format, a string that
        is not UTF-8, metadata that is not a named list of raw vectors. */
-    return zar_failure_from_error("type", &error);
+    return zar_failure_from_error(zar_code_kind(code, "type"), &error);
   }
   return out;
 }
@@ -740,15 +763,16 @@ SEXP zar_c_stream_next(SEXP x) {
   int code = stream->get_next(stream, array);
   if (code != 0) {
     const char *msg = stream->get_last_error(stream);
+    if (msg == NULL || msg[0] == '\0') msg = strerror(code);
     const char *kind = zar_reader_kind(stream);
     if (kind != NULL) {
-      ArrowErrorSet(&error, "%s", msg == NULL ? strerror(code) : msg);
+      ArrowErrorSet(&error, "%s", msg);
     } else {
-      ArrowErrorSet(&error, "the next batch could not be read: %s",
-                    msg == NULL ? strerror(code) : msg);
+      ArrowErrorSet(&error, "the next batch could not be read: %s", msg);
     }
     UNPROTECT(2);
-    return zar_failure_from_error(kind == NULL ? "handle" : kind, &error);
+    return zar_failure_from_error(zar_code_kind(code, kind == NULL ? "handle" : kind),
+                                  &error);
   }
   if (array->release == NULL) {
     zar_mark_ended(stream);
@@ -855,14 +879,16 @@ SEXP zar_c_array_decode(SEXP x) {
   if (schema == NULL) return zar_failure_from_error("handle", &error);
 
   struct ArrowArrayView view;
-  if (ArrowArrayViewInitFromSchema(&view, schema, &error) != NANOARROW_OK) {
-    return zar_failure_from_error("format", &error);
+  int code = ArrowArrayViewInitFromSchema(&view, schema, &error);
+  if (code != NANOARROW_OK) {
+    return zar_failure_from_error(zar_code_kind(code, "format"), &error);
   }
   /* The values are copied below: check every offset and range first. */
-  if (ArrowArrayViewSetArray(&view, array, &error) != NANOARROW_OK ||
-      zar_view_check_read(&view, &error) != NANOARROW_OK) {
+  code = ArrowArrayViewSetArray(&view, array, &error);
+  if (code == NANOARROW_OK) code = zar_view_check_read(&view, &error);
+  if (code != NANOARROW_OK) {
     ArrowArrayViewReset(&view);
-    return zar_failure_from_error("format", &error);
+    return zar_failure_from_error(zar_code_kind(code, "format"), &error);
   }
   int ree =view.storage_type == NANOARROW_TYPE_RUN_END_ENCODED;
   if (schema->dictionary == NULL && !ree) {
@@ -898,7 +924,7 @@ SEXP zar_c_array_decode(SEXP x) {
   SEXP out_schema = PROTECT(zar_schema_owning_xptr());
   struct ArrowSchema *dst_schema =
       (struct ArrowSchema *)R_ExternalPtrAddr(out_schema);
-  int code = ArrowSchemaDeepCopy(value_schema, dst_schema);
+  code = ArrowSchemaDeepCopy(value_schema, dst_schema);
   if (code == NANOARROW_OK) code = ArrowSchemaSetName(dst_schema, schema->name);
   if (code == NANOARROW_OK && schema->metadata != NULL) {
     code = ArrowSchemaSetMetadata(dst_schema, schema->metadata);
@@ -906,14 +932,15 @@ SEXP zar_c_array_decode(SEXP x) {
   if (code != NANOARROW_OK) {
     ArrowArrayViewReset(&view);
     UNPROTECT(1);
-    return zar_failure("handle", "the value schema could not be copied");
+    return zar_failure(zar_code_kind(code, "handle"), "the value schema could not be copied");
   }
   SEXP out = PROTECT(zar_array_owning_xptr(out_schema));
   struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
-  if (ArrowArrayInitFromSchema(dst, dst_schema, &error) != NANOARROW_OK) {
+  code = ArrowArrayInitFromSchema(dst, dst_schema, &error);
+  if (code != NANOARROW_OK) {
     ArrowArrayViewReset(&view);
     UNPROTECT(2);
-    return zar_failure_from_error("format", &error);
+    return zar_failure_from_error(zar_code_kind(code, "format"), &error);
   }
 
   int64_t n = array->length;
@@ -987,7 +1014,7 @@ SEXP zar_c_array_decode(SEXP x) {
   if (code == NANOARROW_OK) code = ArrowArrayFinishBuildingDefault(dst, &error);
   UNPROTECT(2);
   if (code != NANOARROW_OK) {
-    return zar_failure("format", "the encoded values could not be copied");
+    return zar_failure(zar_code_kind(code, "format"), "the encoded values could not be copied");
   }
   return out;
 }

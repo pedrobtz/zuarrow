@@ -81,8 +81,14 @@ struct zar_reader {
   struct ArrowBuffer body_copy;
 };
 
+/* Records the kind of a failure and returns its code. Running out of
+   memory is a bare zuarrow_error whatever the step (design section 8,
+   #233), so ENOMEM records no kind. */
 static int zar_reader_fail(struct zar_reader *r, const char *kind, int code) {
-  r->kind = kind;
+  r->kind = zar_code_kind(code, kind);
+  if (code == ENOMEM && r->error.message[0] == '\0') {
+    ArrowErrorSet(&r->error, "cannot allocate memory to read the input");
+  }
   return code == 0 ? EINVAL : code;
 }
 
@@ -271,7 +277,7 @@ static int zar_reader_set_schema(struct zar_reader *r, struct ArrowBufferView he
   if (zar_check_shared_dictionaries(r) != NANOARROW_OK) return EINVAL;
   int code = ArrowIpcDecoderSetSchemaWithDictionaries(&r->decoder, &r->schema,
                                                       &r->encodings, &r->error);
-  if (code != NANOARROW_OK) return zar_reader_fail(r, code == ENOTSUP ? "format" : "format", code);
+  if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   code = ArrowIpcDictionariesInit(&r->dictionaries, &r->encodings, &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
   r->dictionaries_ready = 1;
@@ -579,7 +585,7 @@ static int zar_apply_dictionary(struct zar_reader *r, struct ArrowBufferView hea
   }
   int code = ArrowIpcDecoderDecodeDictionary(&r->decoder, body, NANOARROW_VALIDATION_LEVEL_FULL,
                                              &r->dictionaries, &r->error);
-  if (code != NANOARROW_OK && r->kind == NULL) r->kind = "format";
+  if (code != NANOARROW_OK && r->kind == NULL) return zar_reader_fail(r, "format", code);
   return code;
 }
 
@@ -659,7 +665,7 @@ static int zar_decode_batch(struct zar_reader *r, struct ArrowBufferView header,
     if (code != NANOARROW_OK && out->release != NULL) out->release(out);
   }
   if (code != NANOARROW_OK) {
-    if (r->kind == NULL) r->kind = "format";
+    if (r->kind == NULL) return zar_reader_fail(r, "format", code);
     return code;
   }
 
@@ -849,7 +855,16 @@ static int zar_reader_next(struct zar_reader *r, struct ArrowArray *out) {
 
 static int zar_stream_get_schema(struct ArrowArrayStream *stream, struct ArrowSchema *out) {
   struct zar_reader *r = (struct zar_reader *)stream->private_data;
-  return ArrowSchemaDeepCopy(&r->out_schema, out);
+  int code = ArrowSchemaDeepCopy(&r->out_schema, out);
+  if (code != NANOARROW_OK) {
+    /* Copying a schema fails only on an allocation; get_last_error() then
+       says so, and a failed get_next() still repeats its own failure. */
+    if (r->failed == 0) {
+      ArrowErrorSet(&r->error, "cannot allocate a copy of the schema");
+      r->kind = NULL;
+    }
+  }
+  return code;
 }
 
 /* A failure leaves the reader part way through a message: its dictionary
@@ -1040,7 +1055,7 @@ static int zar_reader_open_over(uint8_t *data, int owns, int64_t size, const dou
   if (code != NANOARROW_OK) {
     ArrowErrorSet(error, "%s", r->error.message[0] ? r->error.message
                                                     : "the input could not be read");
-    *kind = r->kind;
+    *kind = zar_code_kind(code, r->kind);
     zar_reader_free(r);
     return code;
   }

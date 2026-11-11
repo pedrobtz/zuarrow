@@ -118,7 +118,7 @@ static SEXP zar_column_failure(const char *kind, const char *message,
   const char *names[] = {"kind", "message", "column",       "row", "format",
                          "name", "text",    "value_format", ""};
   SEXP out = PROTECT(Rf_mkNamed(VECSXP, names));
-  SET_VECTOR_ELT(out, 0, Rf_mkString(kind));
+  SET_VECTOR_ELT(out, 0, kind == NULL || kind[0] == '\0' ? R_NilValue : Rf_mkString(kind));
   SET_VECTOR_ELT(out, 1, zar_scalar_utf8(message));
   SET_VECTOR_ELT(out, 2, Rf_ScalarInteger(column));
   SET_VECTOR_ELT(out, 3, Rf_ScalarReal(row));
@@ -147,9 +147,14 @@ struct zar_err {
   SEXP arrays; /* the batches' array handles, which deferred strings keep */
 };
 
+/* The kind zar_fail() records for a NULL kind, an allocation failure:
+   e->kind is then still set, so every `e->kind != NULL` check stops, and
+   zar_column_failure() reports it as a bare zuarrow_error (#233). */
+static const char zar_kind_bare[] = "";
+
 static int zar_fail(struct zar_err *e, const char *kind, int64_t row,
                     const char *format) {
-  e->kind = kind;
+  e->kind = kind == NULL ? zar_kind_bare : kind;
   e->row = row;
   e->format = format;
   return EINVAL;
@@ -2072,7 +2077,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     if (code == NANOARROW_OK) code = zar_view_check_read(&sc->views[b], &e.error);
     if (code != NANOARROW_OK) {
       UNPROTECT(1);
-      return zar_failure_from_error("format", &e.error);
+      return zar_failure_from_error(zar_code_kind(code, "format"), &e.error);
     }
     rows += sc->views[b].length;
   }
@@ -2116,7 +2121,8 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     }
     if (code != NANOARROW_OK) {
       UNPROTECT(1);
-      return zar_column_failure(e.kind == NULL ? "type" : e.kind, e.error.message,
+      return zar_column_failure(e.kind == NULL ? zar_code_kind(code, "type") : e.kind,
+                                e.error.message,
                                 (int)c + 1, e.row >= 0 ? (double)(e.row + 1) : NA_REAL,
                                 e.format == NULL ? cs->format : e.format, cs->name,
                                 e.no_text, e.value_format);

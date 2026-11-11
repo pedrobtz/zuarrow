@@ -83,6 +83,12 @@ int zar_codec_decompress(const void *table, int codec, const uint8_t *src,
   if (status != ZU_OK && status != ZU_STREAM_END) {
     ArrowErrorSet(error, "%s decompression failed: %s",
                   id == ZU_CODEC_ZSTD ? "zstd" : "lz4-frame", api->status_string(status));
+    /* The codec running out of memory is an allocation failure, a bare
+       zuarrow_error, not a codec error (#233). */
+    if (status == ZU_ERR_MEMORY) {
+      *kind = NULL;
+      return ENOMEM;
+    }
     return EINVAL;
   }
   if ((int64_t)written != dst_size) {
@@ -95,7 +101,8 @@ int zar_codec_decompress(const void *table, int codec, const uint8_t *src,
 }
 
 /* Compresses `n` bytes into `dst` (of `cap` bytes) as an IPC body buffer.
-   Sets *written; returns non-zero with `error` set on failure. */
+   Sets *written; returns non-zero with `error` set on failure, ENOMEM
+   when the codec ran out of memory. */
 int zar_codec_compress(const void *table, int codec, int level, const uint8_t *src,
                        int64_t n, uint8_t *dst, int64_t cap, int64_t *written,
                        struct ArrowError *error) {
@@ -115,7 +122,7 @@ int zar_codec_compress(const void *table, int codec, int level, const uint8_t *s
   if (status != ZU_OK && status != ZU_STREAM_END) {
     ArrowErrorSet(error, "%s compression failed: %s",
                   id == ZU_CODEC_ZSTD ? "zstd" : "lz4-frame", api->status_string(status));
-    return EINVAL;
+    return status == ZU_ERR_MEMORY ? ENOMEM : EINVAL;
   }
   *written = (int64_t)out;
   return NANOARROW_OK;

@@ -1,3 +1,8 @@
+/*
+ * Modified for the zuarrow R package: adding variadic buffers checks both
+ * reallocations and leaves the array as it was when one fails
+ * (tools/patches/0021-array-alloc-failure.patch).
+ */
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
 // distributed with this work for additional information
@@ -3782,17 +3787,25 @@ static inline ArrowErrorCode ArrowArrayAddVariadicBuffers(struct ArrowArray* arr
   struct ArrowArrayPrivateData* private_data =
       (struct ArrowArrayPrivateData*)array->private_data;
 
-  private_data->variadic_buffers = (struct ArrowBuffer*)ArrowRealloc(
+  // On failure the array keeps what it had: realloc() leaves the old block.
+  struct ArrowBuffer* variadic_buffers = (struct ArrowBuffer*)ArrowRealloc(
       private_data->variadic_buffers, sizeof(struct ArrowBuffer) * nvariadic_bufs_needed);
-  if (private_data->variadic_buffers == NULL) {
+  if (variadic_buffers == NULL) {
     return ENOMEM;
   }
+  private_data->variadic_buffers = variadic_buffers;
+
+  const int64_t n_total =
+      NANOARROW_BINARY_VIEW_FIXED_BUFFERS + 1 + nvariadic_bufs_needed;
+  const void** buffer_data = (const void**)ArrowRealloc(
+      private_data->buffer_data, n_total * sizeof(void*));
+  if (buffer_data == NULL) {
+    return ENOMEM;
+  }
+  private_data->buffer_data = buffer_data;
 
   private_data->n_variadic_buffers = nvariadic_bufs_needed;
-  array->n_buffers = NANOARROW_BINARY_VIEW_FIXED_BUFFERS + 1 + nvariadic_bufs_needed;
-
-  private_data->buffer_data = (const void**)ArrowRealloc(
-      private_data->buffer_data, array->n_buffers * sizeof(void*));
+  array->n_buffers = n_total;
 
   for (int32_t i = n_current_bufs; i < nvariadic_bufs_needed; i++) {
     ArrowBufferInit(&private_data->variadic_buffers[i]);

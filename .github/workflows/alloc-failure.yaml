@@ -22,15 +22,17 @@ permissions:
 # R_ENABLE_JIT=0 keeps the byte compiler, and its own crashes in grep(), out
 # of the sweep and cuts it by a quarter; the baseline must set it too.
 #
-# Known red until #232: vendored nanoarrow's ArrowArrayInitFromType()
-# dereferences an unchecked malloc, and 26 of 323 sampled failures
-# segfaulted under zar_c_reader_open, zar_c_stream_next and zar_c_from_r.
+# #232 fixed the crashes: vendored nanoarrow and flatcc returned no error,
+# or a bogus one, on a failed allocation (patches 0021 and 0022).
 #
-# expect-pattern: an injected failure must surface as a zuarrow condition,
-# as R's own allocation error, or as bash's (Rscript runs R through a shell
-# script). It accepts every zuarrow kind for now, because an allocation
-# failure also surfaces as format, handle, limit and codec errors (#233).
-# Narrow it to the classes design sections 6.8 and 8 name once that is fixed.
+# expect-pattern: an injected failure must surface as the class design
+# sections 8 and 6.8 give an allocation failure, a bare zuarrow_error or
+# the writer's zuarrow_limit_error (#233), or as R's own allocation error,
+# or bash's (Rscript runs R through a shell script). R's and bash's are
+# matched by their wording, "cannot allocate vector", "... memory block",
+# "... <n> bytes" and R's C helpers' "could not allocate" (deparse(),
+# make.names(), order()), so a zuarrow message such as "cannot allocate
+# the reader" under a wrong class is not accepted by its text.
 # min-target-hits: 222 of the 323 sampled failures reached a zuarrow
 # condition, so about 7,000 of the 10,000; 1000 catches a sweep that stopped
 # reaching the package without depending on the exact count.
@@ -41,7 +43,7 @@ jobs:
       run: R_ENABLE_JIT=0 Rscript tools/alloc-exercise.R
       baseline-run: R_ENABLE_JIT=0 Rscript -e 'suppressPackageStartupMessages(library(zuarrow))'
       max-allocations: 12000
-      expect-pattern: "cannot allocate|memory exhausted|out of virtual memory|alloc-exercise: zuarrow_"
+      expect-pattern: "alloc-exercise: (zuarrow_limit_error/)?zuarrow_error/error/condition|cannot allocate (vector|memory block|[0-9]+ bytes)|[Cc]ould not allocate|memory exhausted|out of virtual memory"
       target-pattern: "alloc-exercise: zuarrow_"
       min-target-hits: 1000
       ignore-crash-pattern: "^ 1: (grepl?|sub|gsub|regexpr|gregexpr|strsplit|gzfile)\\("
