@@ -4,7 +4,9 @@
  * every level above it (tools/patches/0017-verifier-check-once.patch), and
  * the verifier's nesting budget is 256 tables, so a schema as deep as
  * zuarrow's max_depth (64 fields, two tables each) is verified
- * (tools/patches/0018-verifier-levels.patch).
+ * (tools/patches/0018-verifier-levels.patch), and a vtable that cannot be
+ * cached for want of memory fails the table instead of returning -1 as its
+ * reference (tools/patches/0022-flatcc-vtable-alloc-failure.patch).
  */
 /*
  * Codegenerator for C, building FlatBuffers.
@@ -1238,6 +1240,8 @@ flatcc_builder_vt_ref_t flatcc_builder_create_cached_vtable(flatcc_builder_t *B,
     vd->next = *pvd_head;
     *pvd_head = next;
     if (0 == (vd->vt_ref = flatcc_builder_create_vtable(B, vt, vt_size))) {
+        /* Unlink the descriptor, which would be read before it is set. */
+        *pvd_head = vd->next;
         return 0;
     }
     if (vd2) {
@@ -1249,7 +1253,12 @@ flatcc_builder_vt_ref_t flatcc_builder_create_cached_vtable(flatcc_builder_t *B,
         } else {
             /* Make space in vtable cache. */
             if (!(vt_ = reserve_buffer(B, flatcc_builder_alloc_vb, B->vb_end, vt_size, 0))) {
-                return -1;
+                /*
+                 * Fail with 0, the error reference: -1 is nonzero, so the
+                 * table was built over it and the buffer was corrupt.
+                 */
+                *pvd_head = vd->next;
+                return 0;
             }
             vd->vb_start = B->vb_end;
             B->vb_end += vt_size;

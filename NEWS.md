@@ -360,3 +360,7 @@
   zero-offset slice of an `arrow` struct array is, at the batch's length.
   Before, each column kept its own length, and `arrow` refused the
   output (#206).
+* Running out of memory is a clean error. Failing one allocation could
+  crash R in `arrow_read()`, `arrow_next()` and `arrow_array()`, and could
+  make `arrow_write()` write a corrupt message without an error. The
+  bundled 'nanoarrow' and flatcc code now return the failure (#232).

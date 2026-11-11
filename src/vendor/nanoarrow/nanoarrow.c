@@ -4,7 +4,10 @@
  * validation reads offsets only from a buffer that holds them
  * (tools/patches/0012-offsets-buffer-size.patch), and full validation bounds
  * a list view's offset and size without overflowing int64_t
- * (tools/patches/0014-list-view-bound-overflow.patch).
+ * (tools/patches/0014-list-view-bound-overflow.patch), and a failed
+ * allocation while an array is initialised, given children or shared
+ * returns ENOMEM with nothing left half built or leaked
+ * (tools/patches/0021-array-alloc-failure.patch).
  */
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
@@ -2737,6 +2740,11 @@ ArrowErrorCode ArrowArrayInitFromType(struct ArrowArray* array,
   ArrowBufferInit(&private_data->buffers[1]);
   private_data->buffer_data =
       (const void**)ArrowMalloc(sizeof(void*) * NANOARROW_MAX_FIXED_BUFFERS);
+  if (private_data->buffer_data == NULL) {
+    ArrowFree(private_data);
+    array->release = NULL;
+    return ENOMEM;
+  }
   for (int i = 0; i < NANOARROW_MAX_FIXED_BUFFERS; ++i) {
     private_data->buffer_data[i] = NULL;
   }
@@ -2862,6 +2870,8 @@ ArrowErrorCode ArrowArrayAllocateChildren(struct ArrowArray* array, int64_t n_ch
   }
 
   memset(array->children, 0, n_children * sizeof(struct ArrowArray*));
+  // Counted now, so a release after a failure below frees what was allocated.
+  array->n_children = n_children;
 
   for (int64_t i = 0; i < n_children; i++) {
     array->children[i] = (struct ArrowArray*)ArrowMalloc(sizeof(struct ArrowArray));
@@ -2871,7 +2881,6 @@ ArrowErrorCode ArrowArrayAllocateChildren(struct ArrowArray* array, int64_t n_ch
     array->children[i]->release = NULL;
   }
 
-  array->n_children = n_children;
   return NANOARROW_OK;
 }
 
@@ -3269,8 +3278,10 @@ static ArrowErrorCode ArrowArrayCloneSharedInternal(struct ArrowArray* src,
 ArrowErrorCode ArrowArrayMoveShared(struct ArrowArray* array, struct ArrowArray* shared) {
   struct ArrowArray tmp;
   tmp.release = NULL;
-  ArrowErrorCode result = ArrowArrayMoveSharedInternal(array, shared);
-  if (result != NANOARROW_OK) {
+  ArrowErrorCode result = ArrowArrayMoveSharedInternal(array, &tmp);
+  if (result == NANOARROW_OK) {
+    ArrowArrayMove(&tmp, shared);
+  } else {
     // On failure, release the temporary output
     if (tmp.release != NULL) {
       ArrowArrayRelease(&tmp);
@@ -3295,8 +3306,10 @@ ArrowErrorCode ArrowArrayCloneShared(struct ArrowArray* shared,
 
   struct ArrowArray tmp;
   tmp.release = NULL;
-  ArrowErrorCode result = ArrowArrayCloneSharedInternal(shared, array);
-  if (result != NANOARROW_OK && tmp.release != NULL) {
+  ArrowErrorCode result = ArrowArrayCloneSharedInternal(shared, &tmp);
+  if (result == NANOARROW_OK) {
+    ArrowArrayMove(&tmp, array);
+  } else if (tmp.release != NULL) {
     ArrowArrayRelease(&tmp);
   }
 
