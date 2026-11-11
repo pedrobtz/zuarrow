@@ -80,8 +80,14 @@ patterns; `arrow_unregister()` forgets it.
 `to` converts Arrow to R: a function of `(array, schema)`, the column's
 array and schema handles, returning an R vector of the array's length.
 It may be implemented in C against nanoarrow's `r.h` layout. It is
-called once per batch, and the pieces are combined with
-[`c()`](https://rdrr.io/r/base/c.html). A function of
+called once per batch, and a piece of another length than its batch is a
+`zuarrow_registry_error`. Data frame pieces are combined column by
+column, and other pieces with [`c()`](https://rdrr.io/r/base/c.html).
+Where [`c()`](https://rdrr.io/r/base/c.html) drops the class, the
+attributes the pieces share are kept, and pieces whose attributes differ
+are a `zuarrow_registry_error`. So a handler must give each batch a
+piece that combines into what one batch gives: a factor's levels, for
+instance, must not depend on the batch's values. A function of
 `(array, schema, lossy)` also receives the caller's `lossy` policy, so a
 handler can apply it to values its class cannot hold, such as one equal
 to its `NA` sentinel: an error under `"error"`, `NA` with a warning
@@ -90,13 +96,13 @@ is a `zuarrow_registry_error`.
 
 `from` converts R to Arrow: a function of `(x)` returning an array
 handle of `x`'s length, used for every object that inherits from
-`class`. It receives the whole column, and the column's type is that
-array's, in
+`class`. It receives the whole column once, and the column's type is
+that array's, in
 [`arrow_schema()`](https://pedrobtz.github.io/zuarrow/reference/arrow_schema.md)
-too. An array of another length is a `zuarrow_registry_error`. Where
-several registrations' classes match an object, the one whose class
-comes first in `class(x)` is used, for `from` and for a prototype in the
-`to` of
+too. Batches are copies of that array's rows. An array of another length
+is a `zuarrow_registry_error`. Where several registrations' classes
+match an object, the one whose class comes first in `class(x)` is used,
+for `from` and for a prototype in the `to` of
 [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md).
 
 Inside `to`,
