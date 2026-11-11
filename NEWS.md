@@ -312,3 +312,25 @@
 * A list column of functions, environments or calls is a
   `zuarrow_type_error`. Before, `arrow_schema(list(sum))` recursed until
   the C stack overflowed (#82).
+* `arrow_read()` reads a schema nested up to `max_depth` levels and
+  refuses a deeper one with a `zuarrow_limit_error`. Before, the bundled
+  FlatBuffers verifier ran out of its own budget from 49 levels, and its
+  failure took time exponential in the depth, so a stream of a few KB,
+  or one written by `arrow_write()`, stalled the session (#200).
+* `arrow_write()` writes a field with no name with an empty name, as
+  `arrow_read()` presents it. Before, an `NA` column name crashed R (#201).
+* `arrow_write()` writes metadata values whole. Before, schema, field and
+  extension metadata were cut at the first NUL byte (#202).
+* A stream handle from `arrow_read(lazy = TRUE)` stays failed after an
+  error: every later `arrow_next()`, and every later `get_next()` through
+  the C stream interface, raises the same error. Before, the reader went
+  on to the next message, so a batch was skipped or read against the
+  dictionary that a failed replacement should have replaced (#207).
+* `arrow_read()` refuses a record batch or dictionary batch whose length
+  differs from its columns' lengths, as a `zuarrow_format_error`, as
+  `arrow` does. Before, a batch shorter than its columns dropped rows
+  silently (#208).
+* `arrow_write()` writes a batch whose columns are longer than it, as a
+  zero-offset slice of an `arrow` struct array is, at the batch's length.
+  Before, each column kept its own length, and `arrow` refused the
+  output (#206).

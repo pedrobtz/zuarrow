@@ -313,3 +313,105 @@ ipc_int32_dictionary <- function(id, values, is_delta = FALSE) {
     is_delta = is_delta
   )
 }
+
+# The byte position of field `id` of the FlatBuffers table at `table`, or
+# NA when the table leaves it out.
+fb_field_pos <- function(bytes, table, id) {
+  soffset <- le_read(bytes, table, 4)
+  if (soffset >= 2^31) {
+    soffset <- soffset - 2^32
+  }
+  vtable <- table - soffset
+  slots <- (le_read(bytes, vtable, 2) - 4) / 2
+  if (id >= slots) {
+    return(NA)
+  }
+  at <- le_read(bytes, vtable + 4 + 2 * id, 2)
+  if (at == 0) NA else table + at
+}
+
+# `bytes` with the length of record batch message `m` set to `length`.
+ipc_set_batch_length <- function(bytes, m, length) {
+  fb <- m$start + 8
+  message <- fb + le_read(bytes, fb, 4)
+  header_ref <- fb_field_pos(bytes, message, 2)
+  batch <- header_ref + le_read(bytes, header_ref, 4)
+  at <- fb_field_pos(bytes, batch, 0)
+  stopifnot(!is.na(at))
+  bytes[at + 1:8] <- le_int(length, 8L)
+  bytes
+}
+
+# Reads every batch of a lazy reader over `bytes` through arrow_next(),
+# `calls` times: a batch's column `col`, or the condition raised.
+read_calls <- function(bytes, calls, col) {
+  s <- arrow_read(bytes, lazy = TRUE)
+  lapply(seq_len(calls), function(i) {
+    tryCatch(arrow_next(s)[[col]], error = identity)
+  })
+}
+
+# Expects call `from` of read_calls() and every later one to fail alike.
+expect_stuck <- function(out, from) {
+  first <- out[[from]]
+  expect_s3_class(first, "zuarrow_format_error")
+  for (k in seq(from + 1L, length(out))) {
+    expect_s3_class(out[[k]], "zuarrow_format_error")
+    if (inherits(out[[k]], "condition")) {
+      # The same failure, as get_last_error() reports it.
+      expect_identical(conditionMessage(out[[k]]), conditionMessage(first))
+    }
+  }
+}
+
+# An empty struct array with one column `depth` levels deep, counted as
+# arrow_limits() counts them: an int32 column is one level. A list nests
+# one level, a struct one, and a map two (its entries struct); a map that
+# would overshoot `depth` is a list instead. The innermost int32 is named
+# `leaf`.
+deep_array <- function(kind, depth, leaf = "item") {
+  empty <- function(buffers, children = list()) {
+    test_array_spec(0, buffers, children = children)
+  }
+  offsets <- le_int(0, 4L)
+  node <- function(d) {
+    if (d == 1L) {
+      return(list(spec = zspec("i", leaf), array = empty(list(NULL, raw()))))
+    }
+    if (kind == "map" && d >= 3L) {
+      inner <- node(d - 2L)
+      entries <- zspec(
+        "+s",
+        "entries",
+        list(zspec("i", "key", flags = 0L), inner$spec),
+        flags = 0L
+      )
+      array <- empty(
+        list(NULL),
+        list(empty(list(NULL, raw())), inner$array)
+      )
+      return(list(
+        spec = zspec("+m", "m", list(entries)),
+        array = empty(list(NULL, offsets), list(array))
+      ))
+    }
+    inner <- node(d - 1L)
+    if (kind == "struct") {
+      return(list(
+        spec = zspec("+s", "s", list(inner$spec)),
+        array = empty(list(NULL), list(inner$array))
+      ))
+    }
+    list(
+      spec = zspec("+l", "item", list(inner$spec)),
+      array = empty(list(NULL, offsets), list(inner$array))
+    )
+  }
+  top <- node(depth)
+  test_array(
+    test_schema(zspec("+s", children = list(top$spec), flags = 0L)),
+    0,
+    list(NULL),
+    children = list(top$array)
+  )
+}

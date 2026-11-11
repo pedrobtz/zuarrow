@@ -7,6 +7,9 @@ columns as they are.
 - **Statuses:** a cell is a fact, `gap #<issue>` or `n/a: <reason>`.
 - Written 2026-11-10 from the code on `main` (`8464d2b`), by reading each
   test's assertions, not the design's promises.
+- Updated 2026-11-11 on `main` (`ff3dcba`, no code change since). Every
+  row was checked against the consolidated native review
+  (`.agents/review.md`, `8cf223d`). Its findings are cited as R1 to R13.
 
 ## Kinds
 
@@ -30,9 +33,10 @@ call to r-actions.
 | fuzz          | done     | fuzz.yaml          |
 | fuzz-reach    | gap #184   |                    |
 
-`fuzz-reach` is a gap although `fuzz.yaml` calls `fuzz.yml`: the r-actions
-`v1` tag it pins has no reach step yet, and the caller sets no
-`reach-floor`. `valgrind.yml` takes no `env`, so the oracle and crash
+`fuzz-reach` is a gap although `fuzz.yaml` calls `fuzz.yml`. Since
+r-actions `v1` gained the reach step, every run reports what the corpus
+reaches. The caller sets no `reach-floor`, though, so nothing fails when
+the reach drops. `valgrind.yml` takes no `env`, so the oracle and crash
 corpus tests skip there (see `native-checks.yaml`); they run under ASan in
 `sanitizers` and in `gctorture`.
 
@@ -68,6 +72,9 @@ One row per boundary the package crosses. An oracle knows the answer:
 | C Data Interface, export                         | nanoarrow reads zuarrow's schemas, arrays and streams to the same values                                                                               | tests/testthat/test-ci-interop.R, tests/testthat/test-ci-nanoarrow.R           |
 | UTF-8 validation                                 | eight hand-written known-answer sequences (overlong, surrogate, above U+10FFFF, truncated)                                                            | tests/testthat/test-validate.R                                                 |
 | UTF-8 validation, every byte sequence            | differential against an independent decoder over random and exhaustive short inputs                                                                   | gap #187                                                                         |
+| Arrow to R conversion, arrays with an offset     | an array at a random offset converts identical to the slice of the values it was built from, for boolean, integer, double, Date and string (copied and deferred); hand-built sliced arrays, structs included | tests/testthat/test-property.R, tests/testthat/test-sliced.R |
+| Arrow to R conversion, several batches           | built-in types: a data frame of every exact type in batches of 1, 7, 50 and 1000 rows converts identical to the input                                  | tests/testthat/test-property.R                                                 |
+| Registered conversions (`to` handlers), several batches | a column in several batches converts identical to the same column in one batch, class and attributes included; the one test compares `unclass()` (R13) | gap #198 |
 <!-- markdownlint-enable MD013 -->
 
 pyarrow is not listed: it is the same libarrow C++ the `arrow` R package
@@ -97,10 +104,10 @@ handle still holds the array whose buffers it points into.
 | ------------------------------------------------------------------ | --------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------- | ------ | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | schema handle (`zuarrow_schema`)                                   | tests/testthat/test-handles.R: released, NULL and foreign pointers, use after release                                             | n/a: heap memory only, no OS resource        | gap #182 | its finalizer; tests/testthat/test-handles.R "finalizers release handles without error"                                                       |
 | array handle (`zuarrow_array`)                                     | tests/testthat/test-handles.R and test-write.R: released array, array whose schema was released, written then reused              | n/a: heap memory only, no OS resource        | gap #182 | its finalizer; the tag holds the schema                                                                                                       |
-| stream over arrays (`arrow_stream()`), and borrowed arrays          | gap #189                                                                                                                            | n/a: heap memory only, no OS resource        | gap #182 | the protected field holds the arrays and each borrowed array's lender (`zar_c_stream_from_arrays()`, `zar_c_array_borrow()`)                  |
+| stream over arrays (`arrow_stream()`), and borrowed arrays          | gap #189                                                                                                                            | n/a: heap memory only, no OS resource        | gap #182 | gap #189: the protected field holds the arrays and each borrowed array's lender (`zar_c_stream_from_arrays()`, `zar_c_array_borrow()`) only while the struct stays in its handle; a batch from `get_next()` does not keep its lender (R2, reproduced) |
 | IPC reader stream (`arrow_read(lazy = TRUE)`)                      | gap #188                                                                                                                            | n/a: the input is a heap copy, no descriptor | gap #182 | the reader frees its copy; a raw vector read in place is held in the protected field, for `lazy = FALSE` only (tests/testthat/test-read.R)    |
 | chain of reader streams (a list of sources, `lazy = TRUE`)         | gap #188                                                                                                                            | n/a: heap copies only, no descriptor         | gap #182 | the chain owns its readers and refuses one that reads in place (tests/testthat/test-read.R "a chain takes only readers that own their input") |
-| deferred string vector (ALTREP, `copy = FALSE`)                    | tests/testthat/test-deferred.R: released array, elements made before release, gc, `saveRDS()`, set in place, data pointer         | n/a: R heap and array handles only           | n/a: holds no native memory; its cache is on the R heap in `data2` | gap #181                                                                                                                                        |
+| deferred string vector (ALTREP, `copy = FALSE`)                    | tests/testthat/test-deferred.R: released array, elements made before release, gc, `saveRDS()`, set in place, data pointer; not an `NA` set through `Set_elt` and then `No_NA`, which goes stale (R7)         | n/a: R heap and array handles only           | n/a: holds no native memory; its cache is on the R heap in `data2` | gap #181                                                                                                                                        |
 <!-- markdownlint-enable MD013 -->
 
 ## Limits

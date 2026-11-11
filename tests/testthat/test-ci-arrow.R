@@ -121,3 +121,64 @@ test_that("arrow_stream() exported to arrow outlives every R reference", {
     expect_identical(as.data.frame(table), expected, info = batch)
   }
 })
+
+# From test-write.R (#206).
+test_that("arrow reads a batch whose columns outrun it, at its length", {
+  skip_without_oracle("arrow")
+  skip_without_oracle("nanoarrow")
+  read <- list(file = arrow::read_ipc_file, stream = arrow::read_ipc_stream)
+  df <- data.frame(x = 1:5, y = letters[1:5])
+  # A zero-offset slice of a libarrow struct: children of 5, length 3.
+  sliced <- nanoarrow::as_nanoarrow_array(
+    arrow::StructArray$create(df)$Slice(0, 3)
+  )
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("i", "x"), zspec("n", "z"))
+  ))
+  raw_batch <- test_array(
+    schema,
+    3,
+    list(NULL),
+    children = list(
+      test_array_spec(5, list(NULL, le_int(1:5, 4L))),
+      test_array_spec(5, list(), null_count = 5)
+    )
+  )
+  for (format in names(read)) {
+    out <- as.data.frame(read[[format]](arrow_write(
+      sliced,
+      NULL,
+      format = format
+    )))
+    expect_identical(out, df[1:3, ], info = format)
+    out <- read[[format]](arrow_write(raw_batch, NULL, format = format))
+    expect_identical(nrow(out), 3L, info = format)
+    expect_identical(out$x, 1:3, info = format)
+  }
+})
+
+# From test-read-rules.R (#208).
+test_that("zuarrow and arrow agree on a batch length off its columns'", {
+  skip_without_oracle("arrow")
+  df <- data.frame(x = 1:4, y = c("a", "b", "c", "d"))
+  bytes <- arrow::write_to_raw(df, format = "stream")
+  m <- ipc_messages(bytes)
+  batch <- Filter(function(m) m$type == 3, m)[[1]]
+  for (length in 3:5) {
+    patched <- ipc_set_batch_length(bytes, batch, length)
+    arrow_reads <- tryCatch(
+      {
+        as.data.frame(arrow::read_ipc_stream(patched))
+        TRUE
+      },
+      error = function(e) FALSE
+    )
+    expect_identical(arrow_reads, length == 4, info = paste(length))
+    if (arrow_reads) {
+      expect_identical(arrow_read(patched)$x, df$x, info = paste(length))
+    } else {
+      expect_error(arrow_read(patched), class = "zuarrow_format_error")
+    }
+  }
+})
