@@ -510,6 +510,23 @@ static int zar_collect_dicts(struct ArrowArrayView *view, struct ArrowArrayView 
   return NANOARROW_OK;
 }
 
+/* The order dictionary batches are written in, as ids of
+   zar_collect_dicts(): a dictionary after every dictionary its values use,
+   since a reader decodes a dictionary batch against those already read.
+   `next_id` numbers the nodes as zar_collect_dicts() does. */
+static void zar_order_dicts(const struct ArrowArrayView *view, int64_t *next_id,
+                            int64_t *order, int64_t *n) {
+  int64_t own = -1;
+  if (view->dictionary != NULL) own = (*next_id)++;
+  for (int64_t i = 0; i < view->n_children; i++) {
+    zar_order_dicts(view->children[i], next_id, order, n);
+  }
+  if (view->dictionary != NULL) {
+    zar_order_dicts(view->dictionary, next_id, order, n);
+    order[(*n)++] = own;
+  }
+}
+
 static int zar_count_dicts(const struct ArrowSchema *s) {
   int n = s->dictionary != NULL;
   for (int64_t i = 0; i < s->n_children; i++) n += zar_count_dicts(s->children[i]);
@@ -609,6 +626,8 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       (size_t)(w->n_dicts > 0 ? w->n_dicts : 1), sizeof(struct ArrowArrayView *));
   struct ArrowArrayView **batch_dicts = (struct ArrowArrayView **)R_alloc(
       (size_t)(w->n_dicts > 0 ? w->n_dicts : 1), sizeof(struct ArrowArrayView *));
+  int64_t *dict_order =
+      (int64_t *)R_alloc((size_t)(w->n_dicts > 0 ? w->n_dicts : 1), sizeof(int64_t));
   /* The views of the last batch stay alive for the comparison: one view per
      batch, owned by R_alloc'ed storage and reset below. */
   struct ArrowArrayView *views = (struct ArrowArrayView *)R_alloc(
@@ -662,10 +681,14 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     }
 
     /* Dictionaries: written before the first batch, and again only when a
-       stream's batch brings a different one. */
+       stream's batch brings a different one, each after those its values
+       use. */
     int64_t n = 0;
     code = zar_collect_dicts(view, batch_dicts, w->n_dicts, &n);
-    for (int64_t k = 0; code == NANOARROW_OK && k < n; k++) {
+    int64_t next_id = 0, n_order = 0;
+    if (code == NANOARROW_OK) zar_order_dicts(view, &next_id, dict_order, &n_order);
+    for (int64_t j = 0; code == NANOARROW_OK && j < n_order; j++) {
+      int64_t k = dict_order[j];
       int differs = w->dict_views[k] == NULL;
       if (!differs) {
         int equal = 0;
