@@ -1,13 +1,13 @@
 on:
-  push:
-    branches: [main, master]
+  # No `push:`: a pull request already checks its merge with main,
+  # and the schedule checks main (r-actions README, "Pushes to main").
   # `labeled`/`unlabeled` so that adding or removing `full-ci` reruns it.
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled]
   # The full set runs weekly and on demand:
   # `gh workflow run R-CMD-check.yaml --ref main`.
   schedule:
-    - cron: "17 4 * * 1"
+    - cron: "18 17 * * 6"
   workflow_dispatch:
 
 name: R-CMD-check

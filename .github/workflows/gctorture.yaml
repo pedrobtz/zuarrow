@@ -1,11 +1,11 @@
 on:
-  push:
-    branches: [main, master]
+  # No `push:`: a pull request already checks its merge with main,
+  # and the schedule checks main (r-actions README, "Pushes to main").
   pull_request:
   schedule:
     # Daily while the package is in active development; weekly (for example
     # "17 3 * * 1") once it is released and changes slow down.
-    - cron: "17 3 * * *"
+    - cron: "38 17 * * *"
   workflow_dispatch:
 
 name: gctorture
