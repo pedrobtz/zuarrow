@@ -60,3 +60,77 @@ local_decimal_text <- function(.env = parent.frame()) {
   )
   seen
 }
+
+# A stream of `df`'s rows in batches of `batch`, with each column's format
+# replaced by the one `formats` names, at the top or, with `field`, inside
+# that struct column (#198).
+retyped_stream <- function(df, formats, batch, field = NULL) {
+  spec <- .Call(zuarrow:::zar_c_schema_to_spec, arrow_schema(df))
+  retype <- function(spec) {
+    for (k in seq_along(spec$children)) {
+      to <- formats[[spec$children[[k]]$name]]
+      if (!is.null(to)) {
+        spec$children[[k]]$format <- to
+      }
+    }
+    spec
+  }
+  if (is.null(field)) {
+    spec <- retype(spec)
+  } else {
+    k <- match(field, names(df))
+    spec$children[[k]] <- retype(spec$children[[k]])
+  }
+  arrow_stream(df, batch = batch, schema = test_schema(spec))
+}
+
+# Registers a `to` handler of each shape a family package uses: a plain
+# class over a base vector, a factor, a class with an attribute, a data
+# frame from a struct and a handler that takes the lossy policy (#198).
+local_handler_shapes <- function(.env = parent.frame()) {
+  local_registration("l", to = as_text_int64, .env = .env)
+  local_registration(
+    "u",
+    to = function(array, schema) {
+      factor(arrow_to_r(array), levels = c("c", "b", "a"))
+    },
+    .env = .env
+  )
+  local_registration(
+    "s",
+    to = function(array, schema) {
+      structure(as.double(arrow_to_r(array)), class = "fake_unit", unit = "kg")
+    },
+    .env = .env
+  )
+  local_registration(
+    "zar.test.point",
+    to = function(array, schema) {
+      out <- arrow_to_r(array)
+      out$x <- structure(as.character(out$x), class = "fake_int64")
+      out
+    },
+    .env = .env
+  )
+  local_registration(
+    "L",
+    to = function(array, schema, lossy) {
+      out <- arrow_to_r(array, lossy = "allow")
+      structure(out, class = "fake_uint64", lossy = lossy)
+    },
+    .env = .env
+  )
+}
+
+# Rows of every column local_handler_shapes() handles, before retyping.
+handler_shapes_frame <- function() {
+  df <- data.frame(
+    a = c(1L, NA, 3L, 4L, 5L),
+    f = c("a", "b", NA, "c", "a"),
+    u = c(10L, 20L, NA, 40L, 50L),
+    w = c(7L, 8L, 9L, NA, 11L)
+  )
+  df$p <- data.frame(x = c(1L, 2L, 3L, NA, 5L), y = c("v", NA, "x", "y", "z"))
+  attr(df$p, "arrow_extension") <- "zar.test.point"
+  df
+}

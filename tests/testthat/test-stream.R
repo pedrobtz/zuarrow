@@ -17,12 +17,13 @@ test_that("as.data.frame() reads a stream to its end", {
   expect_identical(as.data.frame(arrow_array(df)), df)
 })
 
-test_that("an empty data frame gives a stream with no batches", {
+test_that("an empty data frame gives a stream of one zero-row batch (#212)", {
   df <- data.frame(x = integer(), y = character())
   stream <- arrow_stream(df)
   expect_identical(format(arrow_schema(stream)), "struct<x: int32, y: string>")
-  out <- as.data.frame(stream)
-  expect_identical(out, df)
+  expect_identical(arrow_next(stream), df)
+  expect_null(arrow_next(stream))
+  expect_identical(as.data.frame(arrow_stream(df)), df)
 })
 
 test_that("as.data.frame() takes the same lossy default", {
@@ -130,4 +131,15 @@ test_that("a foreign stream whose schema fails is a handle error", {
   expect_error(arrow_next(failing()), class = "zuarrow_handle_error")
   expect_error(arrow_to_r(failing()), class = "zuarrow_handle_error")
   expect_error(arrow_write(failing(), NULL), class = "zuarrow_handle_error")
+})
+
+test_that("a live stream moved into a drained handle reads (#220)", {
+  df <- data.frame(x = 1:5)
+  stream <- arrow_stream(df, batch = 2)
+  expect_identical(nrow(as.data.frame(stream)), 5L)
+  expect_null(arrow_next(stream))
+  test_release(stream)
+  test_move(arrow_stream(df, batch = 2), stream)
+  expect_identical(as.data.frame(stream), df)
+  expect_null(arrow_next(stream))
 })

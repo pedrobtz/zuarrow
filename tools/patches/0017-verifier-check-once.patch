@@ -1,0 +1,21 @@
+--- a/flatcc.c
++++ b/flatcc.c
+@@ -1,4 +1,9 @@
+ /*
++ * Modified for the zuarrow R package: the verifier's check_result() evaluates
++ * its argument once, so a failure deep in a buffer is not verified again at
++ * every level above it (tools/patches/0017-verifier-check-once.patch).
++ */
++/*
+  * Codegenerator for C, building FlatBuffers.
+  *
+  * There are several approaches, some light, some requiring a library,
+@@ -2419,7 +2424,7 @@
+  */
+ #define verify_runtime(cond, reason) verify(cond, reason)
+ 
+-#define check_result(x) if (x) { return (x); }
++#define check_result(x) do { int ret__ = (x); if (ret__) { return ret__; } } while (0)
+ 
+ #define check_field(td, id, required, base) do {                            \
+     int ret = get_offset_field(td, id, required, &base);                    \

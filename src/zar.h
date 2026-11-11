@@ -44,6 +44,10 @@ struct ArrowSchema *zar_schema_from_xptr(SEXP x, struct ArrowError *error);
 struct ArrowArray *zar_array_from_xptr(SEXP x, struct ArrowError *error);
 struct ArrowArrayStream *zar_stream_from_xptr(SEXP x, struct ArrowError *error);
 
+/* Whether an array handle can be read: it is live, and so is every
+   parent a field was lent by (zar_c_array_child()). Never raises. */
+int zar_array_handle_live(SEXP x);
+
 /* The schema handle an array handle carries in its tag, or NULL with
    `error` filled when the tag holds none. */
 SEXP zar_array_schema_xptr(SEXP array_xptr, struct ArrowError *error);

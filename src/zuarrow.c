@@ -20,6 +20,7 @@ SEXP zar_c_array_from_buffers(SEXP schema, SEXP spec);
 SEXP zar_c_stream_from_arrays(SEXP schema, SEXP arrays);
 SEXP zar_c_test_failing_stream(SEXP schema, SEXP schema_fails);
 SEXP zar_c_test_release(SEXP x, SEXP tag);
+SEXP zar_c_test_move(SEXP x, SEXP into);
 SEXP zar_c_test_array_to_spec(SEXP x);
 SEXP zar_c_array_info(SEXP x);
 SEXP zar_c_stream_next(SEXP x);
@@ -57,6 +58,7 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_stream_from_arrays, 2),
     ZAR_CALL(zar_c_test_failing_stream, 2),
     ZAR_CALL(zar_c_test_release, 2),
+    ZAR_CALL(zar_c_test_move, 2),
     ZAR_CALL(zar_c_test_array_to_spec, 1),
     ZAR_CALL(zar_c_array_info, 1),
     ZAR_CALL(zar_c_stream_next, 1),

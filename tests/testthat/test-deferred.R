@@ -257,3 +257,56 @@ test_that("elements made before the array was released stay usable", {
   # Every element exists, so the released batch is not read again.
   expect_identical(x, c("x", NA, "z"))
 })
+
+test_that("a deferred field of a struct sees the struct's release (#205)", {
+  # A handler on a sibling field makes the struct convert field by field,
+  # so the string field is a child lent by its parent.
+  local_registration(
+    "tdD",
+    to = function(array, schema) arrow_to_r(array) + 0
+  )
+  n <- 2000L
+  df <- data.frame(id = seq_len(n))
+  df$st <- data.frame(
+    d = as.Date("2020-01-01") + seq_len(n),
+    s = sprintf("row-%06d", seq_len(n))
+  )
+  df$deep <- data.frame(id = seq_len(n))
+  df$deep$st <- df$st
+  array <- arrow_array(df)
+  out <- arrow_to_r(array, copy = FALSE)
+  x <- out$st$s
+  y <- out$deep$st$s
+  expect_false(is.null(deferred_info(x)))
+  expect_false(is.null(deferred_info(y)))
+  expect_identical(x[1], "row-000001")
+  test_release(array)
+  heap_churn()
+  expect_error(x[n], class = "zuarrow_handle_error")
+  expect_error(y[n], class = "zuarrow_handle_error")
+  expect_identical(x[1], "row-000001")
+})
+
+test_that("strings in a list of structs stay readable after release (#205)", {
+  local_registration(
+    "tdD",
+    to = function(array, schema) arrow_to_r(array) + 0
+  )
+  inner <- data.frame(d = as.Date("2020-01-01") + 1:2, s = c("a", "b"))
+  df <- data.frame(id = 1:2)
+  df$l <- list(inner, inner[2, ])
+  array <- arrow_array(df)
+  out <- arrow_to_r(array, copy = FALSE)
+  test_release(array)
+  heap_churn()
+  expect_identical(out$l[[1]]$s, c("a", "b"))
+  expect_identical(out$l[[2]]$s, "b")
+})
+
+test_that("no_na answers for the values after one is set in place (#221)", {
+  x <- arrow_to_r(arrow_array(c("a", "b")), copy = FALSE)
+  expect_true(deferred_probe(x, "no_na"))
+  deferred_probe(x, "set", 2L, NA_character_)
+  expect_false(deferred_probe(x, "no_na"))
+  expect_identical(x, c("a", NA))
+})

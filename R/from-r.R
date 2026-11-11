@@ -107,7 +107,9 @@ zar_stream_from_r <- function(x, batch, schema, call) {
   schema <- zar_schema_for(x, schema, call)
   prepared <- zar_prepare(x, schema, call)
   n <- zar_nrow(x, call)
-  starts <- if (n == 0) numeric() else seq(0, n - 1, by = batch)
+  # Zero rows are one zero-row batch, as in arrow_array(): a dictionary
+  # travels only with a batch, so a factor keeps its levels (#212).
+  starts <- if (n == 0) 0 else seq(0, n - 1, by = batch)
   arrays <- lapply(starts, function(start) {
     len <- min(batch, n - start)
     zar_check(
@@ -155,8 +157,7 @@ zar_utf8_limit <- function() {
 # Each registered column, at the top or inside a data frame, built once by
 # its `from` handler on the whole column (section 6.10). Its schema is that
 # array's, so a handler whose type depends on the values gives one type for
-# the column. A batch is that array, or a copied slice of it for a
-# fixed-width layout; any other layout is built again per batch.
+# the column. A batch is that array, or a copied slice of it (#215).
 zar_prebuild <- function(x, call = NULL) {
   handler <- zar_handler_for_class(x)
   if (!is.null(handler)) {
@@ -387,26 +388,17 @@ zar_empty_like <- function(spec) {
   )
 }
 
-# Rows [start, start + n) of the registered columns, built by their
-# handlers. Every other column is sliced by the C builder.
+# Rows [start, start + n) of the registered columns, cut from the arrays
+# their handlers built. Every other column is sliced by the C builder.
 zar_batch <- function(x, start, n, call = NULL) {
   if (inherits(x, "zar_registered")) {
-    if (!is.null(x$array)) {
-      # The whole column is the array itself, lent so the caller's handle
-      # survives the batch; a fixed-width slice is a copy at offset 0.
-      if (start == 0 && n == length(x$x)) {
-        return(zar_check(.Call(zar_c_array_borrow, x$array), call = call))
-      }
-      slice <- zar_check(
-        .Call(zar_c_array_slice, x$array, start, n),
-        call = call
-      )
-      if (!is.null(slice)) {
-        return(slice)
-      }
+    # The whole column is the array itself, lent so the caller's handle
+    # survives the batch; any smaller batch is a copy of its rows at
+    # offset 0, so one batch and many hold the same values (#215).
+    if (start == 0 && n == length(x$x)) {
+      return(zar_check(.Call(zar_c_array_borrow, x$array), call = call))
     }
-    handler <- zar_handler_for_class(x$x)
-    return(zar_from_handler(handler, x$x[seq_len(n) + start], call))
+    return(zar_check(.Call(zar_c_array_slice, x$array, start, n), call = call))
   }
   if (is.data.frame(x)) {
     registered <- vapply(

@@ -3,7 +3,7 @@ on:
   schedule:
     # A long run nightly. The corpus cache is what makes the short PR runs
     # and this one add up to a single campaign.
-    - cron: "0 3 * * *"
+    - cron: "33 17 * * *"
   # A dispatch runs the long hour too: design section 12 wants one hour
   # clean on the release candidate, `gh workflow run fuzz.yaml --ref <branch>`.
   workflow_dispatch:
@@ -24,6 +24,10 @@ concurrency:
 # seed corpus, and the file crash corpus and tests/testthat/data are extra
 # corpus directories in libfuzzer-args, which libFuzzer reads but does not
 # write to. Keep the commit in step with fixtures-files.txt.
+#
+# -timeout makes an input that takes over 10 s a finding: libFuzzer's
+# default is 1200 s, so a slow input (#200, a verifier exponential in the
+# depth) passed as clean.
 jobs:
   fuzz:
     uses: pedrobtz/r-actions/.github/workflows/fuzz.yml@v1
@@ -43,6 +47,7 @@ jobs:
       github-packages: apache/arrow-testing@9ff285c88565f0f6abc855918c6a342e70e4909c
       seed-corpus: .github-packages/arrow-testing/data/arrow-ipc-stream
       libfuzzer-args: >-
+        -timeout=10
         .github-packages/arrow-testing/data/arrow-ipc-file
         tests/testthat/data
       max-total-time: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 3600 || 120 }}
