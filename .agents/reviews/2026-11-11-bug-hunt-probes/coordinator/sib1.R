@@ -1,0 +1,7 @@
+.libPaths(c(Sys.getenv("W_LIB"), .libPaths())); suppressMessages(library(zuarrow))
+a <- nanoarrow::as_nanoarrow_array(data.frame(x = 1:2))
+s <- nanoarrow::nanoarrow_schema_modify(a$schema, list(children = list(nanoarrow::nanoarrow_schema_modify(a$schema$children[[1]], list(name = NULL)))))
+cat("child name is NULL:", is.null(s$children[[1]]$name), "\n")
+nanoarrow::nanoarrow_array_set_schema(a, s)
+cat("validate:", tryCatch(arrow_validate(a), error = function(e) class(e)[1]), "\n")
+r <- arrow_write(a, NULL); cat("wrote", length(r), "\n")

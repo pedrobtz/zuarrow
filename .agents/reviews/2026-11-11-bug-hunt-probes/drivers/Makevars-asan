@@ -1,0 +1,3 @@
+CC=clang -fsanitize=address,undefined -fno-omit-frame-pointer -fno-sanitize-recover=undefined
+CFLAGS=-g -O1
+LDFLAGS=-fsanitize=address,undefined
