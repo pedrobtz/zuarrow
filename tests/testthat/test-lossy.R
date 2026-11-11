@@ -619,7 +619,7 @@ test_that("text that is not the type's form is a type error", {
 })
 
 test_that("a parsed decimal at full precision round-trips", {
-  text <- structure(c("99999.99", "-0.01", "0"), arrow_type = "d:7,2")
+  text <- structure(c("99999.99", "-0.01", "0.00"), arrow_type = "d:7,2")
   expect_identical(
     as.vector(arrow_to_r(arrow_array(text), lossy = "character")),
     c("99999.99", "-0.01", "0.00")
@@ -712,4 +712,138 @@ test_that("the timestamp check runs through run-end encoding", {
     class = "zuarrow_lossy_error"
   )
   expect_identical(as.numeric(arrow_to_r(ree(c(0, 1e6)))), c(0, 0, 1))
+})
+
+test_that("only the canonical text is written back (#213)", {
+  bad <- function(text, type) arrow_array(structure(text, arrow_type = type))
+  cases <- list(
+    c("+1", "i"),
+    c("01", "i"),
+    c("00009", "l"),
+    c("-0", "i"),
+    c("-0", "l"),
+    c("+5", "tDs"),
+    c("+1", "L"),
+    c("01", "C"),
+    c("1", "d:5,2"),
+    c("1.0", "d:5,2"),
+    c("01.00", "d:5,2"),
+    c("+1.00", "d:5,2"),
+    c("-0.00", "d:5,2"),
+    c("12300.0", "d:5,-2"),
+    c("-0", "d:5,-2"),
+    c("+2026-01-01", "tdD"),
+    c("02026-01-01", "tdD"),
+    c("-0000-01-01", "tdD"),
+    c("+0001-01-01", "tdD"),
+    c("+010000-01-01", "tdD"),
+    c("2026-01-01T00:00:00Z", "tsu:UTC"),
+    c("2026-01-01T00:00:00.5Z", "tsm:UTC"),
+    c("2026-01-01T00:00:00.000Z", "tss:UTC"),
+    c("2026-01-01T00:00:00Z", "tdm"),
+    c("001:00:00", "tts"),
+    c("01:00:00", "ttm"),
+    c("01:00:00.1", "ttu"),
+    c("-00:00:01", "tts")
+  )
+  for (case in cases) {
+    expect_error(
+      bad(case[[1L]], case[[2L]]),
+      class = "zuarrow_lossy_error",
+      info = paste(case, collapse = " as ")
+    )
+  }
+  # The canonical forms of the same values are accepted.
+  good <- list(
+    c("1", "i"),
+    c("0", "l"),
+    c("-1", "l"),
+    c("1.00", "d:5,2"),
+    c("0.00", "d:5,2"),
+    c("-0.05", "d:5,2"),
+    c("12300", "d:5,-2"),
+    c("0", "d:5,-2"),
+    c("2026-01-01", "tdD"),
+    c("-0001-01-01", "tdD"),
+    c("+10000-01-01", "tdD"),
+    c("2026-01-01T00:00:00.000000Z", "tsu:UTC"),
+    c("2026-01-01T00:00:00.000Z", "tdm"),
+    c("00:00:00", "tts")
+  )
+  for (case in good) {
+    text <- structure(case[[1L]], arrow_type = case[[2L]])
+    expect_identical(
+      as.vector(arrow_to_r(arrow_array(text), to = character())),
+      case[[1L]],
+      info = paste(case, collapse = " as ")
+    )
+  }
+})
+
+test_that("a time of day is below 24:00:00 in each unit (#213)", {
+  units <- list(
+    tts = c("23:59:59", "24:00:00"),
+    ttm = c("23:59:59.999", "24:00:00.000"),
+    ttu = c("23:59:59.999999", "24:00:00.000000"),
+    ttn = c("23:59:59.999999999", "24:00:00.000000000")
+  )
+  for (type in names(units)) {
+    last <- structure(units[[type]][[1L]], arrow_type = type)
+    expect_identical(
+      as.vector(arrow_to_r(arrow_array(last), to = character())),
+      units[[type]][[1L]]
+    )
+    expect_error(
+      arrow_array(structure(units[[type]][[2L]], arrow_type = type)),
+      class = "zuarrow_lossy_error",
+      info = type
+    )
+  }
+})
+
+test_that("text at the ends of the int64 range round-trips (#218)", {
+  ends <- c(
+    min = "8000000000000000",
+    min1 = "8000000000000001",
+    max = "7FFFFFFFFFFFFFFF"
+  )
+  bytes <- unlist(lapply(ends, le_hex))
+  for (type in c(
+    "tss:",
+    "tsm:",
+    "tsu:",
+    "tsn:",
+    "tss:UTC",
+    "tsm:UTC",
+    "tsu:UTC",
+    "tsn:UTC",
+    "tdm",
+    "tDs",
+    "tDn",
+    "l"
+  )) {
+    array <- test_array(type, 3, list(NULL, bytes))
+    text <- arrow_to_r(array, to = character())
+    back <- arrow_array(text)
+    expect_true(arrow_equal(back, array, metadata = FALSE), info = type)
+  }
+  # date32 at the ends of int32.
+  array <- test_fixed("tdD", c(-2147483648, -2147483647, 2147483647), 4L)
+  text <- arrow_to_r(array, to = character())
+  expect_true(arrow_equal(arrow_array(text), array, metadata = FALSE))
+  # One past the end is lossy, not wrapped.
+  expect_error(
+    arrow_array(structure(
+      "+292277026596-12-04T15:30:08Z",
+      arrow_type = "tss:UTC"
+    )),
+    class = "zuarrow_lossy_error"
+  )
+  expect_error(
+    arrow_array(structure(
+      "1677-09-21T00:12:43.145224191Z",
+      arrow_type = "tsn:UTC"
+    )),
+    class = "zuarrow_lossy_error"
+  )
 })

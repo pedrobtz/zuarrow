@@ -46,7 +46,11 @@
 #' A character vector with an `arrow_type` attribute, as `arrow_to_r()`
 #' returns under `lossy = "character"`, is written back as that type: each
 #' value is parsed, and text that is not the type's form, or holds more
-#' precision than the type, is an error. So the exact text round-trips.
+#' precision than the type, is an error. Only the canonical text that
+#' `arrow_to_r()` writes is read: other forms of the same value, such as
+#' `"+1"`, `"01"`, `"-0"` or `"1"` for a decimal of scale 2, are a
+#' `zuarrow_lossy_error`, and so is a time of day at or past `24:00:00`. So
+#' the exact text round-trips, at the ends of the int64 range too.
 #'
 #' Every `NA` becomes a null with a zeroed slot. `NaN` stays a value.
 #'

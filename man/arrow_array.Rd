@@ -66,7 +66,11 @@ and \code{difftime} values are rounded to the schema's unit.
 A character vector with an \code{arrow_type} attribute, as \code{arrow_to_r()}
 returns under \code{lossy = "character"}, is written back as that type: each
 value is parsed, and text that is not the type's form, or holds more
-precision than the type, is an error. So the exact text round-trips.
+precision than the type, is an error. Only the canonical text that
+\code{arrow_to_r()} writes is read: other forms of the same value, such as
+\code{"+1"}, \code{"01"}, \code{"-0"} or \code{"1"} for a decimal of scale 2, are a
+\code{zuarrow_lossy_error}, and so is a time of day at or past \code{24:00:00}. So
+the exact text round-trips, at the ends of the int64 range too.
 
 Every \code{NA} becomes a null with a zeroed slot. \code{NaN} stays a value.
 }
