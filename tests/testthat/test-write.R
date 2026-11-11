@@ -346,6 +346,57 @@ test_that("a dictionary of nested values is written with their children", {
   }
 })
 
+test_that("a dictionary inside a dictionary's values is written first", {
+  # The native review's R6, found with libarrow as the oracle (#186): the
+  # outer dictionary's batch came before the inner one its values use.
+  inner <- zspec("i", "a")
+  inner$dictionary <- zspec("u")
+  outer <- zspec("i", "x")
+  outer$dictionary <- zspec("+s", children = list(inner))
+  schema <- test_schema(zspec("+s", children = list(outer)))
+  batch <- function(indices, inner_indices, offsets, data) {
+    test_array(
+      schema,
+      length(indices),
+      list(NULL),
+      children = list(test_array_spec(
+        length(indices),
+        list(NULL, le_int(indices, 4L)),
+        dictionary = test_array_spec(
+          length(inner_indices),
+          list(NULL),
+          children = list(test_array_spec(
+            length(inner_indices),
+            list(NULL, le_int(inner_indices, 4L)),
+            dictionary = test_array_spec(
+              length(offsets) - 1L,
+              list(NULL, le_int(offsets, 4L), charToRaw(data))
+            )
+          ))
+        )
+      ))
+    )
+  }
+  one <- function() batch(c(0, 1, 1), c(1, 0), c(0, 3, 6), "foobar")
+  two <- function() batch(c(1, 0), c(0, 2, 1), c(0, 1, 2, 3), "xyz")
+  levels <- c("foo", "bar")
+  first <- data.frame(a = factor(c("bar", "foo", "foo"), levels))
+  for (format in c("stream", "file")) {
+    bytes <- arrow_write(one(), NULL, format = format)
+    expect_identical(arrow_read(bytes)$x, first, info = format)
+  }
+  # A stream sends both again when the inner dictionary changes.
+  bytes <- arrow_write(
+    test_stream(schema, list(one(), two())),
+    NULL,
+    format = "stream"
+  )
+  expect_identical(
+    without_metadata(arrow_read(bytes)),
+    arrow_to_r(test_stream(schema, list(one(), two())))
+  )
+})
+
 test_that("a sliced batch is written as the values it holds", {
   dict_field <- zspec("i", "f")
   dict_field$dictionary <- zspec("u")

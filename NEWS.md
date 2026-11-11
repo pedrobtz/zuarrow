@@ -360,3 +360,6 @@
   zero-offset slice of an `arrow` struct array is, at the batch's length.
   Before, each column kept its own length, and `arrow` refused the
   output (#206).
+* `arrow_write()` writes a dictionary whose values hold another dictionary
+  after that inner dictionary, as the format requires. Before, it wrote
+  the outer one first, and `arrow_read()` refused the output (#186).
