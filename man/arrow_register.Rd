@@ -65,7 +65,13 @@ keeps its place among the patterns; \code{arrow_unregister()} forgets it.
 \code{to} converts Arrow to R: a function of \verb{(array, schema)}, the column's
 array and schema handles, returning an R vector of the array's length.
 It may be implemented in C against nanoarrow's \code{r.h} layout. It is called
-once per batch, and the pieces are combined with \code{c()}. A function of
+once per batch, and a piece of another length than its batch is a
+\code{zuarrow_registry_error}. Data frame pieces are combined column by
+column, and other pieces with \code{c()}. Where \code{c()} drops the class, the
+attributes the pieces share are kept, and pieces whose attributes differ
+are a \code{zuarrow_registry_error}. So a handler must give each batch a
+piece that combines into what one batch gives: a factor's levels, for
+instance, must not depend on the batch's values. A function of
 \verb{(array, schema, lossy)} also receives the caller's \code{lossy} policy, so a
 handler can apply it to values its class cannot hold, such as one equal
 to its \code{NA} sentinel: an error under \code{"error"}, \code{NA} with a warning under
@@ -74,8 +80,9 @@ to its \code{NA} sentinel: an error under \code{"error"}, \code{NA} with a warni
 
 \code{from} converts R to Arrow: a function of \code{(x)} returning an array
 handle of \code{x}'s length, used for every object that inherits from
-\code{class}. It receives the whole column, and the column's type is that
-array's, in \code{\link[=arrow_schema]{arrow_schema()}} too. An array of another length is a
+\code{class}. It receives the whole column once, and the column's type is that
+array's, in \code{\link[=arrow_schema]{arrow_schema()}} too. Batches are copies of that array's
+rows. An array of another length is a
 \code{zuarrow_registry_error}. Where several registrations' classes match an
 object, the one whose class comes first in \code{class(x)} is used, for \code{from}
 and for a prototype in the \code{to} of \code{\link[=arrow_to_r]{arrow_to_r()}}.

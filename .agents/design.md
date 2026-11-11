@@ -771,6 +771,19 @@ nonzero offset, so a borrowed slice could not be written. For any other
 layout `from` is called again on each batch's rows, and each result must
 have the column's type, or it is a `zuarrow_registry_error`.
 
+*2026-11-11 (#215, #216, #198):* every layout is cut from the one array.
+A smaller batch is a copy of its rows at offset 0 for any layout the
+writer can encode, run-end encoded included, so `from` is never called on
+`x[rows]`, which drops a class without a `[` method. One batch and many
+give the same rows. In the other direction, each `to` piece must have its
+batch's length, or it is a `zuarrow_registry_error` naming the batch.
+Data frame pieces are combined column by column. Other pieces are
+combined with `c()`; where it drops the class, the attributes every piece
+shares are kept, and pieces whose attributes differ are a
+`zuarrow_registry_error`. A class whose `c()` method depends on the
+values, such as a factor whose levels a handler takes from the batch,
+stays the handler's to keep consistent.
+
 *Decided 2026-11-04 (#93):* a dictionary or run-end encoded column is
 matched to a registration by its value type, never by its index or
 run-end type, and its extension name is the field's or else the values'.

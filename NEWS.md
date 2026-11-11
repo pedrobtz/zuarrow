@@ -186,6 +186,23 @@
   column, raises a `zuarrow_registry_error`. Before, only the top-level
   format was compared, so the batch's bytes were read as the wrong type
   (#100).
+* A zero-row data frame is a stream of one zero-row batch, as it is one
+  zero-row array, so `arrow_stream()` and `arrow_write()` keep a factor's
+  levels, nested ones too. Before, the stream had no batch and the levels
+  were lost (#212).
+* A registered `from` handler is called once on the whole column for
+  every layout, and each batch is a copy of that array's rows. Before, a
+  column that was not fixed-width was built again per batch from
+  `x[rows]`, which drops the class and attributes. A sliced run-end
+  encoded column is now written as its rows, not refused (#215).
+* A `to` handler's piece for each batch must have that batch's length, or
+  it is a `zuarrow_registry_error` naming the batch. Before, only the
+  total was checked, so rows could shift between batches (#216).
+* A `to` handler's data frame pieces are combined column by column, and
+  pieces whose class `c()` drops keep the attributes they share. Pieces
+  whose attributes differ are a `zuarrow_registry_error`. Before, several
+  batches could give another class or another shape than one batch
+  (#198).
 * A dictionary or run-end encoded column goes to the handler registered
   for its value type, which receives the decoded values. Before, the
   handler for the index type received the dictionary, so a dictionary

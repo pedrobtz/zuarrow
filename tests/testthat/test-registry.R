@@ -18,6 +18,55 @@ test_that("a registered handler converts each batch, combined with c()", {
   expect_identical(unclass(arrow_to_r(stream)), c("1", "2", "3"))
 })
 
+test_that("a to handler's pieces must each have their batch's length (#216)", {
+  calls <- 0L
+  local_registration("l", to = function(array, schema) {
+    calls <<- calls + 1L
+    v <- as.vector(arrow_to_r(array, lossy = "allow"))
+    switch(calls, c(v, 99), v[-1], v)
+  })
+  stream <- retyped_stream(data.frame(a = 1:5), list(a = "l"), batch = 2)
+  expect_error(arrow_to_r(stream), class = "zuarrow_registry_error")
+})
+
+test_that("handlers give the same result over any batches (#198)", {
+  local_handler_shapes()
+  formats <- list(a = "l", f = "u", u = "s", w = "L")
+  df <- handler_shapes_frame()
+  one <- arrow_to_r(retyped_stream(df, formats, batch = 5))
+  expect_s3_class(one$a, "fake_int64")
+  expect_s3_class(one$f, "factor")
+  expect_s3_class(one$u, "fake_unit")
+  expect_s3_class(one$p, "data.frame")
+  expect_s3_class(one$w, "fake_uint64")
+  expect_identical(attr(one$w, "lossy"), "error")
+  for (batch in c(1, 2, 3)) {
+    many <- arrow_to_r(retyped_stream(df, formats, batch = batch))
+    expect_identical(many, one, info = paste("batch", batch))
+  }
+
+  nested <- data.frame(id = 1:5)
+  nested$s <- df
+  one <- arrow_to_r(retyped_stream(nested, formats, batch = 5, field = "s"))
+  expect_s3_class(one$s$a, "fake_int64")
+  expect_s3_class(one$s$p, "data.frame")
+  for (batch in c(1, 2, 3)) {
+    many <- arrow_to_r(retyped_stream(nested, formats, batch, field = "s"))
+    expect_identical(many, one, info = paste("nested batch", batch))
+  }
+})
+
+test_that("pieces whose attributes c() drops must agree (#198)", {
+  calls <- 0L
+  local_registration("s", to = function(array, schema) {
+    calls <<- calls + 1L
+    v <- as.double(arrow_to_r(array))
+    structure(v, class = "fake_unit", unit = c("kg", "g")[[calls]])
+  })
+  stream <- retyped_stream(data.frame(u = 1:4), list(u = "s"), batch = 2)
+  expect_error(arrow_to_r(stream), class = "zuarrow_registry_error")
+})
+
 test_that("handlers convert data frame columns", {
   local_registration("l", to = as_text_int64)
   schema <- test_schema(zspec(
