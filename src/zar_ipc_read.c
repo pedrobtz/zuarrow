@@ -54,6 +54,7 @@ struct zar_reader {
   int is_file;
   int started;     /* a batch has been read: the selection is fixed */
   int ended;
+  int failed;      /* get_next() failed: every later call repeats it */
   int64_t block;   /* the next record batch block of a file */
   int64_t n_blocks;
   struct ArrowIpcFileBlock *blocks;
@@ -381,7 +382,7 @@ static int zar_read_message(struct zar_reader *r, int64_t pos,
    compressed buffer's length prefix under max_message, so a lying prefix
    is a limit error before anything is allocated for it. */
 static int zar_check_record_batch(struct zar_reader *r, ns(RecordBatch_table_t) batch,
-                                  struct ArrowBufferView body) {
+                                  struct ArrowBufferView body, int is_dictionary) {
   if (batch == NULL) {
     ArrowErrorSet(&r->error, "a message has no record batch");
     return zar_reader_fail(r, "format", EINVAL);
@@ -406,6 +407,23 @@ static int zar_check_record_batch(struct zar_reader *r, ns(RecordBatch_table_t) 
         node_nulls > node_length) {
       ArrowErrorSet(&r->error, "field node %ld has an impossible length or null count",
                     (long)i);
+      return zar_reader_fail(r, "format", EINVAL);
+    }
+  }
+  /* Each top-level node holds exactly the batch's rows, as the format
+     requires: a batch shorter than its columns would drop rows silently
+     (#208). A dictionary batch has one column, at node 0; a record batch's
+     columns start where field_index says. The decoder refuses a batch
+     with too few nodes. */
+  int64_t n_top = is_dictionary ? 1 : r->schema.n_children;
+  for (int64_t i = 0; i < n_top; i++) {
+    int64_t at = is_dictionary ? 0 : r->field_index[i];
+    if (at < 0 || (size_t)at >= n_nodes) continue;
+    int64_t node_length = ns(FieldNode_length(ns(FieldNode_vec_at(nodes, (size_t)at))));
+    if (node_length != length) {
+      ArrowErrorSet(&r->error,
+                    "column %ld holds %" PRId64 " rows in a batch of %" PRId64,
+                    (long)i, node_length, length);
       return zar_reader_fail(r, "format", EINVAL);
     }
   }
@@ -446,7 +464,7 @@ static int zar_check_batch(struct zar_reader *r, struct ArrowBufferView header,
                            struct ArrowBufferView body) {
   ns(Message_table_t) message = ns(Message_as_root(header.data.data));
   return zar_check_record_batch(
-      r, (ns(RecordBatch_table_t))ns(Message_header(message)), body);
+      r, (ns(RecordBatch_table_t))ns(Message_header(message)), body, 0);
 }
 
 /* The most bytes a checked batch's buffers can decode to: a compressed
@@ -535,7 +553,7 @@ static int zar_apply_dictionary(struct zar_reader *r, struct ArrowBufferView hea
   ns(Message_table_t) message = ns(Message_as_root(header.data.data));
   ns(DictionaryBatch_table_t) dictionary =
       (ns(DictionaryBatch_table_t))ns(Message_header(message));
-  int checked = zar_check_record_batch(r, ns(DictionaryBatch_data(dictionary)), body);
+  int checked = zar_check_record_batch(r, ns(DictionaryBatch_data(dictionary)), body, 1);
   if (checked != NANOARROW_OK) return checked;
   r->kind = NULL;
   const struct ArrowIpcDictionaryBatch *d = r->decoder.dictionary;
@@ -834,11 +852,24 @@ static int zar_stream_get_schema(struct ArrowArrayStream *stream, struct ArrowSc
   return ArrowSchemaDeepCopy(&r->out_schema, out);
 }
 
+/* A failure leaves the reader part way through a message: its dictionary
+   or its batch was not applied, so reading on would give batches against
+   the wrong dictionary, or skip one. The reader stays failed instead, and
+   every later call returns the same code, kind and message (#207). */
 static int zar_stream_get_next(struct ArrowArrayStream *stream, struct ArrowArray *out) {
   struct zar_reader *r = (struct zar_reader *)stream->private_data;
+  if (r->failed != 0) {
+    out->release = NULL;
+    return r->failed;
+  }
   r->kind = NULL;
   ArrowErrorInit(&r->error);
-  return zar_reader_next(r, out);
+  int code = zar_reader_next(r, out);
+  if (code != NANOARROW_OK) {
+    out->release = NULL;
+    r->failed = code;
+  }
+  return code;
 }
 
 static const char *zar_stream_last_error(struct ArrowArrayStream *stream) {

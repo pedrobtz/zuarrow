@@ -74,7 +74,12 @@ Dictionary batches, and the deltas a stream may send between record
 batches, are applied as the format says; a file that replaces a
 dictionary is an error, as the format forbids it. A delta extends a
 dictionary of fixed-width, binary or string values; a delta onto a
-dictionary of any other values is a \code{zuarrow_format_error}.
+dictionary of any other values is a \code{zuarrow_format_error}. Every
+column of a batch must hold the batch's number of rows.
+
+A stream handle that has raised an error stays failed: every later
+\code{\link[=arrow_next]{arrow_next()}} raises the same error, so no batch is skipped or read
+against a dictionary that failed to arrive.
 
 A raw vector is read where it is. With \code{lazy = TRUE} the handle holds a
 copy instead, because a handle can be passed to another consumer that
