@@ -498,3 +498,24 @@
   writes metadata values whole. Before, schema, field and extension
   metadata were cut at the first NUL byte
   ([\#202](https://github.com/pedrobtz/zuarrow/issues/202)).
+
+- A stream handle from `arrow_read(lazy = TRUE)` stays failed after an
+  error: every later
+  [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md),
+  and every later `get_next()` through the C stream interface, raises
+  the same error. Before, the reader went on to the next message, so a
+  batch was skipped or read against the dictionary that a failed
+  replacement should have replaced
+  ([\#207](https://github.com/pedrobtz/zuarrow/issues/207)).
+
+- [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  refuses a record batch or dictionary batch whose length differs from
+  its columns’ lengths, as a `zuarrow_format_error`, as `arrow` does.
+  Before, a batch shorter than its columns dropped rows silently
+  ([\#208](https://github.com/pedrobtz/zuarrow/issues/208)).
+
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  writes a batch whose columns are longer than it, as a zero-offset
+  slice of an `arrow` struct array is, at the batch’s length. Before,
+  each column kept its own length, and `arrow` refused the output
+  ([\#206](https://github.com/pedrobtz/zuarrow/issues/206)).

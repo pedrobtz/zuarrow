@@ -129,7 +129,11 @@ decompressed through 'zukomp'. Big-endian input is a
 batches, are applied as the format says; a file that replaces a
 dictionary is an error, as the format forbids it. A delta extends a
 dictionary of fixed-width, binary or string values; a delta onto a
-dictionary of any other values is a <code>zuarrow_format_error</code>.</p>
+dictionary of any other values is a <code>zuarrow_format_error</code>. Every
+column of a batch must hold the batch's number of rows.</p>
+<p>A stream handle that has raised an error stays failed: every later
+<code><a href="arrow_to_r.html">arrow_next()</a></code> raises the same error, so no batch is skipped or read
+against a dictionary that failed to arrive.</p>
 <p>A raw vector is read where it is. With <code>lazy = TRUE</code> the handle holds a
 copy instead, because a handle can be passed to another consumer that
 outlives the vector.</p>
