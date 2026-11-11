@@ -157,6 +157,9 @@ test_that("max_depth, not the FlatBuffers verifier, refuses a deep schema (#200)
     }
   })[["elapsed"]]
   skip_on_cran()
+  # gctorture collects at every allocation, so wall time says nothing
+  # about the verifier there; the assertions above still run.
+  skip_if(under_gctorture(), "timing is meaningless under gctorture")
   expect_lt(elapsed, 30)
 })
 
