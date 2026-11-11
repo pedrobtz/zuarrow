@@ -103,6 +103,10 @@ Intervals and unions have no R form and always fail, unless a handler
 registered with \code{\link[=arrow_register]{arrow_register()}} for the column's extension name
 converts it.
 
+Any other column with no values loses nothing, so it neither fails nor
+warns. Under \code{"error"} and \code{"warn"} it takes the form \code{"allow"} gives, so
+a query that reads only a table's schema converts under any policy.
+
 \code{to} names the R type a column must become: \code{character()}, \code{double()},
 \code{integer()}, or \code{\link[=arrow_matrix]{arrow_matrix()}} for a \code{fixed_size_list}. A target that
 cannot take the column is a \code{zuarrow_type_error}, never a silent

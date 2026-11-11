@@ -1033,6 +1033,13 @@ SEXP zar_c_array_child(SEXP x, SEXP r_k) {
   SEXP tag = zar_array_schema_xptr(x, &error);
   if (tag == NULL) return zar_failure_from_error("handle", &error);
   struct ArrowSchema *schema = zar_schema_from_xptr(tag, &error);
+  if (schema == NULL) return zar_failure_from_error("handle", &error);
+  /* Only a struct's fields are row-aligned with it; a union's, a list's
+     or a map's children are not, so slicing them by the parent is wrong
+     (#173). */
+  if (schema->format == NULL || strcmp(schema->format, "+s") != 0) {
+    return zar_failure("handle", "the array is not a struct");
+  }
   int64_t k = (int64_t)Rf_asReal(r_k);
   if (k < 0 || k >= array->n_children || k >= schema->n_children) {
     return zar_failure("handle", "the array has no such field");

@@ -274,6 +274,56 @@ test_that("each row of the lossy table errors by default and converts under allo
   }
 })
 
+test_that("a column with no values is never lossy (#177)", {
+  # Under allow an int64 becomes integer64 when bit64 is loaded.
+  local_mocked_bindings(zar_bit64_loaded = function() FALSE)
+  # Lossy by type, then lossy by value.
+  by_type <- c("d:5,2", "d:5,2,32", "d:40,3,256", "tsn:UTC", "tdm", "tts")
+  by_type <- c(by_type, "ttn", "tDs")
+  for (format in c(by_type, "l", "L")) {
+    empty <- test_array(format, 0, list(NULL, raw()))
+    allowed <- arrow_to_r(empty, lossy = "allow")
+    expect_identical(arrow_to_r(empty), allowed, info = format)
+    expect_no_warning(out <- arrow_to_r(empty, lossy = "warn"))
+    expect_identical(out, allowed, info = format)
+    text <- arrow_to_r(empty, lossy = "character")
+    expect_type(text, if (format %in% by_type) "character" else "double")
+  }
+
+  # A query that reads only the schema: no rows in one batch, or no batch.
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("i", "id"), zspec("d:10,2", "price"))
+  ))
+  frame <- test_array(
+    schema,
+    0,
+    list(NULL),
+    children = list(
+      test_array_spec(0, list(NULL, raw())),
+      test_array_spec(0, list(NULL, raw()))
+    )
+  )
+  expected <- data.frame(id = integer(), price = double())
+  expect_identical(arrow_to_r(frame), expected)
+  expect_identical(arrow_to_r(test_stream(schema, list())), expected)
+
+  # A nested column whose child holds no values.
+  list_of <- test_array(
+    test_schema(zspec("+l", children = list(zspec("d:5,2", "item")))),
+    2,
+    list(NULL, le_int(c(0, 0, 0), 4L)),
+    children = list(test_array_spec(0, list(NULL, raw())))
+  )
+  expect_identical(arrow_to_r(list_of), list(double(), double()))
+
+  # A value still makes the column lossy.
+  expect_error(
+    arrow_to_r(test_fixed("d:5,2", 12345, 16L)),
+    class = "zuarrow_lossy_error"
+  )
+})
+
 test_that("the lossy forms of section 6.2 are what allow returns", {
   expect_identical(
     arrow_to_r(test_fixed("d:5,2", 12345, 16L), lossy = "allow"),

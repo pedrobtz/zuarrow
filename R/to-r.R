@@ -30,6 +30,10 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' registered with [arrow_register()] for the column's extension name
 #' converts it.
 #'
+#' Any other column with no values loses nothing, so it neither fails nor
+#' warns. Under `"error"` and `"warn"` it takes the form `"allow"` gives, so
+#' a query that reads only a table's schema converts under any policy.
+#'
 #' `to` names the R type a column must become: `character()`, `double()`,
 #' `integer()`, or [arrow_matrix()] for a `fixed_size_list`. A target that
 #' cannot take the column is a `zuarrow_type_error`, never a silent
@@ -369,7 +373,14 @@ zar_convert <- function(
     }
   }
   for (k in seq_along(fields)) {
-    out$columns[[k]] <- zar_attach_field_metadata(out$columns[[k]], fields[[k]])
+    # A registered handler owns its result's shape, so only the field's
+    # own metadata is attached to it (#225).
+    registered <- handled[[k]] && !isTRUE(handlers[[k]]$nested)
+    out$columns[[k]] <- zar_attach_field_metadata(
+      out$columns[[k]],
+      fields[[k]],
+      nested = !registered
+    )
   }
   if (!frame) {
     return(out$columns[[1L]])
@@ -709,8 +720,9 @@ zar_empty_array <- function(schema, call) {
 }
 
 # Field metadata other than the extension keys becomes the column's
-# arrow_field_metadata attribute, down through nested data frames.
-zar_attach_field_metadata <- function(x, spec) {
+# arrow_field_metadata attribute, down through nested data frames unless
+# `nested` is FALSE.
+zar_attach_field_metadata <- function(x, spec, nested = TRUE) {
   if (is.null(x)) {
     return(x)
   }
@@ -721,7 +733,7 @@ zar_attach_field_metadata <- function(x, spec) {
   if (length(own) > 0L) {
     attr(x, "arrow_field_metadata") <- zar_metadata_values(own)
   }
-  if (is.data.frame(x) && identical(spec$format, "+s")) {
+  if (nested && is.data.frame(x) && identical(spec$format, "+s")) {
     for (k in seq_along(x)) {
       x[[k]] <- zar_attach_field_metadata(x[[k]], spec$children[[k]])
     }
