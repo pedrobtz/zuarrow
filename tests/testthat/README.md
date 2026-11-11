@@ -19,12 +19,16 @@ return a failure through.
 
 ## Sizes past 32-bit offsets
 
-With an explicit 32-bit schema (`"u"`, `"z"`, `"+l"`), writing more than
-2^31 - 1 bytes or values is a `zuarrow_limit_error`: "more than utf8
-offsets can address", "more than binary offsets can address" and "more
-than list offsets address" in `zar_from_r.c`. Reaching them takes over
-2 GiB of data. Inferred string types switch to `large_utf8` first, which
-`test-from-r.R` tests by lowering the `zuarrow.utf8_limit` option.
+With an explicit `"+l"` schema, writing more than 2^31 - 1 child values
+is a `zuarrow_limit_error`: "more than list offsets address" in
+`zar_from_r.c`. Reaching it takes 2^31 values, because R flattens a list
+column before C counts it. The same refusals for `"u"` and `"z"` are
+reached in `test-offset-limits.R` with 2048 copies of one 1 MiB element,
+which R shares, so only their side above the limit is tested. Inferred
+character and list columns switch to `large_utf8` and `large_list` first,
+which `test-offset-limits.R` straddles by lowering the internal
+`zuarrow.utf8_limit` and `zuarrow.list_limit` options. No option lowers
+the builder's own `INT32_MAX`.
 
 ## R's string limit
 
