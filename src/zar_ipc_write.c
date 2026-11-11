@@ -199,6 +199,17 @@ static int zar_has_offset(const struct ArrowArrayView *view) {
   return view->dictionary != NULL && zar_has_offset(view->dictionary);
 }
 
+/* Whether a batch's view needs copying before encoding: a node has an
+   offset, or a column is longer than the batch, as a zero-offset slice of
+   a struct is. Each column's field node must hold the batch's length, so
+   the copy cuts the columns to it (#206). */
+static int zar_needs_copy(const struct ArrowArrayView *view) {
+  for (int64_t i = 0; i < view->n_children; i++) {
+    if (view->children[i]->length != view->length) return 1;
+  }
+  return zar_has_offset(view);
+}
+
 /* Appends bits [from, from + n) of `bits` to `dst` from bit zero, and
    counts the zeros when `zeros` is not NULL. */
 static int zar_copy_bits(struct ArrowBuffer *dst, const uint8_t *bits, int64_t from,
@@ -534,7 +545,7 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       break;
     }
     /* A sliced batch is written as the values it holds (section 6.8). */
-    if (zar_has_offset(view)) {
+    if (zar_needs_copy(view)) {
       code = zar_unslice(view, schema, &w->copies[b], &kind, &error);
       if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(view, &w->copies[b], &error);
       if (code != NANOARROW_OK) {

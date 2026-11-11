@@ -55,3 +55,26 @@ test_that("nanoarrow reads what arrow_write() writes as a stream", {
   stream <- nanoarrow::read_nanoarrow(arrow_write(df, NULL, format = "stream"))
   expect_identical(as.data.frame(stream), df)
 })
+
+# From test-read-rules.R (#207).
+test_that("a failed reader stays failed through the C stream's get_next()", {
+  skip_without_oracle("nanoarrow")
+  bytes <- arrow_write(
+    data.frame(n = 1:6, s = letters[1:6]),
+    NULL,
+    format = "file",
+    batch = 2
+  )
+  m <- ipc_messages(bytes, 8)
+  body <- m[[3]]$start + m[[3]]$meta + 8
+  bytes[body + 5:8] <- as.raw(c(0xff, 0xff, 0xff, 0x7f))
+  s <- arrow_read(bytes, lazy = TRUE)
+  expect_identical(arrow_to_r(s$get_next())$n, 1:2)
+  first <- tryCatch(s$get_next(), error = identity)
+  expect_s3_class(first, "error")
+  for (k in 1:2) {
+    later <- tryCatch(s$get_next(), error = identity)
+    expect_s3_class(later, "error")
+    expect_identical(conditionMessage(later), conditionMessage(first))
+  }
+})

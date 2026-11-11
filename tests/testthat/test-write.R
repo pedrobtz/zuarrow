@@ -414,6 +414,42 @@ test_that("a sliced batch is written as the values it holds", {
   }
 })
 
+test_that("a batch whose columns outrun it is written at its length (#206)", {
+  schema <- test_schema(zspec(
+    "+s",
+    children = list(zspec("i", "x"), zspec("u", "s"), zspec("n", "z"))
+  ))
+  # A zero-offset slice: the struct holds 3 rows of children of 5.
+  batch <- test_array(
+    schema,
+    3,
+    list(NULL),
+    children = list(
+      test_array_spec(5, list(NULL, le_int(1:5, 4L))),
+      test_array_spec(5, c(list(NULL), test_string_buffers(letters[1:5]))),
+      test_array_spec(5, list(), null_count = 5)
+    )
+  )
+  expect_true(arrow_validate(batch, "full"))
+  expected <- test_array(
+    schema,
+    3,
+    list(NULL),
+    children = list(
+      test_array_spec(3, list(NULL, le_int(1:3, 4L))),
+      test_array_spec(3, c(list(NULL), test_string_buffers(letters[1:3]))),
+      test_array_spec(3, list(), null_count = 3)
+    )
+  )
+  for (format in c("file", "stream")) {
+    bytes <- arrow_write(batch, NULL, format = format)
+    expect_identical(bytes, arrow_write(expected, NULL, format = format))
+    out <- arrow_read(bytes)
+    expect_identical(out$x, 1:3, info = format)
+    expect_identical(out$s, letters[1:3], info = format)
+  }
+})
+
 test_that("a sliced union is written as the values it holds", {
   schema <- test_schema(zspec(
     "+s",

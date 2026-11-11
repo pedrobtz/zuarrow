@@ -313,3 +313,53 @@ ipc_int32_dictionary <- function(id, values, is_delta = FALSE) {
     is_delta = is_delta
   )
 }
+
+# The byte position of field `id` of the FlatBuffers table at `table`, or
+# NA when the table leaves it out.
+fb_field_pos <- function(bytes, table, id) {
+  soffset <- le_read(bytes, table, 4)
+  if (soffset >= 2^31) {
+    soffset <- soffset - 2^32
+  }
+  vtable <- table - soffset
+  slots <- (le_read(bytes, vtable, 2) - 4) / 2
+  if (id >= slots) {
+    return(NA)
+  }
+  at <- le_read(bytes, vtable + 4 + 2 * id, 2)
+  if (at == 0) NA else table + at
+}
+
+# `bytes` with the length of record batch message `m` set to `length`.
+ipc_set_batch_length <- function(bytes, m, length) {
+  fb <- m$start + 8
+  message <- fb + le_read(bytes, fb, 4)
+  header_ref <- fb_field_pos(bytes, message, 2)
+  batch <- header_ref + le_read(bytes, header_ref, 4)
+  at <- fb_field_pos(bytes, batch, 0)
+  stopifnot(!is.na(at))
+  bytes[at + 1:8] <- le_int(length, 8L)
+  bytes
+}
+
+# Reads every batch of a lazy reader over `bytes` through arrow_next(),
+# `calls` times: a batch's column `col`, or the condition raised.
+read_calls <- function(bytes, calls, col) {
+  s <- arrow_read(bytes, lazy = TRUE)
+  lapply(seq_len(calls), function(i) {
+    tryCatch(arrow_next(s)[[col]], error = identity)
+  })
+}
+
+# Expects call `from` of read_calls() and every later one to fail alike.
+expect_stuck <- function(out, from) {
+  first <- out[[from]]
+  expect_s3_class(first, "zuarrow_format_error")
+  for (k in seq(from + 1L, length(out))) {
+    expect_s3_class(out[[k]], "zuarrow_format_error")
+    if (inherits(out[[k]], "condition")) {
+      # The same failure, as get_last_error() reports it.
+      expect_identical(conditionMessage(out[[k]]), conditionMessage(first))
+    }
+  }
+}
