@@ -600,3 +600,37 @@ test_that("bad string offsets are a format error, never written (#150)", {
   )
   expect_error(arrow_write(dict, NULL), class = "zuarrow_format_error")
 })
+
+test_that("a field with no name is written with an empty name (#201)", {
+  spec <- function(x) .Call(zar_c_schema_to_spec, arrow_schema(x))
+  unnamed <- data.frame(x = 1:2)
+  names(unnamed) <- NA_character_
+  nested <- data.frame(id = 1:2)
+  nested$pos <- data.frame(x = c(1, 2))
+  names(nested$pos) <- NA_character_
+  # A list whose item has no name.
+  item <- test_array(
+    test_schema(zspec(
+      "+s",
+      children = list(zspec("+l", "l", list(zspec("i", NA_character_))))
+    )),
+    1,
+    list(NULL),
+    children = list(test_array_spec(
+      1,
+      list(NULL, le_int(c(0, 2), 4L)),
+      children = list(test_array_spec(2, list(NULL, le_int(1:2, 4L))))
+    ))
+  )
+  for (format in c("file", "stream")) {
+    out <- arrow_read(arrow_write(unnamed, NULL, format = format))
+    expect_identical(names(out), "")
+    expect_identical(out[[1]], 1:2)
+    out <- arrow_read(arrow_write(nested, NULL, format = format))
+    expect_identical(names(out$pos), "")
+    expect_identical(out$pos[[1]], c(1, 2))
+    stream <- arrow_read(arrow_write(item, NULL, format = format), lazy = TRUE)
+    expect_identical(spec(stream)$children[[1]]$children[[1]]$name, "")
+    expect_identical(arrow_to_r(stream)$l, list(1:2))
+  }
+})

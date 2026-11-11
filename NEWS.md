@@ -317,3 +317,5 @@
   FlatBuffers verifier ran out of its own budget from 49 levels, and its
   failure took time exponential in the depth, so a stream of a few KB,
   or one written by `arrow_write()`, stalled the session (#200).
+* `arrow_write()` writes a field with no name with an empty name, as
+  `arrow_read()` presents it. Before, an `NA` column name crashed R (#201).

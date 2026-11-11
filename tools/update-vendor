@@ -111,6 +111,9 @@ PROV=src/vendor/PROVENANCE
   echo "      100 to 256. A nested field spends two levels, so 100 refused a"
   echo "      valid schema 49 fields deep, below the default max_depth of 64;"
   echo "      zuarrow, not the verifier, now refuses depth 65 (#200)."
+  echo "  0019-encode-null-name.patch  writes a field whose name is NULL, which"
+  echo "      the C Data Interface allows, with an empty name; upstream passed"
+  echo "      NULL to flatcc and crashed (#201). To be offered upstream."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |
