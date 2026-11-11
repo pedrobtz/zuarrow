@@ -1,0 +1,24 @@
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -21,7 +21,9 @@
+  * dictionary batch extends a dictionary that already holds values
+  * (tools/patches/0015-dictionary-delta-concat.patch), and a
+  * dictionary-encoded field is written with its value type's children
+- * (tools/patches/0016-encode-dictionary-children.patch).
++ * (tools/patches/0016-encode-dictionary-children.patch), and a field with
++ * no name is written with an empty one
++ * (tools/patches/0019-encode-null-name.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -3713,7 +3715,9 @@
+     flatcc_builder_t* builder, const struct ArrowSchema* schema,
+     const struct ArrowIpcDictionaryEncodings* dictionary_encodings,
+     struct ArrowError* error) {
+-  FLATCC_RETURN_UNLESS_0(Field_name_create_str(builder, schema->name), error);
++  // The C Data Interface allows a NULL name; the format has an empty one.
++  FLATCC_RETURN_UNLESS_0(
++      Field_name_create_str(builder, schema->name == NULL ? "" : schema->name), error);
+   FLATCC_RETURN_UNLESS_0(
+       Field_nullable_add(builder, (schema->flags & ARROW_FLAG_NULLABLE) != 0), error);
+ 

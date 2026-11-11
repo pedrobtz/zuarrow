@@ -222,6 +222,60 @@ SEXP zar_c_test_release(SEXP x, SEXP tag) {
   return R_NilValue;
 }
 
+/* Moves an array or stream out of handle `x`, as nanoarrow's
+   nanoarrow_pointer_move() or a foreign consumer would, so tests reach
+   the moved paths without nanoarrow. `into` is a released handle of the
+   same kind, or NULL for a new handle, which holds nothing in its
+   protected field: what the struct points into must be its own. Returns
+   the handle moved into; `x` is left released. */
+SEXP zar_c_test_move(SEXP x, SEXP into) {
+  void *addr = TYPEOF(x) == EXTPTRSXP ? R_ExternalPtrAddr(x) : NULL;
+  if (addr == NULL) return zar_failure("handle", "expected a live handle");
+  int is_array = Rf_inherits(x, "nanoarrow_array");
+  if (!is_array && !Rf_inherits(x, "nanoarrow_array_stream")) {
+    return zar_failure("handle", "expected an array or stream handle");
+  }
+  SEXP out = into;
+  if (into == R_NilValue) {
+    if (is_array) {
+      SEXP schema = PROTECT(zar_schema_copy_of(x));
+      if (Rf_inherits(schema, "zar_failure")) {
+        UNPROTECT(1);
+        return schema;
+      }
+      out = zar_array_owning_xptr(schema);
+      UNPROTECT(1);
+    } else {
+      out = zar_stream_owning_xptr();
+    }
+  }
+  PROTECT(out);
+  void *dst = TYPEOF(out) == EXTPTRSXP ? R_ExternalPtrAddr(out) : NULL;
+  if (dst == NULL || Rf_inherits(out, "nanoarrow_array") != is_array) {
+    UNPROTECT(1);
+    return zar_failure("handle", "expected a handle of the same kind");
+  }
+  if (is_array) {
+    struct ArrowArray *src = (struct ArrowArray *)addr;
+    struct ArrowArray *a = (struct ArrowArray *)dst;
+    if (src->release == NULL || a->release != NULL) {
+      UNPROTECT(1);
+      return zar_failure("handle", "expected a live source and a released target");
+    }
+    ArrowArrayMove(src, a);
+  } else {
+    struct ArrowArrayStream *src = (struct ArrowArrayStream *)addr;
+    struct ArrowArrayStream *s = (struct ArrowArrayStream *)dst;
+    if (src->release == NULL || s->release != NULL) {
+      UNPROTECT(1);
+      return zar_failure("handle", "expected a live source and a released target");
+    }
+    ArrowArrayStreamMove(src, s);
+  }
+  UNPROTECT(1);
+  return out;
+}
+
 /* The inverse of zar_array_fill(): an array as the spec list(length,
    null_count, offset, buffers, children, dictionary), each buffer the raw
    bytes nanoarrow's view sizes it to, so tests can read the layout a

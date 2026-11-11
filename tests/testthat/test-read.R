@@ -130,6 +130,36 @@ test_that("limits bind before the bytes are used", {
   )
 })
 
+test_that("max_depth, not the FlatBuffers verifier, refuses a deep schema (#200)", {
+  # Lists, structs and maps 47 to 64 levels deep are read and 65 is a limit
+  # error. The verifier once ran out of its own nesting budget from 49
+  # levels, and its failure path took time exponential in the depth.
+  elapsed <- system.time({
+    for (kind in c("list", "struct", "map")) {
+      for (format in c("file", "stream")) {
+        for (depth in c(47L, 48L, 64L)) {
+          bytes <- arrow_write(deep_array(kind, depth), NULL, format = format)
+          expect_s3_class(arrow_read(bytes), "data.frame")
+        }
+        bytes <- arrow_write(deep_array(kind, 65L), NULL, format = format)
+        expect_error(arrow_read(bytes), class = "zuarrow_limit_error")
+        expect_error(
+          arrow_read(bytes, limits = arrow_limits(max_depth = 8)),
+          class = "zuarrow_limit_error"
+        )
+        # Past what the verifier checks, whatever max_depth allows.
+        bytes <- arrow_write(deep_array(kind, 300L), NULL, format = format)
+        expect_error(
+          arrow_read(bytes, limits = arrow_limits(max_depth = Inf)),
+          class = "zuarrow_limit_error"
+        )
+      }
+    }
+  })[["elapsed"]]
+  skip_on_cran()
+  expect_lt(elapsed, 30)
+})
+
 test_that("a limit error names the limit", {
   bytes <- arrow_write(data.frame(x = 1:3))
   expect_snapshot(

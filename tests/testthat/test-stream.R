@@ -132,3 +132,14 @@ test_that("a foreign stream whose schema fails is a handle error", {
   expect_error(arrow_to_r(failing()), class = "zuarrow_handle_error")
   expect_error(arrow_write(failing(), NULL), class = "zuarrow_handle_error")
 })
+
+test_that("a live stream moved into a drained handle reads (#220)", {
+  df <- data.frame(x = 1:5)
+  stream <- arrow_stream(df, batch = 2)
+  expect_identical(nrow(as.data.frame(stream)), 5L)
+  expect_null(arrow_next(stream))
+  test_release(stream)
+  test_move(arrow_stream(df, batch = 2), stream)
+  expect_identical(as.data.frame(stream), df)
+  expect_null(arrow_next(stream))
+})

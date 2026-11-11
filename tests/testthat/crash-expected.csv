@@ -19,6 +19,7 @@ data/crash-node-length.arrow,zuarrow_format_error,pins the reader's field-node b
 data/crash-offsets-short.arrow,zuarrow_format_error,pins patch 0012-offsets-buffer-size (a short offsets buffer)
 data/crash-shared-dictionary.arrow,zuarrow_format_error,"pins zar_check_shared_dictionaries() (one dictionary id, two value types)"
 data/crash-string-view.arrow,zuarrow_format_error,pins zar_view_check_layout() (a string view past its data buffers)
+data/crash-verifier-deep.arrows,zuarrow_format_error,pins patch 0017-verifier-check-once (a list 40 deep whose leaf name runs past the buffer; exponential time to refuse without it)
 arrow-ipc-file/clusterfuzz-testcase-arrow-ipc-file-fuzz-4561721038274560,zuarrow_format_error,
 arrow-ipc-file/clusterfuzz-testcase-arrow-ipc-file-fuzz-4778515122946048,zuarrow_format_error,
 arrow-ipc-file/clusterfuzz-testcase-arrow-ipc-file-fuzz-4983476816314368,zuarrow_format_error,

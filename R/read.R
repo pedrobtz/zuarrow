@@ -8,7 +8,10 @@
 #'
 #' @param max_message The most bytes one message header or body may hold,
 #'   and the most bytes one compressed buffer may claim when decompressed.
-#' @param max_depth The deepest nesting a schema may have.
+#' @param max_depth The deepest nesting a schema may have, counting a
+#'   top-level column as one level. Whatever it says, a schema more than
+#'   about 120 levels deep is a limit error, because the FlatBuffers
+#'   verifier checks no deeper.
 #' @param max_batch_rows The most rows one record batch may hold.
 #' @param max_bytes The most bytes of input in all. For a list of sources,
 #'   the most bytes of all of them together.
@@ -72,7 +75,12 @@ arrow_limits <- function(
 #' batches, are applied as the format says; a file that replaces a
 #' dictionary is an error, as the format forbids it. A delta extends a
 #' dictionary of fixed-width, binary or string values; a delta onto a
-#' dictionary of any other values is a `zuarrow_format_error`.
+#' dictionary of any other values is a `zuarrow_format_error`. Every
+#' column of a batch must hold the batch's number of rows.
+#'
+#' A stream handle that has raised an error stays failed: every later
+#' [arrow_next()] raises the same error, so no batch is skipped or read
+#' against a dictionary that failed to arrive.
 #'
 #' A raw vector is read where it is. With `lazy = TRUE` the handle holds a
 #' copy instead, because a handle can be passed to another consumer that

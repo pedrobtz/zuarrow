@@ -15,7 +15,8 @@
 
    The bytes were checked when the column was converted, so an element can
    no longer fail, except when someone has since released one of the array
-   handles: that is a zuarrow_handle_error, not a read of freed memory.
+   handles, or the parent a struct's field was lent by: that is a
+   zuarrow_handle_error, not a read of freed memory.
 
    Serialization has no method, so R writes the plain character vector:
    reading it back does not need zuarrow. */
@@ -73,9 +74,10 @@ static SEXP zar_make_elt(SEXP x, R_xlen_t i) {
   }
   const struct zar_deferred_chunk *c = &chunks[lo];
 
-  SEXP handle = VECTOR_ELT(zar_arrays(x), (R_xlen_t)c->batch);
-  struct ArrowArray *array = (struct ArrowArray *)R_ExternalPtrAddr(handle);
-  if (array == NULL || array->release == NULL) zar_released();
+  /* A struct's field is a lent child: the check covers its parents. */
+  if (!zar_array_handle_live(VECTOR_ELT(zar_arrays(x), (R_xlen_t)c->batch))) {
+    zar_released();
+  }
 
   int64_t k = (int64_t)i - c->begin;
   if (c->validity != NULL && !ArrowBitGet(c->validity, c->validity_offset + k)) {
@@ -171,7 +173,17 @@ static void zar_deferred_set_elt(SEXP x, R_xlen_t i, SEXP v) {
   SET_STRING_ELT(zar_materialize(x), i, v);
 }
 
+/* Before every element is made, the validity bitmaps answer. After, the
+   cache does: a native caller may have set an element in place (#221). */
 static int zar_deferred_no_na(SEXP x) {
+  if (zar_complete(x)) {
+    SEXP cache = VECTOR_ELT(R_altrep_data2(x), 0);
+    R_xlen_t len = Rf_xlength(cache);
+    for (R_xlen_t i = 0; i < len; i++) {
+      if (STRING_ELT(cache, i) == NA_STRING) return 0;
+    }
+    return 1;
+  }
   int64_t n;
   const struct zar_deferred_chunk *chunks = zar_chunks(x, &n);
   for (int64_t k = 0; k < n; k++) {

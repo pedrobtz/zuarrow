@@ -332,3 +332,110 @@ test_that("a delta onto a struct-valued dictionary is a format error", {
   stream <- c(head, delta, ipc_dictionary_codes(c(2, 0)), ipc_eos())
   expect_error(arrow_read(stream), class = "zuarrow_format_error")
 })
+
+test_that("a reader stays failed after a bad replacement dictionary (#207)", {
+  bytes <- factor_stream(c("a", "b"))
+  m <- ipc_messages(bytes)
+  batch <- ipc_message_bytes(bytes, m[[3]])
+  bad <- ipc_utf8_dictionary(0, c("y", "z"))
+  # The body is 16 bytes of offsets, then the data: the second offset is
+  # past the data.
+  body <- length(bad) - 24L
+  bad[body + 5:8] <- as.raw(c(0xff, 0xff, 0xff, 0x7f))
+  stream <- c(
+    ipc_message_bytes(bytes, m[[1]]),
+    ipc_utf8_dictionary(0, c("a", "b")),
+    batch,
+    bad,
+    batch,
+    batch,
+    ipc_eos()
+  )
+  out <- read_calls(stream, 4, "f")
+  expect_identical(out[[1]], factor(c("a", "b")))
+  expect_stuck(out, 2)
+})
+
+test_that("a reader stays failed after a bad delta dictionary (#207)", {
+  bytes <- factor_stream(c("a", "b"))
+  m <- ipc_messages(bytes)
+  batch <- ipc_message_bytes(bytes, m[[3]])
+  bad <- ipc_utf8_dictionary(0, c("y", "z"), is_delta = TRUE)
+  body <- length(bad) - 24L
+  bad[body + 5:8] <- as.raw(c(0xff, 0xff, 0xff, 0x7f))
+  stream <- c(
+    ipc_message_bytes(bytes, m[[1]]),
+    ipc_utf8_dictionary(0, c("a", "b")),
+    batch,
+    bad,
+    batch,
+    batch,
+    ipc_eos()
+  )
+  out <- read_calls(stream, 4, "f")
+  expect_identical(out[[1]], factor(c("a", "b")))
+  expect_stuck(out, 2)
+})
+
+test_that("a reader stays failed after a bad record batch (#207)", {
+  for (format in c("stream", "file")) {
+    bytes <- arrow_write(
+      data.frame(n = 1:6, s = letters[1:6]),
+      NULL,
+      format = format,
+      batch = 2
+    )
+    m <- ipc_messages(bytes, if (format == "file") 8 else 0)
+    stopifnot(m[[3]]$type == 3)
+    # The second batch's `s` offsets, after the 8 bytes of `n`: its second
+    # offset is past the data.
+    body <- m[[3]]$start + m[[3]]$meta + 8
+    bad <- bytes
+    bad[body + 5:8] <- as.raw(c(0xff, 0xff, 0xff, 0x7f))
+    out <- read_calls(bad, 4, "n")
+    expect_identical(out[[1]], 1:2, info = format)
+    expect_stuck(out, 2)
+  }
+})
+
+test_that("a batch's length must equal its columns' lengths (#208)", {
+  for (format in c("stream", "file")) {
+    bytes <- arrow_write(
+      data.frame(x = 1:4, y = c("a", "b", "c", "d")),
+      NULL,
+      format = format
+    )
+    m <- ipc_messages(bytes, if (format == "file") 8 else 0)
+    stopifnot(m[[2]]$type == 3)
+    same <- ipc_set_batch_length(bytes, m[[2]], 4)
+    expect_identical(arrow_read(same)$x, 1:4, info = format)
+    for (length in c(3, 5)) {
+      bad <- ipc_set_batch_length(bytes, m[[2]], length)
+      expect_error(arrow_read(bad), class = "zuarrow_format_error")
+      expect_error(
+        arrow_read(bad, columns = "y"),
+        class = "zuarrow_format_error"
+      )
+    }
+  }
+})
+
+test_that("a dictionary batch's length must equal its values' (#208)", {
+  bytes <- factor_stream(c("a", "b"))
+  m <- ipc_messages(bytes)
+  for (length in c(1, 3)) {
+    stream <- c(
+      ipc_message_bytes(bytes, m[[1]]),
+      ipc_dictionary_message(
+        0,
+        length,
+        nodes = list(c(2, 0)),
+        buffers = list(c(0, 0), c(0, 12), c(16, 2)),
+        body = c(le_int(c(0, 1, 2), 4L), raw(4), charToRaw("ab"))
+      ),
+      ipc_message_bytes(bytes, m[[3]]),
+      ipc_eos()
+    )
+    expect_error(arrow_read(stream), class = "zuarrow_format_error")
+  }
+})

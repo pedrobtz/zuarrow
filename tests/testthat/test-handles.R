@@ -210,3 +210,48 @@ test_that("an array whose schema was released is a handle error", {
   expect_error(arrow_schema(array), class = "zuarrow_handle_error")
   expect_error(arrow_validate(array), class = "zuarrow_handle_error")
 })
+
+test_that("a borrowed array is a copy that outlives its source (#204)", {
+  borrow <- function(x) {
+    zuarrow:::zar_check(.Call(zuarrow:::zar_c_array_borrow, x))
+  }
+  nested <- data.frame(i = c(1L, NA, 3L))
+  nested$s <- data.frame(a = c("x", NA, "zz"), b = c(TRUE, FALSE, NA))
+  nested$l <- list(1:2, integer(), 3L)
+  values <- list(
+    c(1L, NA, 3L),
+    c(1.5, NA),
+    c(TRUE, NA, FALSE),
+    c("a", NA, "", "long string"),
+    factor(c("u", "v", "u", NA)),
+    nested
+  )
+  for (v in values) {
+    source <- arrow_array(v)
+    copy <- borrow(source)
+    expect_true(arrow_equal(copy, source))
+    test_release(source)
+    heap_churn(n = 5L)
+    expect_identical(arrow_to_r(copy), v)
+  }
+
+  # A slice keeps its offset.
+  sliced <- test_array(
+    "i",
+    2,
+    list(NULL, le_int(c(7, 8, 9), 4L)),
+    offset = 1
+  )
+  copy <- borrow(sliced)
+  test_release(sliced)
+  expect_identical(arrow_to_r(copy), c(8L, 9L))
+  expect_error(borrow(sliced), class = "zuarrow_handle_error")
+})
+
+test_that("a field lent by a released parent is a handle error (#205)", {
+  parent <- arrow_array(data.frame(x = 1:3, s = c("a", "b", "c")))
+  child <- zuarrow:::zar_check(.Call(zuarrow:::zar_c_array_child, parent, 1L))
+  expect_identical(arrow_to_r(child), c("a", "b", "c"))
+  test_release(parent)
+  expect_error(arrow_to_r(child), class = "zuarrow_handle_error")
+})
