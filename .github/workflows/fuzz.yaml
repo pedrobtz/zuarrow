@@ -3,7 +3,7 @@ on:
   schedule:
     # A long run nightly. The corpus cache is what makes the short PR runs
     # and this one add up to a single campaign.
-    - cron: "0 3 * * *"
+    - cron: "33 17 * * *"
   # A dispatch runs the long hour too: design section 12 wants one hour
   # clean on the release candidate, `gh workflow run fuzz.yaml --ref <branch>`.
   workflow_dispatch:
