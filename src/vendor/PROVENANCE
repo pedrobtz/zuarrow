@@ -25,6 +25,10 @@ Vendored dependency: Apache Arrow nanoarrow C library, core and ipc
                  0014-list-view-bound-overflow.patch
                  0015-dictionary-delta-concat.patch
                  0016-encode-dictionary-children.patch
+                 0017-verifier-check-once.patch
+                 0018-verifier-levels.patch
+                 0019-encode-null-name.patch
+                 0020-encode-metadata-length.patch
 
 src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py
 run on the archive with --symbol-namespace=zuarrow --with-ipc
@@ -98,11 +102,25 @@ Patches:
       field's children from its value type; upstream wrote the index
       type's (none), so a dictionary of struct or list values lost its
       children (#140). To be offered upstream.
+  0017-verifier-check-once.patch  makes flatcc's check_result()
+      evaluate its argument once. It returned (x) after testing (x), so
+      a failure at nesting depth d was verified 2^d times and a schema
+      of a few KB stalled the reader (#200). To be offered upstream.
+  0018-verifier-levels.patch  raises FLATCC_VERIFIER_MAX_LEVELS from
+      100 to 256. A nested field spends two levels, so 100 refused a
+      valid schema 49 fields deep, below the default max_depth of 64;
+      zuarrow, not the verifier, now refuses depth 65 (#200).
+  0019-encode-null-name.patch  writes a field whose name is NULL, which
+      the C Data Interface allows, with an empty name; upstream passed
+      NULL to flatcc and crashed (#201). To be offered upstream.
+  0020-encode-metadata-length.patch  writes metadata keys and values by
+      their length; flatcc's _strn() builders stopped at the first NUL,
+      which cut binary values (#202). To be offered upstream.
 
 SHA-256 of every vendored file:
   abdc436530c715318d843424f4f9b7b817f80f592678526942c2070ace3cba71  LICENSE.txt
   09026abb630fd06cb418815d48535cd46cb102fe6fc307debb586fa2ac49482e  NOTICE.txt
-  2597fe139c3191748ed92d121eeca2f7f9bb270150bf7c8336cd4a85c1000edc  flatcc.c
+  de17ebcda765d9d2b7ce4553805680f93b771dc049e0dd5f2517edbcfc0e04fd  flatcc.c
   09a42cfd433ade1c9d8fb853f769ee20012016c91964200ec06873afc36a3ede  flatcc/flatcc_accessors.h
   c8d43e4812005610a5f235680de2892c38d48da03365b91da3d5a26b59cd8fd8  flatcc/flatcc_alloc.h
   00d9a8435ad50399db600582234f9e8e8cb923522b00bb7df9dc1c2a5af965f8  flatcc/flatcc_assert.h
@@ -140,6 +158,6 @@ SHA-256 of every vendored file:
   17cfa18dbb6f81adb0006a9c7adf2776093f54fc760a89112e619ce796b67aa6  flatcc/portable/pwarnings.h
   ec8d1cf4014dd4fca9e1e59a544b862e935b0b2b3134a235b251b45d3cdf998b  nanoarrow.c
   222837c5aa58c3703606a64f5209312459e8ca350cfdffc16766e0074fa3856e  nanoarrow.h
-  ff05f396c55608618a6a4d196c676d36bf28475c17384b49af6e759e00a8a322  nanoarrow_ipc.c
+  79bcbacc39d2ee581d91b0a9dcd8b1a5b82ea216fc66835d55edd401fe59b02b  nanoarrow_ipc.c
   f75b394226d48394d22f394985e2c3cf0df671387847288148ab3204e2d91ce8  nanoarrow_ipc.h
   aac2319a8fb8b382e40a10304ac4ed32f772b9ee469e0a083c26d7d76e8ebae0  nanoarrow_ipc_flatcc_generated.h

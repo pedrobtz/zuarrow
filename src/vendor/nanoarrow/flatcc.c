@@ -1,4 +1,12 @@
 /*
+ * Modified for the zuarrow R package: the verifier's check_result() evaluates
+ * its argument once, so a failure deep in a buffer is not verified again at
+ * every level above it (tools/patches/0017-verifier-check-once.patch), and
+ * the verifier's nesting budget is 256 tables, so a schema as deep as
+ * zuarrow's max_depth (64 fields, two tables each) is verified
+ * (tools/patches/0018-verifier-levels.patch).
+ */
+/*
  * Codegenerator for C, building FlatBuffers.
  *
  * There are several approaches, some light, some requiring a library,
@@ -2354,7 +2362,9 @@ void *flatcc_emitter_copy_buffer(flatcc_emitter_t *E, void *buf, size_t size)
 
 /* This is a guideline, not an exact measure. */
 #ifndef FLATCC_VERIFIER_MAX_LEVELS
-#define FLATCC_VERIFIER_MAX_LEVELS 100
+/* Each nested Arrow field spends two levels, its table and its children
+   vector, so 100 refused a valid schema 49 fields deep. */
+#define FLATCC_VERIFIER_MAX_LEVELS 256
 #endif
 
 #ifndef FLATCC_VERIFIER_ASSERT_ON_ERROR
@@ -2419,7 +2429,7 @@ const char *flatcc_verify_error_string(int err)
  */
 #define verify_runtime(cond, reason) verify(cond, reason)
 
-#define check_result(x) if (x) { return (x); }
+#define check_result(x) do { int ret__ = (x); if (ret__) { return ret__; } } while (0)
 
 #define check_field(td, id, required, base) do {                            \
     int ret = get_offset_field(td, id, required, &base);                    \
