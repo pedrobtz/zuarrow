@@ -154,6 +154,12 @@ zar_utf8_limit <- function() {
   getOption("zuarrow.utf8_limit", 2^31 - 1)
 }
 
+# The most child values list's 32-bit offsets address, lowered the same way
+# so the switch to large_list can be tested without 2^31 values.
+zar_list_limit <- function() {
+  getOption("zuarrow.list_limit", 2^31 - 1)
+}
+
 # Each registered column, at the top or inside a data frame, built once by
 # its `from` handler on the whole column (section 6.10). Its schema is that
 # array's, so a handler whose type depends on the values gives one type for
@@ -618,7 +624,11 @@ zar_infer_list <- function(x, name, call = NULL) {
     zar_infer_spec(values, "item", call)
   }
   total <- sum(zar_element_lengths(present))
-  zar_spec(if (total > 2^31 - 1) "+L" else "+l", name, children = list(child))
+  zar_spec(
+    if (total > zar_list_limit()) "+L" else "+l",
+    name,
+    children = list(child)
+  )
 }
 
 # A list with the arrow_keys_sorted attribute arrow_to_r() gives a map is a
