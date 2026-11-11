@@ -45,7 +45,14 @@
 * `arrow_array()` and `arrow_stream()` build arrays and streams from R
   vectors and data frames, checking every value against a given schema.
   The exact text that `lossy = "character"` returns is written back as the
-  type its `arrow_type` attribute names.
+  type its `arrow_type` attribute names. Only that canonical text is read,
+  so other forms of a value, such as `"+1"` or `"01"`, and a time of day of
+  `24:00:00` are a `zuarrow_lossy_error` (#213).
+* A value that would not export exactly is a `zuarrow_type_error`: a
+  non-ASCII native string with no exact UTF-8 form, as in a C locale (#203);
+  a matrix under a schema that is not a list type, or with a class (#209);
+  a factor with an `NA` level (#211); a `tzone`, difftime `units` or
+  `arrow_extension_metadata` attribute that is not one valid value (#214).
 * `arrow_types()` lists the built-in type table.
 
 ## Nested types, dictionaries and the registry
@@ -56,6 +63,8 @@
 * Factors convert to and from `dictionary<int32, utf8>`, ordered factors
   included; a stream's batches read as the union of their levels. Other
   dictionaries and run-end encoded arrays decode to their values.
+* A `fixed_size_binary` column read as a list of raw vectors keeps its
+  width in `arrow_width`, and is written back as `fixed_size_binary` (#210).
 * Extension types keep their name and metadata as attributes and are
   restored on export; `arrow.bool8` reads as logical. Field metadata
   round-trips through the `arrow_field_metadata` attribute.
