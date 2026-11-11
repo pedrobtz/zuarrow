@@ -312,3 +312,12 @@
 * A list column of functions, environments or calls is a
   `zuarrow_type_error`. Before, `arrow_schema(list(sum))` recursed until
   the C stack overflowed (#82).
+* `arrow_read()` reads a schema nested up to `max_depth` levels and
+  refuses a deeper one with a `zuarrow_limit_error`. Before, the bundled
+  FlatBuffers verifier ran out of its own budget from 49 levels, and its
+  failure took time exponential in the depth, so a stream of a few KB,
+  or one written by `arrow_write()`, stalled the session (#200).
+* `arrow_write()` writes a field with no name with an empty name, as
+  `arrow_read()` presents it. Before, an `NA` column name crashed R (#201).
+* `arrow_write()` writes metadata values whole. Before, schema, field and
+  extension metadata were cut at the first NUL byte (#202).
