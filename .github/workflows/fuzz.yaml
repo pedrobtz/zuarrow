@@ -50,6 +50,12 @@ jobs:
         -timeout=10
         .github-packages/arrow-testing/data/arrow-ipc-file
         tests/testthat/data
+      # The share of the lines in `sources` the corpus reaches (#184). The
+      # nightly run of 2026-11-11 on 35d100a reached 48.1% of 9999 lines
+      # (zar_ipc_read.c 84.8%, zar_utf8.c 93.2%; flatcc.c's 10.1% is its
+      # builder, which the reader never calls). A few points under it, so a
+      # harness or corpus change that stops reaching code goes red.
+      reach-floor: 45
       max-total-time: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 3600 || 120 }}
       # The job must outlast max-total-time by ten minutes.
       timeout-minutes: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && 75 || 30 }}
