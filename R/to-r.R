@@ -30,6 +30,10 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' registered with [arrow_register()] for the column's extension name
 #' converts it.
 #'
+#' Any other column with no values loses nothing, so it neither fails nor
+#' warns. Under `"error"` and `"warn"` it takes the form `"allow"` gives, so
+#' a query that reads only a table's schema converts under any policy.
+#'
 #' `to` names the R type a column must become: `character()`, `double()`,
 #' `integer()`, or [arrow_matrix()] for a `fixed_size_list`. A target that
 #' cannot take the column is a `zuarrow_type_error`, never a silent

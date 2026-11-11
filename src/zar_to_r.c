@@ -1008,6 +1008,12 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
     return zar_fail(e, "lossy", -1, p->schema->format);
   }
 
+  /* A node with no values loses nothing under any policy: it takes the
+     policy's form, or under error the lossy form, without a warning
+     (#177). A query that reads only a schema returns such columns. */
+  int64_t n_values = 0;
+  for (int64_t b = 0; b < n_slices; b++) n_values += slices[b].length;
+
   int64_t bad_row = -1;
   char value[64] = "";
   if (p->lossy_by_schema) {
@@ -1030,9 +1036,9 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
     p->target = ZAR_T_TEXT;
     return NANOARROW_OK;
   }
-  if (lossy == ZAR_LOSSY_WARN || lossy == ZAR_LOSSY_ALLOW) {
+  if (lossy == ZAR_LOSSY_WARN || lossy == ZAR_LOSSY_ALLOW || n_values == 0) {
     p->target = p->lossy_target;
-    if (lossy == ZAR_LOSSY_WARN) *warned = 1;
+    if (lossy == ZAR_LOSSY_WARN && n_values > 0) *warned = 1;
     return NANOARROW_OK;
   }
   e->no_text = !text_ok;

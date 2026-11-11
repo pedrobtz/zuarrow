@@ -31,6 +31,9 @@
   everywhere, raises `zuarrow_lossy_error` naming the column, the row and
   the package that would read it exactly. `lossy = "character"` gives the
   values' exact text, `"warn"` and `"allow"` the nearest R type.
+* A column with no values is never lossy: under `"error"` and `"warn"` it
+  takes the form `"allow"` gives, so reading a zero-row result, as
+  dbplyr does for a table's columns, no longer fails (#177).
 * `to` names the R type a column must become.
 * Conversion in both directions reads and writes typed buffers in one loop
   wherever a column has no dictionary or run-end encoding, so most types
