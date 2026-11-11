@@ -23,7 +23,9 @@
  * dictionary-encoded field is written with its value type's children
  * (tools/patches/0016-encode-dictionary-children.patch), and a field with
  * no name is written with an empty one
- * (tools/patches/0019-encode-null-name.patch).
+ * (tools/patches/0019-encode-null-name.patch), and metadata keys and values
+ * are written by their length, NUL bytes included
+ * (tools/patches/0020-encode-metadata-length.patch).
  */
 #include "nanoarrow_ipc_flatcc_generated.h"
 // Licensed to the Apache Software Foundation (ASF) under one
@@ -3687,10 +3689,11 @@ static ArrowErrorCode ArrowIpcEncodeMetadata(flatcc_builder_t* builder,
     NANOARROW_RETURN_NOT_OK_WITH_ERROR(ArrowMetadataReaderRead(&metadata, &key, &value),
                                        error);
     FLATCC_RETURN_UNLESS_0_NO_NS(push_start(builder), error);
-    FLATCC_RETURN_UNLESS_0(KeyValue_key_create_strn(builder, key.data, key.size_bytes),
-                           error);
+    // By length: _strn() would stop at a NUL, which a value may hold.
     FLATCC_RETURN_UNLESS_0(
-        KeyValue_value_create_strn(builder, value.data, value.size_bytes), error);
+        KeyValue_key_create(builder, key.data, (size_t)key.size_bytes), error);
+    FLATCC_RETURN_UNLESS_0(
+        KeyValue_value_create(builder, value.data, (size_t)value.size_bytes), error);
     FLATCC_RETURN_IF_NULL(push_end(builder), error);
   }
   return NANOARROW_OK;

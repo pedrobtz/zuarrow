@@ -319,3 +319,5 @@
   or one written by `arrow_write()`, stalled the session (#200).
 * `arrow_write()` writes a field with no name with an empty name, as
   `arrow_read()` presents it. Before, an `NA` column name crashed R (#201).
+* `arrow_write()` writes metadata values whole. Before, schema, field and
+  extension metadata were cut at the first NUL byte (#202).

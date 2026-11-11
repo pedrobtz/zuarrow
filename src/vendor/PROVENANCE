@@ -28,6 +28,7 @@ Vendored dependency: Apache Arrow nanoarrow C library, core and ipc
                  0017-verifier-check-once.patch
                  0018-verifier-levels.patch
                  0019-encode-null-name.patch
+                 0020-encode-metadata-length.patch
 
 src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py
 run on the archive with --symbol-namespace=zuarrow --with-ipc
@@ -112,6 +113,9 @@ Patches:
   0019-encode-null-name.patch  writes a field whose name is NULL, which
       the C Data Interface allows, with an empty name; upstream passed
       NULL to flatcc and crashed (#201). To be offered upstream.
+  0020-encode-metadata-length.patch  writes metadata keys and values by
+      their length; flatcc's _strn() builders stopped at the first NUL,
+      which cut binary values (#202). To be offered upstream.
 
 SHA-256 of every vendored file:
   abdc436530c715318d843424f4f9b7b817f80f592678526942c2070ace3cba71  LICENSE.txt
@@ -154,6 +158,6 @@ SHA-256 of every vendored file:
   17cfa18dbb6f81adb0006a9c7adf2776093f54fc760a89112e619ce796b67aa6  flatcc/portable/pwarnings.h
   ec8d1cf4014dd4fca9e1e59a544b862e935b0b2b3134a235b251b45d3cdf998b  nanoarrow.c
   222837c5aa58c3703606a64f5209312459e8ca350cfdffc16766e0074fa3856e  nanoarrow.h
-  9216f1a02a6c3aad328d01dca6d80666b6f143ebcfb9dddf1fdfeef5894e2fbd  nanoarrow_ipc.c
+  79bcbacc39d2ee581d91b0a9dcd8b1a5b82ea216fc66835d55edd401fe59b02b  nanoarrow_ipc.c
   f75b394226d48394d22f394985e2c3cf0df671387847288148ab3204e2d91ce8  nanoarrow_ipc.h
   aac2319a8fb8b382e40a10304ac4ed32f772b9ee469e0a083c26d7d76e8ebae0  nanoarrow_ipc_flatcc_generated.h

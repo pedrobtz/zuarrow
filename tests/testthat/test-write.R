@@ -634,3 +634,22 @@ test_that("a field with no name is written with an empty name (#201)", {
     expect_identical(arrow_to_r(stream)$l, list(1:2))
   }
 })
+
+test_that("metadata values that hold a NUL are written whole (#202)", {
+  value <- as.raw(c(0x61, 0x00, 0x62))
+  df <- data.frame(x = 1:2, e = 3:4)
+  attr(df$x, "arrow_field_metadata") <- list(unit = value)
+  attr(df$e, "arrow_extension") <- "zuarrow.test"
+  attr(df$e, "arrow_extension_metadata") <- as.raw(c(0x00, 0x01))
+  for (format in c("file", "stream")) {
+    bytes <- arrow_write(df, NULL, format = format, metadata = list(k = value))
+    expect_true(length(bytes_at(bytes, value)) > 0L)
+    out <- arrow_read(bytes)
+    expect_identical(attr(out, "arrow_metadata"), list(k = value))
+    expect_identical(attr(out$x, "arrow_field_metadata"), list(unit = value))
+    expect_identical(
+      attr(out$e, "arrow_extension_metadata"),
+      as.raw(c(0x00, 0x01))
+    )
+  }
+})

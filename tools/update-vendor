@@ -114,6 +114,9 @@ PROV=src/vendor/PROVENANCE
   echo "  0019-encode-null-name.patch  writes a field whose name is NULL, which"
   echo "      the C Data Interface allows, with an empty name; upstream passed"
   echo "      NULL to flatcc and crashed (#201). To be offered upstream."
+  echo "  0020-encode-metadata-length.patch  writes metadata keys and values by"
+  echo "      their length; flatcc's _strn() builders stopped at the first NUL,"
+  echo "      which cut binary values (#202). To be offered upstream."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |
