@@ -8,7 +8,10 @@
 #'
 #' @param max_message The most bytes one message header or body may hold,
 #'   and the most bytes one compressed buffer may claim when decompressed.
-#' @param max_depth The deepest nesting a schema may have.
+#' @param max_depth The deepest nesting a schema may have, counting a
+#'   top-level column as one level. Whatever it says, a schema more than
+#'   about 120 levels deep is a limit error, because the FlatBuffers
+#'   verifier checks no deeper.
 #' @param max_batch_rows The most rows one record batch may hold.
 #' @param max_bytes The most bytes of input in all. For a list of sources,
 #'   the most bytes of all of them together.

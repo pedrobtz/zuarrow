@@ -85,6 +85,20 @@ static int zar_reader_fail(struct zar_reader *r, const char *kind, int code) {
   return code == 0 ? EINVAL : code;
 }
 
+/* The kind of a failed header or footer verification. A FlatBuffer nested
+   past the verifier's budget (FLATCC_VERIFIER_MAX_LEVELS, patch 0018) is a
+   schema too deep to check, so it is a limit error like max_depth's;
+   anything else is malformed. Verifying again costs one more linear pass,
+   on the failure path only (patch 0017). */
+static int zar_verify_fail(struct zar_reader *r, int nesting, int code) {
+  if (nesting == flatcc_verify_error_max_nesting_level_reached) {
+    ArrowErrorSet(&r->error,
+                  "the schema nests deeper than the FlatBuffers verifier checks");
+    return zar_reader_fail(r, "limit", EINVAL);
+  }
+  return zar_reader_fail(r, "format", code);
+}
+
 /* ---- the decompressor: zar_codecs.c drives zukomp ----------------------- */
 
 const void *zar_codecs_api(void);
@@ -325,7 +339,13 @@ static int zar_read_message(struct zar_reader *r, int64_t pos,
     view.data.as_uint8 = base + pad;
   }
   code = ArrowIpcDecoderVerifyHeader(&r->decoder, view, &r->error);
-  if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
+  if (code != NANOARROW_OK) {
+    int verified = header_size > prefix
+                       ? ns(Message_verify_as_root(view.data.as_uint8 + prefix,
+                                                   (size_t)(header_size - prefix)))
+                       : flatcc_verify_ok;
+    return zar_verify_fail(r, verified, code);
+  }
   code = ArrowIpcDecoderDecodeHeader(&r->decoder, view, &r->error);
   if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
 
@@ -685,7 +705,13 @@ static int zar_open_file(struct zar_reader *r) {
     all.size_bytes = tail;
   }
   code = ArrowIpcDecoderVerifyFooter(&r->decoder, all, &r->error);
-  if (code != NANOARROW_OK) return zar_reader_fail(r, "format", code);
+  if (code != NANOARROW_OK) {
+    return zar_verify_fail(
+        r,
+        ns(Footer_verify_as_root(all.data.as_uint8 + all.size_bytes - tail,
+                                 (size_t)r->decoder.header_size_bytes)),
+        code);
+  }
   if ((double)r->decoder.header_size_bytes > r->limits.max_message) {
     ArrowErrorSet(&r->error, "the footer is over max_message");
     return zar_reader_fail(r, "limit", EINVAL);

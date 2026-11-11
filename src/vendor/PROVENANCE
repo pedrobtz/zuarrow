@@ -25,6 +25,8 @@ Vendored dependency: Apache Arrow nanoarrow C library, core and ipc
                  0014-list-view-bound-overflow.patch
                  0015-dictionary-delta-concat.patch
                  0016-encode-dictionary-children.patch
+                 0017-verifier-check-once.patch
+                 0018-verifier-levels.patch
 
 src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py
 run on the archive with --symbol-namespace=zuarrow --with-ipc
@@ -98,11 +100,19 @@ Patches:
       field's children from its value type; upstream wrote the index
       type's (none), so a dictionary of struct or list values lost its
       children (#140). To be offered upstream.
+  0017-verifier-check-once.patch  makes flatcc's check_result()
+      evaluate its argument once. It returned (x) after testing (x), so
+      a failure at nesting depth d was verified 2^d times and a schema
+      of a few KB stalled the reader (#200). To be offered upstream.
+  0018-verifier-levels.patch  raises FLATCC_VERIFIER_MAX_LEVELS from
+      100 to 256. A nested field spends two levels, so 100 refused a
+      valid schema 49 fields deep, below the default max_depth of 64;
+      zuarrow, not the verifier, now refuses depth 65 (#200).
 
 SHA-256 of every vendored file:
   abdc436530c715318d843424f4f9b7b817f80f592678526942c2070ace3cba71  LICENSE.txt
   09026abb630fd06cb418815d48535cd46cb102fe6fc307debb586fa2ac49482e  NOTICE.txt
-  2597fe139c3191748ed92d121eeca2f7f9bb270150bf7c8336cd4a85c1000edc  flatcc.c
+  de17ebcda765d9d2b7ce4553805680f93b771dc049e0dd5f2517edbcfc0e04fd  flatcc.c
   09a42cfd433ade1c9d8fb853f769ee20012016c91964200ec06873afc36a3ede  flatcc/flatcc_accessors.h
   c8d43e4812005610a5f235680de2892c38d48da03365b91da3d5a26b59cd8fd8  flatcc/flatcc_alloc.h
   00d9a8435ad50399db600582234f9e8e8cb923522b00bb7df9dc1c2a5af965f8  flatcc/flatcc_assert.h
