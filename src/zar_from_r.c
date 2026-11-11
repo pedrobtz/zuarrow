@@ -1037,11 +1037,11 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
   SEXP out = PROTECT(zar_array_owning_xptr(schema_copy));
   struct ArrowArray *array = (struct ArrowArray *)R_ExternalPtrAddr(out);
   int code = ArrowArrayInitFromSchema(array, schema, &b.error);
-  if (code != NANOARROW_OK) b.kind = "format";
+  if (code != NANOARROW_OK) b.kind = zar_code_kind(code, "format");
   if (code == NANOARROW_OK) code = zar_build_array(array, schema, x, start, n, &b);
   if (code == NANOARROW_OK && b.n_prebuilt == 0) {
     code = ArrowArrayFinishBuildingDefault(array, &b.error);
-    if (code != NANOARROW_OK) b.kind = "format";
+    if (code != NANOARROW_OK) b.kind = zar_code_kind(code, "format");
   } else if (code == NANOARROW_OK) {
     code = ArrowArrayFinishBuilding(array, NANOARROW_VALIDATION_LEVEL_NONE, &b.error);
     if (code == NANOARROW_OK) {
@@ -1059,7 +1059,7 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
       if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(&view, array, &b.error);
       ArrowArrayViewReset(&view);
     }
-    if (code != NANOARROW_OK) b.kind = "format";
+    if (code != NANOARROW_OK) b.kind = zar_code_kind(code, "format");
   }
   UNPROTECT(2);
   if (code != NANOARROW_OK) {

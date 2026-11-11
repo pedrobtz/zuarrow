@@ -364,3 +364,9 @@
   crash R in `arrow_read()`, `arrow_next()` and `arrow_array()`, and could
   make `arrow_write()` write a corrupt message without an error. The
   bundled 'nanoarrow' and flatcc code now return the failure (#232).
+* An allocation failure is a bare `zuarrow_error`, and in `arrow_write()`'s
+  encoder a `zuarrow_limit_error`, as design sections 8 and 6.8 say. Before,
+  it could surface as a `zuarrow_format_error`, `zuarrow_handle_error` or
+  `zuarrow_codec_error`, or as a plain R error, so a handler for corrupt
+  input caught it. A stream from any producer that fails with `ENOMEM` is
+  a bare `zuarrow_error` too (#233).

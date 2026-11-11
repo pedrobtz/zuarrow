@@ -47,7 +47,9 @@ SEXP zar_c_array_validate(SEXP x, SEXP level) {
     code = zar_view_set(&view, array, zar_level(level), &error);
   }
   ArrowArrayViewReset(&view);
-  if (code != NANOARROW_OK) return zar_failure_from_error("format", &error);
+  if (code != NANOARROW_OK) {
+    return zar_failure_from_error(zar_code_kind(code, "format"), &error);
+  }
   return Rf_ScalarLogical(TRUE);
 }
 
@@ -65,8 +67,8 @@ SEXP zar_c_stream_validate(SEXP x, SEXP level) {
   if (code != 0) {
     const char *msg = stream->get_last_error(stream);
     ArrowErrorSet(&error, "the stream could not report its schema: %s",
-                  msg == NULL ? strerror(code) : msg);
-    return zar_failure_from_error("handle", &error);
+                  msg == NULL || msg[0] == '\0' ? strerror(code) : msg);
+    return zar_failure_from_error(zar_code_kind(code, "handle"), &error);
   }
 
   struct ArrowArrayView view;
@@ -80,11 +82,12 @@ SEXP zar_c_stream_validate(SEXP x, SEXP level) {
     if (code != 0) {
       const char *msg = stream->get_last_error(stream);
       ArrowErrorSet(&error, "batch %ld could not be read: %s", batch,
-                    msg == NULL ? strerror(code) : msg);
+                    msg == NULL || msg[0] == '\0' ? strerror(code) : msg);
       /* As arrow_next() does: a zuarrow reader names its own kind, any
-         other producer's failure is a handle error (#83). */
+         other producer's failure is a handle error (#83), and running out
+         of memory is a bare error from either (#233). */
       kind = zar_reader_kind(stream);
-      if (kind == NULL) kind = "handle";
+      kind = zar_code_kind(code, kind == NULL ? "handle" : kind);
       break;
     }
     if (array.release == NULL) break;
@@ -98,7 +101,7 @@ SEXP zar_c_stream_validate(SEXP x, SEXP level) {
   }
   ArrowArrayViewReset(&view);
   schema.release(&schema);
-  if (code != NANOARROW_OK) return zar_failure_from_error(kind, &error);
+  if (code != NANOARROW_OK) return zar_failure_from_error(zar_code_kind(code, kind), &error);
   return Rf_ScalarLogical(TRUE);
 }
 
@@ -468,7 +471,8 @@ SEXP zar_c_stream_equal(SEXP x, SEXP y, SEXP metadata) {
     if (code != 0) {
       const char *msg = s[i]->get_last_error(s[i]);
       ArrowErrorSet(&error, "the stream could not report its schema: %s",
-                    msg == NULL ? strerror(code) : msg);
+                    msg == NULL || msg[0] == '\0' ? strerror(code) : msg);
+      kind = zar_code_kind(code, "handle");
       goto done;
     }
   }
@@ -487,9 +491,9 @@ SEXP zar_c_stream_equal(SEXP x, SEXP y, SEXP metadata) {
       if (code != 0) {
         const char *msg = s[i]->get_last_error(s[i]);
         ArrowErrorSet(&error, "batch %ld could not be read: %s", batch,
-                      msg == NULL ? strerror(code) : msg);
+                      msg == NULL || msg[0] == '\0' ? strerror(code) : msg);
         kind = zar_reader_kind(s[i]);
-        if (kind == NULL) kind = "handle";
+        kind = zar_code_kind(code, kind == NULL ? "handle" : kind);
         if (a[0].release != NULL) a[0].release(&a[0]);
         equal = -1;
         goto done;
