@@ -16,9 +16,10 @@
 #'   a `zuarrow_type_error`, because a dictionary value cannot be null.
 #' * `Date` to `date32`, `POSIXct` to `timestamp[us]` in its time zone or
 #'   UTC, `difftime` to `duration[us]`.
-#' * A list of raw vectors to `binary`, or to `fixed_size_binary` when it
-#'   has the `arrow_width` attribute that [arrow_to_r()] gives one. An
-#'   element of another length is then a `zuarrow_type_error`.
+#' * A list of raw vectors to `binary`, or `large_binary` past 2^31 - 1
+#'   bytes. It goes to `fixed_size_binary` instead when it has the
+#'   `arrow_width` attribute that [arrow_to_r()] gives one. An element of
+#'   another length is then a `zuarrow_type_error`.
 #' * A list with the `arrow_keys_sorted` attribute that [arrow_to_r()]
 #'   gives a map to `map`.
 #' * Any other list to `list<T>`, with `T` from its elements.
@@ -169,8 +170,8 @@ zar_list_limit <- function() {
   getOption("zuarrow.list_limit", 2^31 - 1)
 }
 
-# The most bytes binary's 32-bit offsets address. Binary is never inferred
-# as large_binary (section 6.2), so this lowers only the builder's refusal.
+# The most bytes binary's 32-bit offsets address. An option lowers it,
+# so the switch to large_binary can be tested without 2 GB of raw vectors.
 zar_binary_limit <- function() {
   getOption("zuarrow.binary_limit", 2^31 - 1)
 }
@@ -607,7 +608,8 @@ zar_infer_type <- function(x, name, call = NULL) {
   )
 }
 
-# A list of raw vectors is binary; any other list is list<T>, T from the
+# A list of raw vectors is binary, or large_binary past the binary limit
+# as character is large_utf8 past its own; any other list is list<T>, T from the
 # elements, which must share one class (section 6.4).
 zar_infer_list <- function(x, name, call = NULL) {
   sorted <- attr(x, "arrow_keys_sorted", exact = TRUE)
@@ -636,7 +638,8 @@ zar_infer_list <- function(x, name, call = NULL) {
     return(zar_spec(sprintf("w:%d", as.integer(width)), name))
   }
   if (length(present) > 0L && all(vapply(present, is.raw, NA))) {
-    return(zar_spec("z", name))
+    total <- sum(as.double(lengths(present)))
+    return(zar_spec(if (total > zar_binary_limit()) "Z" else "z", name))
   }
   values <- zar_flatten(x, call)
   child <- if (is.null(values)) {

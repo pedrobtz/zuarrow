@@ -35,9 +35,10 @@ Without a \code{schema}, each R class maps to one Arrow type:
 a \code{zuarrow_type_error}, because a dictionary value cannot be null.
 \item \code{Date} to \code{date32}, \code{POSIXct} to \code{timestamp[us]} in its time zone or
 UTC, \code{difftime} to \code{duration[us]}.
-\item A list of raw vectors to \code{binary}, or to \code{fixed_size_binary} when it
-has the \code{arrow_width} attribute that \code{\link[=arrow_to_r]{arrow_to_r()}} gives one. An
-element of another length is then a \code{zuarrow_type_error}.
+\item A list of raw vectors to \code{binary}, or \code{large_binary} past 2^31 - 1
+bytes. It goes to \code{fixed_size_binary} instead when it has the
+\code{arrow_width} attribute that \code{\link[=arrow_to_r]{arrow_to_r()}} gives one. An element of
+another length is then a \code{zuarrow_type_error}.
 \item A list with the \code{arrow_keys_sorted} attribute that \code{\link[=arrow_to_r]{arrow_to_r()}}
 gives a map to \code{map}.
 \item Any other list to \verb{list<T>}, with \code{T} from its elements.
