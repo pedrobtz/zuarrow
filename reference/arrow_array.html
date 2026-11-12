@@ -80,9 +80,10 @@ stream handle.</p>
 a <code>zuarrow_type_error</code>, because a dictionary value cannot be null.</p></li>
 <li><p><code>Date</code> to <code>date32</code>, <code>POSIXct</code> to <code>timestamp[us]</code> in its time zone or
 UTC, <code>difftime</code> to <code>duration[us]</code>.</p></li>
-<li><p>A list of raw vectors to <code>binary</code>, or to <code>fixed_size_binary</code> when it
-has the <code>arrow_width</code> attribute that <code><a href="arrow_to_r.html">arrow_to_r()</a></code> gives one. An
-element of another length is then a <code>zuarrow_type_error</code>.</p></li>
+<li><p>A list of raw vectors to <code>binary</code>, or <code>large_binary</code> past 2^31 - 1
+bytes. It goes to <code>fixed_size_binary</code> instead when it has the
+<code>arrow_width</code> attribute that <code><a href="arrow_to_r.html">arrow_to_r()</a></code> gives one. An element of
+another length is then a <code>zuarrow_type_error</code>.</p></li>
 <li><p>A list with the <code>arrow_keys_sorted</code> attribute that <code><a href="arrow_to_r.html">arrow_to_r()</a></code>
 gives a map to <code>map</code>.</p></li>
 <li><p>Any other list to <code>list&lt;T&gt;</code>, with <code>T</code> from its elements.</p></li>

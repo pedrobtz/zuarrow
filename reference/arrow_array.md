@@ -46,8 +46,9 @@ Without a `schema`, each R class maps to one Arrow type:
 - `Date` to `date32`, `POSIXct` to `timestamp[us]` in its time zone or
   UTC, `difftime` to `duration[us]`.
 
-- A list of raw vectors to `binary`, or to `fixed_size_binary` when it
-  has the `arrow_width` attribute that
+- A list of raw vectors to `binary`, or `large_binary` past 2^31 - 1
+  bytes. It goes to `fixed_size_binary` instead when it has the
+  `arrow_width` attribute that
   [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
   gives one. An element of another length is then a
   `zuarrow_type_error`.

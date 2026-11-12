@@ -405,6 +405,11 @@
   reports the switch
   ([\#52](https://github.com/pedrobtz/zuarrow/issues/52)).
 
+- A list of raw vectors switches to `large_binary` past 2^31 - 1 bytes,
+  as a character column switches to `large_utf8`. Before, it was a
+  `zuarrow_limit_error`. An explicit `binary` schema still refuses it
+  ([\#191](https://github.com/pedrobtz/zuarrow/issues/191)).
+
 - A map column converts back to a map. A list with the
   `arrow_keys_sorted` attribute is written as `map`, and a map schema
   accepts a list of key/value data frames. A null key is a
