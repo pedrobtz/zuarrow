@@ -105,8 +105,15 @@ zar_metadata_raw <- function(value, call) {
     )
   }
   out <- lapply(as.list(value), function(v) {
-    if (is.raw(v)) v else charToRaw(enc2utf8(v))
+    if (is.raw(v)) v else zar_utf8_raw(v, call)
   })
-  names(out) <- enc2utf8(keys)
+  # The keys are converted to UTF-8 in C, strictly, as the values are.
+  names(out) <- keys
   out
+}
+
+# One string's UTF-8 bytes, converted strictly: a native string with no
+# exact UTF-8 form is a type error, never escaped text (#203).
+zar_utf8_raw <- function(x, call = NULL) {
+  zar_check(.Call(zar_c_utf8_raw, x), call = call)[[1L]]
 }

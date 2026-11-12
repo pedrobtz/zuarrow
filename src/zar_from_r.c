@@ -297,9 +297,7 @@ static int zar_build_bool(struct ArrowArray *array, SEXP x, R_xlen_t start,
 
 /* The UTF-8 bytes of a string zar_char_utf8() has already accepted. */
 static const char *zar_utf8_checked(SEXP s, size_t *len) {
-  const char *u = Rf_translateCharUTF8(s);
-  *len = u == CHAR(s) ? (size_t)LENGTH(s) : strlen(u);
-  return u;
+  return zar_char_utf8(s, len);
 }
 
 static int zar_build_strings(struct ArrowArray *array, enum ArrowType t,
@@ -666,6 +664,12 @@ static int zar_check_factor(SEXP x, SEXP levels, R_xlen_t start, int64_t n,
     return zar_build_fail(b, "type", NA_REAL);
   }
   R_xlen_t n_levels = Rf_xlength(levels);
+  for (R_xlen_t k = 0; k < n_levels; k++) {
+    if (STRING_ELT(levels, k) == NA_STRING) {
+      ArrowErrorSet(&b->error, "a factor with an NA level");
+      return zar_build_fail(b, "type", NA_REAL);
+    }
+  }
   const int *codes = INTEGER(x) + start;
   for (int64_t i = 0; i < n; i++) {
     int code = codes[i];
@@ -990,6 +994,29 @@ SEXP zar_c_utf8_over(SEXP x, SEXP r_limit) {
   return Rf_ScalarLogical(total > limit);
 }
 
+/* Each string of `x` as a raw vector of its UTF-8 bytes, converted as the
+   builder converts values, for metadata; a failure of kind "type" when one
+   has no exact UTF-8 form or is NA. */
+SEXP zar_c_utf8_raw(SEXP x) {
+  if (TYPEOF(x) != STRSXP) return zar_failure("type", "expected strings");
+  R_xlen_t n = Rf_xlength(x);
+  SEXP out = PROTECT(Rf_allocVector(VECSXP, n));
+  for (R_xlen_t i = 0; i < n; i++) {
+    SEXP s = STRING_ELT(x, i);
+    size_t len;
+    const char *u = s == NA_STRING ? NULL : zar_char_utf8(s, &len);
+    if (u == NULL) {
+      UNPROTECT(1);
+      return zar_failure("type", "a metadata string is NA or not valid UTF-8");
+    }
+    SEXP raw = Rf_allocVector(RAWSXP, (R_xlen_t)len);
+    if (len > 0) memcpy(RAW(raw), u, len);
+    SET_VECTOR_ELT(out, i, raw);
+  }
+  UNPROTECT(1);
+  return out;
+}
+
 /* Builds rows [start, start + n) of `x` as an array of `schema_xptr`. */
 SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
   struct zar_build b;
@@ -1010,11 +1037,11 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
   SEXP out = PROTECT(zar_array_owning_xptr(schema_copy));
   struct ArrowArray *array = (struct ArrowArray *)R_ExternalPtrAddr(out);
   int code = ArrowArrayInitFromSchema(array, schema, &b.error);
-  if (code != NANOARROW_OK) b.kind = "format";
+  if (code != NANOARROW_OK) b.kind = zar_code_kind(code, "format");
   if (code == NANOARROW_OK) code = zar_build_array(array, schema, x, start, n, &b);
   if (code == NANOARROW_OK && b.n_prebuilt == 0) {
     code = ArrowArrayFinishBuildingDefault(array, &b.error);
-    if (code != NANOARROW_OK) b.kind = "format";
+    if (code != NANOARROW_OK) b.kind = zar_code_kind(code, "format");
   } else if (code == NANOARROW_OK) {
     code = ArrowArrayFinishBuilding(array, NANOARROW_VALIDATION_LEVEL_NONE, &b.error);
     if (code == NANOARROW_OK) {
@@ -1032,7 +1059,7 @@ SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
       if (code == NANOARROW_OK) code = ArrowArrayViewSetArray(&view, array, &b.error);
       ArrowArrayViewReset(&view);
     }
-    if (code != NANOARROW_OK) b.kind = "format";
+    if (code != NANOARROW_OK) b.kind = zar_code_kind(code, "format");
   }
   UNPROTECT(2);
   if (code != NANOARROW_OK) {

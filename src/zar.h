@@ -3,7 +3,17 @@
 #ifndef ZAR_H
 #define ZAR_H
 
+#include <errno.h>
+
 #include "nanoarrow.h"
+
+/* The condition kind of a failure with nanoarrow code `code`: NULL, a bare
+   zuarrow_error, when it is an allocation failure (ENOMEM, design section
+   8), and `kind` otherwise. Every site that names a fixed kind for a code
+   nanoarrow or a stream returned goes through it. */
+static inline const char *zar_code_kind(int code, const char *kind) {
+  return code == ENOMEM ? NULL : kind;
+}
 
 /* Under ZAR_STANDALONE the IPC reader compiles without R, for the fuzz
    target of design section 9: only the declarations below the R block. */

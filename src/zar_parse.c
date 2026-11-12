@@ -3,18 +3,31 @@
    written as that type, and each value must parse exactly: digits for
    integers and durations, a decimal at most at its scale, ISO 8601 at most
    at the unit's precision for timestamps, date64 and times. Nothing is
-   rounded; a value that does not parse is reported with its row. */
+   rounded; a value that does not parse is reported with its row.
+
+   Only the canonical text arrow_to_r(lossy = "character") writes is read,
+   so that text round-trips and nothing else does: no "+" sign, no leading
+   zeros, no "-0", every fraction digit of the unit or scale (#213). Text
+   that parses but is not canonical returns ERANGE, a lossy error, as text
+   that is not exact does; text that does not parse returns EINVAL. */
 #include <string.h>
 
 #include "zar.h"
 
 static int zar_digit(char c) { return c >= '0' && c <= '9'; }
 
+/* Whether digits [d, end) are canonical: one "0", or no leading zero. */
+static int zar_canonical_digits(const char *d, const char *end) {
+  return end - d == 1 || *d != '0';
+}
+
 /* Strict: an optional sign, at least one digit, nothing after. */
 int zar_parse_int64(const char *s, int64_t *out) {
   int neg = *s == '-';
+  int plus = *s == '+';
   if (*s == '-' || *s == '+') s++;
   if (!zar_digit(*s)) return EINVAL;
+  const char *d = s;
   uint64_t v = 0;
   for (; zar_digit(*s); s++) {
     uint64_t d = (uint64_t)(*s - '0');
@@ -22,6 +35,7 @@ int zar_parse_int64(const char *s, int64_t *out) {
     v = v * 10 + d;
   }
   if (*s != '\0') return EINVAL;
+  if (plus || (neg && v == 0) || !zar_canonical_digits(d, s)) return ERANGE;
   if (neg) {
     if (v > (uint64_t)INT64_MAX + 1) return ERANGE;
     *out = v == (uint64_t)INT64_MAX + 1 ? INT64_MIN : -(int64_t)v;
@@ -33,8 +47,10 @@ int zar_parse_int64(const char *s, int64_t *out) {
 }
 
 int zar_parse_uint64(const char *s, uint64_t *out) {
-  if (*s == '+') s++;
+  int plus = *s == '+';
+  if (plus) s++;
   if (!zar_digit(*s)) return EINVAL;
+  const char *d = s;
   uint64_t v = 0;
   for (; zar_digit(*s); s++) {
     uint64_t d = (uint64_t)(*s - '0');
@@ -42,23 +58,29 @@ int zar_parse_uint64(const char *s, uint64_t *out) {
     v = v * 10 + d;
   }
   if (*s != '\0') return EINVAL;
+  if (plus || !zar_canonical_digits(d, s)) return ERANGE;
   *out = v;
   return NANOARROW_OK;
 }
 
-/* "[-]digits[.digits]" with at most `scale` fraction digits and at most
-   `precision` digits in all, into `decimal`. A negative scale needs
-   -scale trailing zeros, which the unscaled value drops. */
+/* "[-]digits[.digits]" with exactly `scale` fraction digits, none when
+   the scale is not positive, and at most `precision` digits in all, into
+   `decimal`. A negative scale needs -scale trailing zeros, which the
+   unscaled value drops. */
 int zar_parse_decimal(const char *s, struct ArrowDecimal *decimal) {
   char digits[96];
   size_t n = 0;
+  int plus = *s == '+';
   if (*s == '-' || *s == '+') digits[n++] = *s++;
   size_t first = n;
   if (!zar_digit(*s)) return EINVAL;
+  const char *int_start = s;
   while (zar_digit(*s)) {
     if (n >= sizeof(digits) - 1) return ERANGE;
     digits[n++] = *s++;
   }
+  const char *int_end = s;
+  int has_point = *s == '.';
   int32_t frac = 0;
   if (*s == '.') {
     s++;
@@ -70,6 +92,14 @@ int zar_parse_decimal(const char *s, struct ArrowDecimal *decimal) {
     }
   }
   if (*s != '\0') return EINVAL;
+  if (plus || !zar_canonical_digits(int_start, int_end)) return ERANGE;
+  if (decimal->scale > 0 ? frac != decimal->scale : has_point) return ERANGE;
+  if (first == 1) {
+    /* "-" only before a value that is not zero. */
+    size_t k = first;
+    while (k < n && digits[k] == '0') k++;
+    if (k == n) return ERANGE;
+  }
   if (decimal->scale < 0) {
     /* A negative scale counts trailing zeros of the integer part: a zero
        fraction is dropped, then exactly -scale zeros are, unless the value
@@ -127,23 +157,27 @@ static int zar_fixed(const char **s, int width, int *out) {
   return NANOARROW_OK;
 }
 
-/* "YYYY-MM-DD", the year signed and longer outside 0000-9999. */
+/* "YYYY-MM-DD", the year signed and longer outside 0000-9999: four digits
+   with no sign inside it, a sign and no leading zero past four digits
+   outside it. A year of 13 digits is past anything int64 seconds reach. */
 static int zar_parse_date_part(const char **s, int64_t *days) {
-  int neg = 0;
-  if (**s == '-' || **s == '+') {
-    neg = **s == '-';
-    (*s)++;
-  }
+  int sign = **s == '-' || **s == '+';
+  int neg = **s == '-';
+  if (sign) (*s)++;
+  const char *lead = *s;
   int64_t y = 0;
   int n = 0;
   while (zar_digit(**s)) {
-    if (n >= 9) return ERANGE;
+    if (n >= 13) return ERANGE;
     y = y * 10 + (**s - '0');
     (*s)++;
     n++;
   }
   if (n < 4 || **s != '-') return EINVAL;
   (*s)++;
+  if (sign ? (n > 4 && *lead == '0') || (neg ? y == 0 : y <= 9999) : n != 4) {
+    return ERANGE;
+  }
   if (neg) y = -y;
   int m, d;
   if (zar_fixed(s, 2, &m) != NANOARROW_OK || **s != '-') return EINVAL;
@@ -154,10 +188,10 @@ static int zar_parse_date_part(const char **s, int64_t *days) {
   return NANOARROW_OK;
 }
 
-/* ".digits" with at most `digits` of them, scaled to the unit. */
+/* ".digits" with exactly `digits` of them, none when `digits` is 0. */
 static int zar_parse_fraction(const char **s, int digits, int64_t *out) {
   *out = 0;
-  if (**s != '.') return NANOARROW_OK;
+  if (**s != '.') return digits == 0 ? NANOARROW_OK : ERANGE;
   (*s)++;
   int n = 0;
   int64_t v = 0;
@@ -168,7 +202,7 @@ static int zar_parse_fraction(const char **s, int digits, int64_t *out) {
     n++;
   }
   if (n == 0) return EINVAL;
-  for (; n < digits; n++) v *= 10;
+  if (n < digits) return ERANGE;
   *out = v;
   return NANOARROW_OK;
 }
@@ -177,6 +211,23 @@ static int64_t zar_pow10(int digits) {
   int64_t v = 1;
   for (int k = 0; k < digits; k++) v *= 10;
   return v;
+}
+
+/* hi * m + lo for 0 <= lo < m, or ERANGE when it overflows. A negative
+   `hi` takes `lo` as a negative part of the next unit up, so a sum that
+   fits never overflows on the way: INT64_MIN nanoseconds is
+   -9223372037 s plus 145224192 ns (#218). */
+static int zar_mul_add(int64_t hi, int64_t m, int64_t lo, int64_t *out) {
+  if (hi < 0 && lo > 0) {
+    hi += 1;
+    lo -= m;
+  }
+  int64_t scaled;
+  if (__builtin_mul_overflow(hi, m, &scaled) ||
+      __builtin_add_overflow(scaled, lo, out)) {
+    return ERANGE;
+  }
+  return NANOARROW_OK;
 }
 
 int zar_parse_date(const char *s, int64_t *days) {
@@ -204,16 +255,15 @@ int zar_parse_instant(const char *s, int digits, int utc, int64_t *out) {
     if (*s++ != 'Z') return EINVAL;
   }
   if (*s != '\0') return EINVAL;
-  int64_t secs = days * 86400 + h * 3600 + mi * 60 + se;
-  int64_t scaled;
-  if (__builtin_mul_overflow(secs, zar_pow10(digits), &scaled) ||
-      __builtin_add_overflow(scaled, frac, out)) {
-    return ERANGE;
-  }
-  return NANOARROW_OK;
+  int64_t secs;
+  code = zar_mul_add(days, 86400, h * 3600 + mi * 60 + se, &secs);
+  if (code != NANOARROW_OK) return code;
+  return zar_mul_add(secs, zar_pow10(digits), frac, out);
 }
 
-/* "[-]HH:MM:SS[.f]", hours unbounded, in units of 10^-digits seconds. */
+/* "HH:MM:SS[.f]", a time of day from 00:00:00 to below 24:00:00, in units
+   of 10^-digits seconds. The formatter writes more hours, or a sign, only
+   for a value outside Arrow's range, which is not written back (#213). */
 int zar_parse_time(const char *s, int digits, int64_t *out) {
   int neg = *s == '-';
   if (neg) s++;
@@ -234,13 +284,7 @@ int zar_parse_time(const char *s, int digits, int64_t *out) {
   int code = zar_parse_fraction(&s, digits, &frac);
   if (code != NANOARROW_OK) return code;
   if (*s != '\0') return EINVAL;
-  int64_t secs, v;
-  if (__builtin_mul_overflow(h, (int64_t)3600, &secs) ||
-      __builtin_add_overflow(secs, (int64_t)(mi * 60 + se), &secs) ||
-      __builtin_mul_overflow(secs, zar_pow10(digits), &v) ||
-      __builtin_add_overflow(v, frac, &v)) {
-    return ERANGE;
-  }
-  *out = neg ? -v : v;
+  if (neg || n != 2 || h > 23) return ERANGE;
+  *out = (h * 3600 + mi * 60 + se) * zar_pow10(digits) + frac;
   return NANOARROW_OK;
 }

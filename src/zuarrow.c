@@ -18,7 +18,7 @@ SEXP zar_c_array_equal(SEXP x, SEXP y, SEXP metadata);
 SEXP zar_c_stream_equal(SEXP x, SEXP y, SEXP metadata);
 SEXP zar_c_array_from_buffers(SEXP schema, SEXP spec);
 SEXP zar_c_stream_from_arrays(SEXP schema, SEXP arrays);
-SEXP zar_c_test_failing_stream(SEXP schema, SEXP schema_fails);
+SEXP zar_c_test_failing_stream(SEXP schema, SEXP schema_fails, SEXP out_of_memory);
 SEXP zar_c_test_release(SEXP x, SEXP tag);
 SEXP zar_c_test_move(SEXP x, SEXP into);
 SEXP zar_c_test_array_to_spec(SEXP x);
@@ -36,6 +36,7 @@ SEXP zar_c_write(SEXP arrays, SEXP schema, SEXP opts);
 SEXP zar_c_to_r(SEXP arrays, SEXP schema, SEXP opts);
 SEXP zar_c_from_r(SEXP x, SEXP schema, SEXP start, SEXP n);
 SEXP zar_c_utf8_over(SEXP x, SEXP limit);
+SEXP zar_c_utf8_raw(SEXP x);
 
 #define ZAR_CALL(name, n) {#name, (DL_FUNC)&name, n}
 
@@ -55,7 +56,7 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_stream_equal, 3),
     ZAR_CALL(zar_c_array_from_buffers, 2),
     ZAR_CALL(zar_c_stream_from_arrays, 2),
-    ZAR_CALL(zar_c_test_failing_stream, 2),
+    ZAR_CALL(zar_c_test_failing_stream, 3),
     ZAR_CALL(zar_c_test_release, 2),
     ZAR_CALL(zar_c_test_move, 2),
     ZAR_CALL(zar_c_test_array_to_spec, 1),
@@ -75,6 +76,7 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_deferred_probe, 4),
     ZAR_CALL(zar_c_from_r, 4),
     ZAR_CALL(zar_c_utf8_over, 2),
+    ZAR_CALL(zar_c_utf8_raw, 1),
     {NULL, NULL, 0}};
 
 void attribute_visible R_init_zuarrow(DllInfo *dll) {

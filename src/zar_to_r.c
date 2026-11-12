@@ -118,7 +118,7 @@ static SEXP zar_column_failure(const char *kind, const char *message,
   const char *names[] = {"kind", "message", "column",       "row", "format",
                          "name", "text",    "value_format", ""};
   SEXP out = PROTECT(Rf_mkNamed(VECSXP, names));
-  SET_VECTOR_ELT(out, 0, Rf_mkString(kind));
+  SET_VECTOR_ELT(out, 0, kind == NULL || kind[0] == '\0' ? R_NilValue : Rf_mkString(kind));
   SET_VECTOR_ELT(out, 1, zar_scalar_utf8(message));
   SET_VECTOR_ELT(out, 2, Rf_ScalarInteger(column));
   SET_VECTOR_ELT(out, 3, Rf_ScalarReal(row));
@@ -147,9 +147,14 @@ struct zar_err {
   SEXP arrays; /* the batches' array handles, which deferred strings keep */
 };
 
+/* The kind zar_fail() records for a NULL kind, an allocation failure:
+   e->kind is then still set, so every `e->kind != NULL` check stops, and
+   zar_column_failure() reports it as a bare zuarrow_error (#233). */
+static const char zar_kind_bare[] = "";
+
 static int zar_fail(struct zar_err *e, const char *kind, int64_t row,
                     const char *format) {
-  e->kind = kind;
+  e->kind = kind == NULL ? zar_kind_bare : kind;
   e->row = row;
   e->format = format;
   return EINVAL;
@@ -1008,6 +1013,12 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
     return zar_fail(e, "lossy", -1, p->schema->format);
   }
 
+  /* A node with no values loses nothing under any policy: it takes the
+     policy's form, or under error the lossy form, without a warning
+     (#177). A query that reads only a schema returns such columns. */
+  int64_t n_values = 0;
+  for (int64_t b = 0; b < n_slices; b++) n_values += slices[b].length;
+
   int64_t bad_row = -1;
   char value[64] = "";
   if (p->lossy_by_schema) {
@@ -1030,9 +1041,9 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
     p->target = ZAR_T_TEXT;
     return NANOARROW_OK;
   }
-  if (lossy == ZAR_LOSSY_WARN || lossy == ZAR_LOSSY_ALLOW) {
+  if (lossy == ZAR_LOSSY_WARN || lossy == ZAR_LOSSY_ALLOW || n_values == 0) {
     p->target = p->lossy_target;
-    if (lossy == ZAR_LOSSY_WARN) *warned = 1;
+    if (lossy == ZAR_LOSSY_WARN && n_values > 0) *warned = 1;
     return NANOARROW_OK;
   }
   e->no_text = !text_ok;
@@ -1109,7 +1120,10 @@ static void zar_format_instant(char *out, size_t n, int64_t value, int digits,
   int64_t frac = value % scale;
   if (frac < 0) frac += scale;
   int64_t days = zar_floor_div(secs, 86400);
-  int64_t sod = secs - days * 86400;
+  /* The remainder again: days * 86400 overflows when secs is near
+     INT64_MIN, as it is for a seconds timestamp at the end of its range. */
+  int64_t sod = secs % 86400;
+  if (sod < 0) sod += 86400;
   int len = zar_format_date(out, n, days);
   len += snprintf(out + len, n - (size_t)len, "T%02d:%02d:%02d",
                   (int)(sod / 3600), (int)(sod / 60 % 60), (int)(sod % 60));
@@ -2063,7 +2077,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     if (code == NANOARROW_OK) code = zar_view_check_read(&sc->views[b], &e.error);
     if (code != NANOARROW_OK) {
       UNPROTECT(1);
-      return zar_failure_from_error("format", &e.error);
+      return zar_failure_from_error(zar_code_kind(code, "format"), &e.error);
     }
     rows += sc->views[b].length;
   }
@@ -2107,7 +2121,8 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     }
     if (code != NANOARROW_OK) {
       UNPROTECT(1);
-      return zar_column_failure(e.kind == NULL ? "type" : e.kind, e.error.message,
+      return zar_column_failure(e.kind == NULL ? zar_code_kind(code, "type") : e.kind,
+                                e.error.message,
                                 (int)c + 1, e.row >= 0 ? (double)(e.row + 1) : NA_REAL,
                                 e.format == NULL ? cs->format : e.format, cs->name,
                                 e.no_text, e.value_format);

@@ -25,7 +25,11 @@
  * no name is written with an empty one
  * (tools/patches/0019-encode-null-name.patch), and metadata keys and values
  * are written by their length, NUL bytes included
- * (tools/patches/0020-encode-metadata-length.patch).
+ * (tools/patches/0020-encode-metadata-length.patch), and a dictionary's
+ * initial value or batch that could not be shared is not released twice,
+ * and a record batch whose arrays could not be built returns the failure
+ * rather than a released array
+ * (tools/patches/0021-array-alloc-failure.patch).
  */
 #include "nanoarrow_ipc_flatcc_generated.h"
 // Licensed to the Apache Software Foundation (ASF) under one
@@ -825,9 +829,9 @@ static ArrowErrorCode ArrowIpcDictionariesInitDictionaries(
 
     // Convert to a shared array so that clones can reference the same data
     // without copying
+    // ArrowArrayMoveShared() releases its input when it fails.
     result = ArrowArrayMoveShared(&initial_value, &dictionary->current_value);
     if (result != NANOARROW_OK) {
-      ArrowArrayRelease(&initial_value);
       *num_initialized_decoders_out = i + 1;
       return result;
     }
@@ -3141,9 +3145,11 @@ NANOARROW_DLL ArrowErrorCode ArrowIpcDecoderDecodeArrayWithDictionaries(
   temp.release = NULL;
   int result =
       ArrowIpcDecoderDecodeArrayInternal(decoder, i, &temp, validation_level, error);
-  if (result != NANOARROW_OK && temp.release != NULL) {
-    ArrowArrayRelease(&temp);
-  } else if (result != NANOARROW_OK) {
+  if (result != NANOARROW_OK) {
+    // A failure is returned, not moved to `out` as an empty success.
+    if (temp.release != NULL) {
+      ArrowArrayRelease(&temp);
+    }
     return result;
   }
 
@@ -3175,9 +3181,11 @@ ArrowErrorCode ArrowIpcDecoderDecodeArrayFromSharedWithDictionaries(
   temp.release = NULL;
   int result =
       ArrowIpcDecoderDecodeArrayInternal(decoder, i, &temp, validation_level, error);
-  if (result != NANOARROW_OK && temp.release != NULL) {
-    ArrowArrayRelease(&temp);
-  } else if (result != NANOARROW_OK) {
+  if (result != NANOARROW_OK) {
+    // A failure is returned, not moved to `out` as an empty success.
+    if (temp.release != NULL) {
+      ArrowArrayRelease(&temp);
+    }
     return result;
   }
 
@@ -3297,8 +3305,11 @@ static ArrowErrorCode ArrowIpcDecoderDecodeDictionaryInternal(
     result = ArrowIpcDictionaryReplace(dictionary, &tmp, error);
   }
 
+  // A failed ArrowArrayMoveShared() in the replace has released `tmp`.
   if (result != NANOARROW_OK) {
-    ArrowArrayRelease(&tmp);
+    if (tmp.release != NULL) {
+      ArrowArrayRelease(&tmp);
+    }
     return result;
   }
 

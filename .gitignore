@@ -55,3 +55,7 @@ CRAN-SUBMISSION
 
 # arrow-testing fixtures, fetched by tools/fetch-fixtures
 tests/testthat/fixtures/
+
+# tools/fuzz/Makefile output
+tools/fuzz/build/
+tools/fuzz/replay

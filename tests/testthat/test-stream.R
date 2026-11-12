@@ -133,6 +133,28 @@ test_that("a foreign stream whose schema fails is a handle error", {
   expect_error(arrow_write(failing(), NULL), class = "zuarrow_handle_error")
 })
 
+test_that("a stream that runs out of memory is a bare zuarrow_error", {
+  # ENOMEM is an allocation failure from any producer, not a handle
+  # problem (design section 8, #233).
+  failing <- function(schema_fails = FALSE) {
+    test_failing_stream(
+      arrow_schema(data.frame(x = 1L)),
+      schema_fails = schema_fails,
+      out_of_memory = TRUE
+    )
+  }
+  good <- function() arrow_stream(data.frame(x = 1L))
+  for (schema_fails in c(FALSE, TRUE)) {
+    expect_bare_zuarrow_error(arrow_next(failing(schema_fails)))
+    expect_bare_zuarrow_error(arrow_to_r(failing(schema_fails)))
+    expect_bare_zuarrow_error(arrow_write(failing(schema_fails), NULL))
+    expect_bare_zuarrow_error(arrow_validate(failing(schema_fails)))
+    expect_bare_zuarrow_error(arrow_equal(failing(schema_fails), good()))
+    expect_bare_zuarrow_error(arrow_equal(good(), failing(schema_fails)))
+  }
+  expect_bare_zuarrow_error(arrow_schema(failing(TRUE)))
+})
+
 test_that("a live stream moved into a drained handle reads (#220)", {
   df <- data.frame(x = 1:5)
   stream <- arrow_stream(df, batch = 2)

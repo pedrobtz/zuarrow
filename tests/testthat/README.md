@@ -12,19 +12,34 @@ or function, since line numbers drift.
 nanoarrow allocators fail only when memory runs out. Every "cannot
 allocate ..." and "... could not be copied" or "could not be allocated"
 branch is of this kind, in `zar_from_r.c`, `zar_build.c`, `zar_xptr.c`,
-`zar_ipc_read.c`, `zar_ipc_write.c` and `zar_to_r.c`. So is the
-`Rf_error()` in the owning handle constructors of `zar_xptr.c`, the one
-place outside ALTREP where C raises, because no handle exists yet to
-return a failure through.
+`zar_ipc_read.c`, `zar_ipc_write.c` and `zar_to_r.c`. So is
+`zar_alloc_abort()` in the owning handle constructors of `zar_xptr.c`,
+the one place outside ALTREP where C raises, because no handle exists
+yet to return a failure through.
+
+The suite has no fault injection. The `alloc-failure` workflow covers
+these branches instead: it runs `tools/alloc-exercise.R` under r-actions'
+`failmalloc` interposer once per allocation, failing a different one each
+time, and fails on a crash or on a condition design section 8 does not
+name. A failed allocation is a bare `zuarrow_error`, or a
+`zuarrow_limit_error` in the writer (section 6.8). `zar_code_kind()` in
+`zar.h` maps `ENOMEM` to the bare class wherever a fixed kind is chosen
+(#233). What the suite can reach is a producer that returns `ENOMEM`:
+`test_failing_stream(out_of_memory = TRUE)` checks that every consumer
+raises a bare `zuarrow_error` for it.
 
 ## Sizes past 32-bit offsets
 
-With an explicit 32-bit schema (`"u"`, `"z"`, `"+l"`), writing more than
-2^31 - 1 bytes or values is a `zuarrow_limit_error`: "more than utf8
-offsets can address", "more than binary offsets can address" and "more
-than list offsets address" in `zar_from_r.c`. Reaching them takes over
-2 GiB of data. Inferred string types switch to `large_utf8` first, which
-`test-from-r.R` tests by lowering the `zuarrow.utf8_limit` option.
+With an explicit `"+l"` schema, writing more than 2^31 - 1 child values
+is a `zuarrow_limit_error`: "more than list offsets address" in
+`zar_from_r.c`. Reaching it takes 2^31 values, because R flattens a list
+column before C counts it. The same refusals for `"u"` and `"z"` are
+reached in `test-offset-limits.R` with 2048 copies of one 1 MiB element,
+which R shares, so only their side above the limit is tested. Inferred
+character and list columns switch to `large_utf8` and `large_list` first,
+which `test-offset-limits.R` straddles by lowering the internal
+`zuarrow.utf8_limit` and `zuarrow.list_limit` options. No option lowers
+the builder's own `INT32_MAX`.
 
 ## R's string limit
 

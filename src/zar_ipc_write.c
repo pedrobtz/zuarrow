@@ -103,7 +103,7 @@ static ArrowErrorCode zar_encode_buffer(struct ArrowBufferView buffer, void *sta
     int code = zar_codec_compress(w->codecs, w->codec, w->level, buffer.data.as_uint8,
                                   buffer.size_bytes, w->packed.data, cap, &written, error);
     if (code != NANOARROW_OK) {
-      w->kind = "codec";
+      w->kind = zar_code_kind(code, "codec");
       return code;
     }
     int64_t prefix;
@@ -460,20 +460,22 @@ SEXP zar_c_array_slice(SEXP x, SEXP r_start, SEXP r_n) {
   }
 
   struct ArrowArrayView view;
-  if (ArrowArrayViewInitFromSchema(&view, schema, &error) != NANOARROW_OK) {
-    return zar_failure_from_error("format", &error);
+  int code = ArrowArrayViewInitFromSchema(&view, schema, &error);
+  if (code != NANOARROW_OK) {
+    return zar_failure_from_error(zar_code_kind(code, "format"), &error);
   }
   /* The values are copied below: check every offset and range first. */
-  if (ArrowArrayViewSetArray(&view, array, &error) != NANOARROW_OK ||
-      zar_view_check_read(&view, &error) != NANOARROW_OK) {
+  code = ArrowArrayViewSetArray(&view, array, &error);
+  if (code == NANOARROW_OK) code = zar_view_check_read(&view, &error);
+  if (code != NANOARROW_OK) {
     ArrowArrayViewReset(&view);
-    return zar_failure_from_error("format", &error);
+    return zar_failure_from_error(zar_code_kind(code, "format"), &error);
   }
 
   SEXP out = PROTECT(zar_array_owning_xptr(tag));
   struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
   const char *kind = "format";
-  int code = ArrowArrayInitFromSchema(dst, schema, &error);
+  code = ArrowArrayInitFromSchema(dst, schema, &error);
   if (code == NANOARROW_OK) {
     kind = NULL;
     code = zar_copy_node(&view, dst, (int64_t)start, (int64_t)n_real, &kind, &error);
@@ -488,7 +490,7 @@ SEXP zar_c_array_slice(SEXP x, SEXP r_start, SEXP r_n) {
   }
   ArrowArrayViewReset(&view);
   UNPROTECT(1);
-  if (code != NANOARROW_OK) return zar_failure_from_error(kind, &error);
+  if (code != NANOARROW_OK) return zar_failure_from_error(zar_code_kind(code, kind), &error);
   return out;
 }
 
@@ -508,6 +510,23 @@ static int zar_collect_dicts(struct ArrowArrayView *view, struct ArrowArrayView 
   }
   if (view->dictionary != NULL) return zar_collect_dicts(view->dictionary, out, cap, n);
   return NANOARROW_OK;
+}
+
+/* The order dictionary batches are written in, as ids of
+   zar_collect_dicts(): a dictionary after every dictionary its values use,
+   since a reader decodes a dictionary batch against those already read.
+   `next_id` numbers the nodes as zar_collect_dicts() does. */
+static void zar_order_dicts(const struct ArrowArrayView *view, int64_t *next_id,
+                            int64_t *order, int64_t *n) {
+  int64_t own = -1;
+  if (view->dictionary != NULL) own = (*next_id)++;
+  for (int64_t i = 0; i < view->n_children; i++) {
+    zar_order_dicts(view->children[i], next_id, order, n);
+  }
+  if (view->dictionary != NULL) {
+    zar_order_dicts(view->dictionary, next_id, order, n);
+    order[(*n)++] = own;
+  }
 }
 
 static int zar_count_dicts(const struct ArrowSchema *s) {
@@ -567,7 +586,7 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   struct zar_writer *w = (struct zar_writer *)calloc(1, sizeof(struct zar_writer));
   if (w == NULL) {
     UNPROTECT(1);
-    return zar_failure(NULL, "cannot allocate the writer");
+    return zar_failure("limit", "cannot allocate the writer");
   }
   R_SetExternalPtrAddr(scratch, w);
   ArrowBufferInit(&w->out);
@@ -609,6 +628,8 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
       (size_t)(w->n_dicts > 0 ? w->n_dicts : 1), sizeof(struct ArrowArrayView *));
   struct ArrowArrayView **batch_dicts = (struct ArrowArrayView **)R_alloc(
       (size_t)(w->n_dicts > 0 ? w->n_dicts : 1), sizeof(struct ArrowArrayView *));
+  int64_t *dict_order =
+      (int64_t *)R_alloc((size_t)(w->n_dicts > 0 ? w->n_dicts : 1), sizeof(int64_t));
   /* The views of the last batch stay alive for the comparison: one view per
      batch, owned by R_alloc'ed storage and reset below. */
   struct ArrowArrayView *views = (struct ArrowArrayView *)R_alloc(
@@ -662,10 +683,14 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
     }
 
     /* Dictionaries: written before the first batch, and again only when a
-       stream's batch brings a different one. */
+       stream's batch brings a different one, each after those its values
+       use. */
     int64_t n = 0;
     code = zar_collect_dicts(view, batch_dicts, w->n_dicts, &n);
-    for (int64_t k = 0; code == NANOARROW_OK && k < n; k++) {
+    int64_t next_id = 0, n_order = 0;
+    if (code == NANOARROW_OK) zar_order_dicts(view, &next_id, dict_order, &n_order);
+    for (int64_t j = 0; code == NANOARROW_OK && j < n_order; j++) {
+      int64_t k = dict_order[j];
       int differs = w->dict_views[k] == NULL;
       if (!differs) {
         int equal = 0;
@@ -720,10 +745,13 @@ SEXP zar_c_write(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   for (R_xlen_t k = 0; k < n_views; k++) ArrowArrayViewReset(&views[k]);
   if (code != NANOARROW_OK) {
     if (error.message[0] == '\0') ArrowErrorSet(&error, "the IPC output could not be written");
-    /* The codec callback names its own failures; an allocation's is a
-       limit, and anything else the encoder refuses is malformed input. */
+    /* An allocation failure is a limit at whatever step it happens
+       (section 6.8, #233), the codec's included; otherwise the codec
+       callback names its own failures, and anything else the encoder
+       refuses is malformed input. */
+    if (code == ENOMEM) kind = "limit";
     if (kind == NULL) kind = w->kind;
-    if (kind == NULL) kind = code == ENOMEM ? "limit" : "format";
+    if (kind == NULL) kind = "format";
     SEXP fail = PROTECT(zar_write_fail(kind, &error));
     UNPROTECT(2);
     return fail;

@@ -1,0 +1,18 @@
+source("pre.R")
+p <- function(l, e) { cat(l, ": "); r <- tr(e); if (inherits(r,"ERR")) print(r) else {dput(r)} }
+d1 <- data.frame(a=1:2); d1$s <- data.frame(q=c("a","b"))
+x2 <- list(d1, d1); p("list(d1,d1) nested", identical(arrow_to_r(arrow_array(x2)), x2))
+x3 <- list(d1, d1[2,,drop=FALSE]); p("list(d1,d1[2,]) nested", identical(arrow_to_r(arrow_array(x3)), x3))
+p(" .. no tr", {r <- withCallingHandlers(arrow_to_r(arrow_array(x3)), warning=function(w) {cat("[warning:", conditionMessage(w), "]"); invokeRestart("muffleWarning")}); identical(r, x3)})
+d2 <- data.frame(a=1:2, row.names=c("x","y")); d2$s <- data.frame(q=c("a","b"), row.names=c("x","y"))
+x4 <- list(d2, d2); p("named rows nested", {r <- withCallingHandlers(arrow_to_r(arrow_array(x4)), warning=function(w) {cat("[warning:", conditionMessage(w), "]"); invokeRestart("muffleWarning")}); str(r); 1})
+# rbind hazards: character columns w/ stringsAsFactors? list columns? matrix columns? 
+d3 <- data.frame(a=1:2); d3$l <- list(1L, 2:3)
+p("nested list col in list-of-df", {x <- list(d3, d3); identical(arrow_to_r(arrow_array(x)), x)})
+d4 <- data.frame(a=1:2); d4$l <- list(1L, NULL)
+p("nested list col with NULL", {x <- list(d4, d4); r <- arrow_to_r(arrow_array(x)); list(identical(r, x), r)})
+p("list-of-df, df has AsIs", {d <- data.frame(a=I(1:2)); arrow_array(list(d,d))})
+p("list-of-df, POSIXct no tz", {d <- data.frame(t=as.POSIXct(1:2)); r <- arrow_to_r(arrow_array(list(d,d))); r[[2]]})
+p("list-of-df wide", {d <- data.frame(a=c(1.5,NA), b=c(NA,"z"), c=c(TRUE,NA)); x <- list(d, d[0,], d[2,]); r <- arrow_to_r(arrow_array(x)); all.equal(r, x, check.attributes=FALSE)})
+p("list-of-df factor diff levels", {x <- list(data.frame(f=factor(c("b","a"), levels=c("b","a"))), data.frame(f=factor("c"))); arrow_to_r(arrow_array(x))})
+p("list-of-df, names differ order", arrow_array(list(data.frame(a=1,b=2), data.frame(b=1,a=2))))

@@ -1,0 +1,34 @@
+on:
+  # Reported, never gated (#183): weekly and on demand,
+  # `gh workflow run mutation.yaml --ref <branch>`. Read the survivors in the
+  # run's summary; each is a change to the reader that no input notices.
+  schedule:
+    - cron: "47 4 * * 0"
+  workflow_dispatch:
+
+name: mutation
+
+permissions:
+  contents: read
+
+# Mutates the reader's verification code and its UTF-8 check, and replays
+# the corpus through tools/fuzz/replay against each mutant. The replay is
+# the reader built without R (ZAR_STANDALONE, the fuzz target's sources and
+# flags) over a driver that exits 1 when any input's outcome differs from
+# tests/testthat/crash-expected.csv or tools/fuzz/replay-expected.csv, so
+# it needs the arrow-testing fixtures, fetched before the build.
+#
+# CFLAGS is emptied so $MULL_CC's -O0 -g stands; the Makefile compiles each
+# source on its own, as Mull requires. The replay takes 0.05 s unmutated; a
+# mutant that loops is killed at mutant-timeout.
+jobs:
+  mutation:
+    uses: pedrobtz/r-actions/.github/workflows/mutation.yml@v1
+    with:
+      build: tools/fetch-fixtures && make -C tools/fuzz replay CC="$MULL_CC" CFLAGS=
+      tests: tools/fuzz/replay
+      include: |
+        .*/src/zar_ipc_read\.c$
+        .*/src/zar_utf8\.c$
+      mutant-timeout: 5000
+      timeout-minutes: 90

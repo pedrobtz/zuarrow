@@ -67,6 +67,30 @@ test_that("pieces whose attributes c() drops must agree (#198)", {
   expect_error(arrow_to_r(stream), class = "zuarrow_registry_error")
 })
 
+test_that("a to handler owns the shape of a struct it converts (#225)", {
+  df <- data.frame(id = 1:2)
+  df$p <- data.frame(x = 1:2, y = c("a", "b"))
+  attr(df$p, "arrow_extension") <- "zar.test.point"
+  attr(df$p, "arrow_field_metadata") <- c(unit = "m")
+  attr(df$p$x, "arrow_field_metadata") <- c(unit = "kg")
+  shapes <- list(
+    wider = function(out) data.frame(out, extra = 1),
+    narrower = function(out) out["y"],
+    reordered = function(out) out[c("y", "x")]
+  )
+  for (shape in names(shapes)) {
+    reshape <- shapes[[shape]]
+    local_registration(
+      "zar.test.point",
+      to = function(array, schema) reshape(arrow_to_r(array))
+    )
+    out <- arrow_to_r(arrow_array(df))
+    expected <- reshape(arrow_to_r(arrow_array(df$p)))
+    attr(expected, "arrow_field_metadata") <- c(unit = "m")
+    expect_identical(out$p, expected, info = shape)
+  }
+})
+
 test_that("handlers convert data frame columns", {
   local_registration("l", to = as_text_int64)
   schema <- test_schema(zspec(

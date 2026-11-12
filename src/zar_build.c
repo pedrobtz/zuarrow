@@ -157,6 +157,21 @@ static int zar_failing_get_next(struct ArrowArrayStream *stream,
   return EIO;
 }
 
+/* The same, failing as an allocation would, with ENOMEM (#233). */
+static int zar_oom_get_schema_fails(struct ArrowArrayStream *stream,
+                                    struct ArrowSchema *out) {
+  (void)stream;
+  out->release = NULL;
+  return ENOMEM;
+}
+
+static int zar_oom_get_next(struct ArrowArrayStream *stream,
+                            struct ArrowArray *out) {
+  (void)stream;
+  out->release = NULL;
+  return ENOMEM;
+}
+
 static const char *zar_failing_get_last_error(
     struct ArrowArrayStream *stream) {
   (void)stream;
@@ -170,7 +185,8 @@ static void zar_failing_release(struct ArrowArrayStream *stream) {
   stream->release = NULL;
 }
 
-SEXP zar_c_test_failing_stream(SEXP schema_xptr, SEXP schema_fails) {
+SEXP zar_c_test_failing_stream(SEXP schema_xptr, SEXP schema_fails,
+                               SEXP out_of_memory) {
   struct ArrowError error;
   error.message[0] = '\0';
   struct ArrowSchema *schema = zar_schema_from_xptr(schema_xptr, &error);
@@ -185,10 +201,11 @@ SEXP zar_c_test_failing_stream(SEXP schema_xptr, SEXP schema_fails) {
     UNPROTECT(1);
     return zar_failure(NULL, "the schema could not be copied");
   }
-  stream->get_schema = Rf_asLogical(schema_fails) == TRUE
-                           ? &zar_failing_get_schema_fails
-                           : &zar_failing_get_schema;
-  stream->get_next = &zar_failing_get_next;
+  int oom = Rf_asLogical(out_of_memory) == TRUE;
+  stream->get_schema = Rf_asLogical(schema_fails) != TRUE ? &zar_failing_get_schema
+                       : oom                              ? &zar_oom_get_schema_fails
+                                                          : &zar_failing_get_schema_fails;
+  stream->get_next = oom ? &zar_oom_get_next : &zar_failing_get_next;
   stream->get_last_error = &zar_failing_get_last_error;
   stream->release = &zar_failing_release;
   stream->private_data = copy;

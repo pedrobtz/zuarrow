@@ -1,0 +1,181 @@
+--- a/nanoarrow.c
++++ b/nanoarrow.c
+@@ -4,7 +4,10 @@
+  * validation reads offsets only from a buffer that holds them
+  * (tools/patches/0012-offsets-buffer-size.patch), and full validation bounds
+  * a list view's offset and size without overflowing int64_t
+- * (tools/patches/0014-list-view-bound-overflow.patch).
++ * (tools/patches/0014-list-view-bound-overflow.patch), and a failed
++ * allocation while an array is initialised, given children or shared
++ * returns ENOMEM with nothing left half built or leaked
++ * (tools/patches/0021-array-alloc-failure.patch).
+  */
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+@@ -2737,6 +2740,11 @@
+   ArrowBufferInit(&private_data->buffers[1]);
+   private_data->buffer_data =
+       (const void**)ArrowMalloc(sizeof(void*) * NANOARROW_MAX_FIXED_BUFFERS);
++  if (private_data->buffer_data == NULL) {
++    ArrowFree(private_data);
++    array->release = NULL;
++    return ENOMEM;
++  }
+   for (int i = 0; i < NANOARROW_MAX_FIXED_BUFFERS; ++i) {
+     private_data->buffer_data[i] = NULL;
+   }
+@@ -2862,6 +2870,8 @@
+   }
+ 
+   memset(array->children, 0, n_children * sizeof(struct ArrowArray*));
++  // Counted now, so a release after a failure below frees what was allocated.
++  array->n_children = n_children;
+ 
+   for (int64_t i = 0; i < n_children; i++) {
+     array->children[i] = (struct ArrowArray*)ArrowMalloc(sizeof(struct ArrowArray));
+@@ -2871,7 +2881,6 @@
+     array->children[i]->release = NULL;
+   }
+ 
+-  array->n_children = n_children;
+   return NANOARROW_OK;
+ }
+ 
+@@ -3269,8 +3278,10 @@
+ ArrowErrorCode ArrowArrayMoveShared(struct ArrowArray* array, struct ArrowArray* shared) {
+   struct ArrowArray tmp;
+   tmp.release = NULL;
+-  ArrowErrorCode result = ArrowArrayMoveSharedInternal(array, shared);
+-  if (result != NANOARROW_OK) {
++  ArrowErrorCode result = ArrowArrayMoveSharedInternal(array, &tmp);
++  if (result == NANOARROW_OK) {
++    ArrowArrayMove(&tmp, shared);
++  } else {
+     // On failure, release the temporary output
+     if (tmp.release != NULL) {
+       ArrowArrayRelease(&tmp);
+@@ -3295,8 +3306,10 @@
+ 
+   struct ArrowArray tmp;
+   tmp.release = NULL;
+-  ArrowErrorCode result = ArrowArrayCloneSharedInternal(shared, array);
+-  if (result != NANOARROW_OK && tmp.release != NULL) {
++  ArrowErrorCode result = ArrowArrayCloneSharedInternal(shared, &tmp);
++  if (result == NANOARROW_OK) {
++    ArrowArrayMove(&tmp, array);
++  } else if (tmp.release != NULL) {
+     ArrowArrayRelease(&tmp);
+   }
+ 
+--- a/nanoarrow.h
++++ b/nanoarrow.h
+@@ -1,3 +1,8 @@
++/*
++ * Modified for the zuarrow R package: adding variadic buffers checks both
++ * reallocations and leaves the array as it was when one fails
++ * (tools/patches/0021-array-alloc-failure.patch).
++ */
+ // Licensed to the Apache Software Foundation (ASF) under one
+ // or more contributor license agreements.  See the NOTICE file
+ // distributed with this work for additional information
+@@ -3782,17 +3787,25 @@
+   struct ArrowArrayPrivateData* private_data =
+       (struct ArrowArrayPrivateData*)array->private_data;
+ 
+-  private_data->variadic_buffers = (struct ArrowBuffer*)ArrowRealloc(
++  // On failure the array keeps what it had: realloc() leaves the old block.
++  struct ArrowBuffer* variadic_buffers = (struct ArrowBuffer*)ArrowRealloc(
+       private_data->variadic_buffers, sizeof(struct ArrowBuffer) * nvariadic_bufs_needed);
+-  if (private_data->variadic_buffers == NULL) {
++  if (variadic_buffers == NULL) {
+     return ENOMEM;
+   }
++  private_data->variadic_buffers = variadic_buffers;
+ 
+-  private_data->n_variadic_buffers = nvariadic_bufs_needed;
+-  array->n_buffers = NANOARROW_BINARY_VIEW_FIXED_BUFFERS + 1 + nvariadic_bufs_needed;
++  const int64_t n_total =
++      NANOARROW_BINARY_VIEW_FIXED_BUFFERS + 1 + nvariadic_bufs_needed;
++  const void** buffer_data = (const void**)ArrowRealloc(
++      private_data->buffer_data, n_total * sizeof(void*));
++  if (buffer_data == NULL) {
++    return ENOMEM;
++  }
++  private_data->buffer_data = buffer_data;
+ 
+-  private_data->buffer_data = (const void**)ArrowRealloc(
+-      private_data->buffer_data, array->n_buffers * sizeof(void*));
++  private_data->n_variadic_buffers = nvariadic_bufs_needed;
++  array->n_buffers = n_total;
+ 
+   for (int32_t i = n_current_bufs; i < nvariadic_bufs_needed; i++) {
+     ArrowBufferInit(&private_data->variadic_buffers[i]);
+--- a/nanoarrow_ipc.c
++++ b/nanoarrow_ipc.c
+@@ -25,7 +25,11 @@
+  * no name is written with an empty one
+  * (tools/patches/0019-encode-null-name.patch), and metadata keys and values
+  * are written by their length, NUL bytes included
+- * (tools/patches/0020-encode-metadata-length.patch).
++ * (tools/patches/0020-encode-metadata-length.patch), and a dictionary's
++ * initial value or batch that could not be shared is not released twice,
++ * and a record batch whose arrays could not be built returns the failure
++ * rather than a released array
++ * (tools/patches/0021-array-alloc-failure.patch).
+  */
+ #include "nanoarrow_ipc_flatcc_generated.h"
+ // Licensed to the Apache Software Foundation (ASF) under one
+@@ -825,9 +829,9 @@
+ 
+     // Convert to a shared array so that clones can reference the same data
+     // without copying
++    // ArrowArrayMoveShared() releases its input when it fails.
+     result = ArrowArrayMoveShared(&initial_value, &dictionary->current_value);
+     if (result != NANOARROW_OK) {
+-      ArrowArrayRelease(&initial_value);
+       *num_initialized_decoders_out = i + 1;
+       return result;
+     }
+@@ -3141,9 +3145,11 @@
+   temp.release = NULL;
+   int result =
+       ArrowIpcDecoderDecodeArrayInternal(decoder, i, &temp, validation_level, error);
+-  if (result != NANOARROW_OK && temp.release != NULL) {
+-    ArrowArrayRelease(&temp);
+-  } else if (result != NANOARROW_OK) {
++  if (result != NANOARROW_OK) {
++    // A failure is returned, not moved to `out` as an empty success.
++    if (temp.release != NULL) {
++      ArrowArrayRelease(&temp);
++    }
+     return result;
+   }
+ 
+@@ -3175,9 +3181,11 @@
+   temp.release = NULL;
+   int result =
+       ArrowIpcDecoderDecodeArrayInternal(decoder, i, &temp, validation_level, error);
+-  if (result != NANOARROW_OK && temp.release != NULL) {
+-    ArrowArrayRelease(&temp);
+-  } else if (result != NANOARROW_OK) {
++  if (result != NANOARROW_OK) {
++    // A failure is returned, not moved to `out` as an empty success.
++    if (temp.release != NULL) {
++      ArrowArrayRelease(&temp);
++    }
+     return result;
+   }
+ 
+@@ -3297,8 +3305,11 @@
+     result = ArrowIpcDictionaryReplace(dictionary, &tmp, error);
+   }
+ 
++  // A failed ArrowArrayMoveShared() in the replace has released `tmp`.
+   if (result != NANOARROW_OK) {
+-    ArrowArrayRelease(&tmp);
++    if (tmp.release != NULL) {
++      ArrowArrayRelease(&tmp);
++    }
+     return result;
+   }
+ 

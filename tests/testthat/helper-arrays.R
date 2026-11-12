@@ -160,9 +160,27 @@ ext_schema <- function(format, name, metadata = raw()) {
 }
 
 # A stream from a producer other than zuarrow's reader, whose get_next()
-# always fails. With `schema_fails = TRUE` its get_schema() fails too.
-test_failing_stream <- function(schema, schema_fails = FALSE) {
-  .Call(zuarrow:::zar_c_test_failing_stream, schema, schema_fails)
+# always fails. With `schema_fails = TRUE` its get_schema() fails too. Its
+# failures return EIO, or ENOMEM with `out_of_memory = TRUE`.
+test_failing_stream <- function(
+  schema,
+  schema_fails = FALSE,
+  out_of_memory = FALSE
+) {
+  .Call(
+    zuarrow:::zar_c_test_failing_stream,
+    schema,
+    schema_fails,
+    out_of_memory
+  )
+}
+
+# The condition `expr` raises, checked to be a bare zuarrow_error: the
+# class design section 8 gives an allocation failure, and no other.
+expect_bare_zuarrow_error <- function(expr) {
+  e <- expect_error(expr, class = "zuarrow_error")
+  expect_identical(class(e), c("zuarrow_error", "error", "condition"))
+  invisible(e)
 }
 
 # Validity bytes for `valid`, a logical vector.

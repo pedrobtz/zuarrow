@@ -12,10 +12,13 @@
 #'
 #' * `logical` to `bool`, `integer` to `int32`, `double` to `double`.
 #' * `character` to `utf8`, or `large_utf8` past 2^31 - 1 bytes.
-#' * `factor` to `dictionary<int32, utf8>`.
+#' * `factor` to `dictionary<int32, utf8>`. A factor with an `NA` level is
+#'   a `zuarrow_type_error`, because a dictionary value cannot be null.
 #' * `Date` to `date32`, `POSIXct` to `timestamp[us]` in its time zone or
 #'   UTC, `difftime` to `duration[us]`.
-#' * A list of raw vectors to `binary`.
+#' * A list of raw vectors to `binary`, or to `fixed_size_binary` when it
+#'   has the `arrow_width` attribute that [arrow_to_r()] gives one. An
+#'   element of another length is then a `zuarrow_type_error`.
 #' * A list with the `arrow_keys_sorted` attribute that [arrow_to_r()]
 #'   gives a map to `map`.
 #' * Any other list to `list<T>`, with `T` from its elements.
@@ -23,9 +26,17 @@
 #'
 #' A class registered with [arrow_register()] goes through its `from`
 #' handler. A matrix is written as a `fixed_size_list` with
-#' `schema = arrow_matrix()`. The attributes `arrow_extension`,
-#' `arrow_extension_metadata` and `arrow_field_metadata` become field
-#' metadata. Any other class is a `zuarrow_type_error`.
+#' `schema = arrow_matrix()`, and only as a list type. A matrix with a
+#' class, such as a `Date` matrix, is a `zuarrow_type_error`. The attributes
+#' `arrow_extension`, `arrow_extension_metadata` and `arrow_field_metadata`
+#' become field metadata. Any other class is a `zuarrow_type_error`, and so
+#' is a `tzone`, `units` or `arrow_extension_metadata` attribute that R would
+#' not read as one value: one string, one of R's difftime units, one string
+#' or a raw vector.
+#'
+#' Strings are written as UTF-8. A string in the native encoding that has
+#' no exact UTF-8 form, as any non-ASCII one in a C locale, is a
+#' `zuarrow_type_error`, and so is invalid UTF-8.
 #'
 #' With a `schema`, the values are written as that type and checked: an
 #' integer that does not fit `int8`, or a double that is not a whole
@@ -35,13 +46,18 @@
 #' A character vector with an `arrow_type` attribute, as `arrow_to_r()`
 #' returns under `lossy = "character"`, is written back as that type: each
 #' value is parsed, and text that is not the type's form, or holds more
-#' precision than the type, is an error. So the exact text round-trips.
+#' precision than the type, is an error. Only the canonical text that
+#' `arrow_to_r()` writes is read: other forms of the same value, such as
+#' `"+1"`, `"01"`, `"-0"` or `"1"` for a decimal of scale 2, are a
+#' `zuarrow_lossy_error`, and so is a time of day at or past `24:00:00`. So
+#' the exact text round-trips, at the ends of the int64 range too.
 #'
 #' Every `NA` becomes a null with a zeroed slot. `NaN` stays a value.
 #'
 #' @param x An R vector or a data frame.
 #' @param schema `NULL`, a format string or a schema handle.
-#' @param batch The largest number of rows in one batch.
+#' @param batch The largest number of rows in one batch, a positive whole
+#'   number. `Inf` is a `zuarrow_type_error`.
 #' @returns `arrow_array()` returns an array handle; `arrow_stream()` a
 #'   stream handle.
 #' @seealso [arrow_to_r()] for the way back, [arrow_types()] for the table.
@@ -81,7 +97,7 @@ zar_stream_from_r <- function(x, batch, schema, call) {
   if (
     !is.numeric(batch) ||
       length(batch) != 1L ||
-      is.na(batch) ||
+      !is.finite(batch) ||
       batch < 1 ||
       batch != floor(batch)
   ) {
@@ -136,6 +152,12 @@ zar_schema_for <- function(x, schema, call) {
 # so the switch to large_utf8 can be tested without 2 GB of strings.
 zar_utf8_limit <- function() {
   getOption("zuarrow.utf8_limit", 2^31 - 1)
+}
+
+# The most child values list's 32-bit offsets address, lowered the same way
+# so the switch to large_list can be tested without 2^31 values.
+zar_list_limit <- function() {
+  getOption("zuarrow.list_limit", 2^31 - 1)
 }
 
 # Each registered column, at the top or inside a data frame, built once by
@@ -195,20 +217,22 @@ zar_prepare <- function(x, schema, call = NULL) {
   zar_prepare_spec(x, spec, call)
 }
 
-zar_prepare_spec <- function(x, spec, call = NULL) {
+zar_prepare_spec <- function(x, spec, call = NULL, name = "") {
   if (inherits(x, "zar_prebuilt")) {
     return(structure(list(x = x$x, array = x$array), class = "zar_registered"))
   }
   if (!is.null(zar_handler_for_class(x))) {
     return(structure(list(x = x), class = "zar_registered"))
   }
+  zar_check_exact(x, spec, name, call)
   if (
     is.data.frame(x) &&
       identical(spec$format, "+s") &&
       length(spec$children) == length(x)
   ) {
     out <- lapply(seq_along(x), function(k) {
-      zar_prepare_spec(x[[k]], spec$children[[k]], call)
+      path <- paste0(name, if (nzchar(name)) "$", names(x)[[k]])
+      zar_prepare_spec(x[[k]], spec$children[[k]], call, path)
     })
     attributes(out) <- attributes(x)
     return(out)
@@ -220,7 +244,12 @@ zar_prepare_spec <- function(x, spec, call = NULL) {
       list(
         offsets = as.double(seq(0, nrow(x)) * width),
         null = rep(FALSE, nrow(x)),
-        values = zar_prepare_spec(as.vector(t(x)), spec$children[[1L]], call)
+        values = zar_prepare_spec(
+          as.vector(t(x)),
+          spec$children[[1L]],
+          call,
+          name
+        )
       ),
       class = "zar_list_prep"
     ))
@@ -240,12 +269,82 @@ zar_prepare_spec <- function(x, spec, call = NULL) {
       list(
         offsets = c(0, cumsum(zar_element_lengths(x))),
         null = nulls,
-        values = zar_prepare_spec(values, child, call)
+        values = zar_prepare_spec(values, child, call, name)
       ),
       class = "zar_list_prep"
     ))
   }
   x
+}
+
+# The R values whose attributes the builder reads, checked before it runs,
+# so none is written as something else (section 6.3): a matrix only as a
+# list type, of an unclassed item; a factor without an NA level, which a
+# dictionary cannot hold (section 6.5); a POSIXct's time zone; a difftime's
+# units.
+zar_check_exact <- function(x, spec, name, call = NULL) {
+  label <- if (nzchar(name)) sprintf("Column `%s`", name) else "`x`"
+  fail <- function(message) {
+    zar_abort(
+      "type",
+      sprintf("%s %s", label, message),
+      call = call,
+      column = name
+    )
+  }
+  if (is.matrix(x)) {
+    if (!zar_is_list_format(spec$format)) {
+      fail(sprintf(
+        "is a matrix, which can't be written as Arrow format `%s`.",
+        spec$format
+      ))
+    }
+    if (!is.null(oldClass(x))) {
+      fail(sprintf(
+        "is a matrix of class <%s>, which its items can't carry.",
+        paste(oldClass(x), collapse = "/")
+      ))
+    }
+  }
+  if (is.factor(x) && anyNA(levels(x))) {
+    fail("is a factor with an `NA` level, which a dictionary can't hold.")
+  }
+  if (inherits(x, "POSIXct")) {
+    zar_tzone(x, name, call)
+  }
+  if (inherits(x, "difftime")) {
+    units <- attr(x, "units", exact = TRUE)
+    if (
+      !is.character(units) ||
+        length(units) != 1L ||
+        !units %in% c("secs", "mins", "hours", "days", "weeks")
+    ) {
+      fail(paste(
+        "is a difftime whose `units` attribute is not one of",
+        "\"secs\", \"mins\", \"hours\", \"days\" or \"weeks\"."
+      ))
+    }
+  }
+  invisible()
+}
+
+# A POSIXct's time zone, "" for none. R reads only the first element of
+# `tzone`, so that must be a string.
+zar_tzone <- function(x, name = "", call = NULL) {
+  tz <- attr(x, "tzone", exact = TRUE)
+  if (is.null(tz)) {
+    return("")
+  }
+  if (!is.character(tz) || length(tz) == 0L || is.na(tz[[1L]])) {
+    label <- if (nzchar(name)) sprintf("Column `%s`", name) else "`x`"
+    zar_abort(
+      "type",
+      sprintf("%s has a `tzone` attribute that is not a string.", label),
+      call = call,
+      column = name
+    )
+  }
+  tz[[1L]]
 }
 
 # A fixed_size_list keeps `width` child slots under a null row: the null
@@ -341,6 +440,22 @@ zar_with_field_metadata <- function(spec, x, call = NULL) {
     metadata <- zar_metadata_raw(field, call = call)
   }
   extension <- attr(x, "arrow_extension", exact = TRUE)
+  ext_metadata <- attr(x, "arrow_extension_metadata", exact = TRUE)
+  if (!is.null(ext_metadata)) {
+    one_string <- is.character(ext_metadata) &&
+      length(ext_metadata) == 1L &&
+      !is.na(ext_metadata)
+    if (is.null(extension) || !(is.raw(ext_metadata) || one_string)) {
+      zar_abort(
+        "type",
+        paste(
+          "The `arrow_extension_metadata` attribute must be one string or",
+          "a raw vector, beside an `arrow_extension` attribute."
+        ),
+        call = call
+      )
+    }
+  }
   if (!is.null(extension)) {
     if (
       !is.character(extension) || length(extension) != 1L || is.na(extension)
@@ -351,14 +466,13 @@ zar_with_field_metadata <- function(spec, x, call = NULL) {
         call = call
       )
     }
-    metadata[["ARROW:extension:name"]] <- charToRaw(enc2utf8(extension))
-    ext_metadata <- attr(x, "arrow_extension_metadata", exact = TRUE)
+    metadata[["ARROW:extension:name"]] <- zar_utf8_raw(extension, call)
     metadata[["ARROW:extension:metadata"]] <- if (is.raw(ext_metadata)) {
       ext_metadata
     } else if (is.null(ext_metadata)) {
       raw()
     } else {
-      charToRaw(enc2utf8(ext_metadata))
+      zar_utf8_raw(ext_metadata, call)
     }
   }
   if (length(metadata) > 0L) {
@@ -406,8 +520,8 @@ zar_infer_type <- function(x, name, call = NULL) {
     return(zar_spec("tdD", name))
   }
   if (inherits(x, "POSIXct")) {
-    tz <- attr(x, "tzone")
-    tz <- if (is.null(tz) || !nzchar(tz[[1L]])) "UTC" else tz[[1L]]
+    tz <- zar_tzone(x, name, call)
+    tz <- if (nzchar(tz)) tz else "UTC"
     return(zar_spec(paste0("tsu:", tz), name))
   }
   if (inherits(x, "difftime")) {
@@ -480,6 +594,26 @@ zar_infer_list <- function(x, name, call = NULL) {
     return(zar_infer_map(x, name, sorted, call))
   }
   present <- x[!zar_null_elements(x)]
+  width <- attr(x, "arrow_width", exact = TRUE)
+  if (!is.null(width)) {
+    # arrow_to_r() keeps a fixed_size_binary's width here (section 6.2);
+    # the builder refuses an element of another length.
+    if (
+      !is.numeric(width) ||
+        length(width) != 1L ||
+        is.na(width) ||
+        width < 1 ||
+        width != floor(width) ||
+        width > .Machine$integer.max
+    ) {
+      zar_abort(
+        "type",
+        "The `arrow_width` attribute must be one positive whole number.",
+        call = call
+      )
+    }
+    return(zar_spec(sprintf("w:%d", as.integer(width)), name))
+  }
   if (length(present) > 0L && all(vapply(present, is.raw, NA))) {
     return(zar_spec("z", name))
   }
@@ -490,7 +624,11 @@ zar_infer_list <- function(x, name, call = NULL) {
     zar_infer_spec(values, "item", call)
   }
   total <- sum(zar_element_lengths(present))
-  zar_spec(if (total > 2^31 - 1) "+L" else "+l", name, children = list(child))
+  zar_spec(
+    if (total > zar_list_limit()) "+L" else "+l",
+    name,
+    children = list(child)
+  )
 }
 
 # A list with the arrow_keys_sorted attribute arrow_to_r() gives a map is a
@@ -593,7 +731,19 @@ zar_flatten <- function(x, call = NULL) {
     for (e in present[-1L]) {
       zar_check_same_frame(first, e, "", call)
     }
-    return(do.call(rbind, present))
+    # Row names are not written, so they must not stop rbind() (#217).
+    return(do.call(rbind, lapply(present, zar_drop_row_names)))
+  }
+  # c() of POSIXct elements in different zones keeps none of them.
+  if (inherits(first, "POSIXct")) {
+    zones <- lapply(present, zar_tzone, call = call)
+    if (length(unique(zones)) != 1L) {
+      zar_abort(
+        "type",
+        "The POSIXct elements of a list column must share one time zone.",
+        call = call
+      )
+    }
   }
   # c() of ordered factors whose levels differ is a plain factor with
   # their union, which would invent an order: they must share levels.
@@ -619,6 +769,15 @@ zar_flatten <- function(x, call = NULL) {
     return(unlist(present, use.names = FALSE))
   }
   do.call(c, present)
+}
+
+# A data frame, and each data frame column in it, with automatic row names.
+zar_drop_row_names <- function(x) {
+  for (k in which(vapply(x, is.data.frame, NA))) {
+    x[[k]] <- zar_drop_row_names(x[[k]])
+  }
+  attr(x, "row.names") <- .set_row_names(.row_names_info(x, 2L))
+  x
 }
 
 # The data frame elements of a list column become one struct type, so they
