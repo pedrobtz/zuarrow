@@ -80,7 +80,14 @@ arrow_array <- function(x, schema = NULL) {
   prepared <- zar_prepare(x, schema, call)
   n <- zar_nrow(x, call)
   zar_check(
-    .Call(zar_c_from_r, zar_batch(prepared, 0, n, call), schema, 0, n),
+    .Call(
+      zar_c_from_r,
+      zar_batch(prepared, 0, n, call),
+      schema,
+      0,
+      n,
+      zar_offset_limits()
+    ),
     call = call
   )
 }
@@ -110,6 +117,7 @@ zar_stream_from_r <- function(x, batch, schema, call) {
   # Zero rows are one zero-row batch, as in arrow_array(): a dictionary
   # travels only with a batch, so a factor keeps its levels (#212).
   starts <- if (n == 0) 0 else seq(0, n - 1, by = batch)
+  limits <- zar_offset_limits()
   arrays <- lapply(starts, function(start) {
     len <- min(batch, n - start)
     zar_check(
@@ -118,7 +126,8 @@ zar_stream_from_r <- function(x, batch, schema, call) {
         zar_batch(prepared, start, len, call),
         schema,
         start,
-        len
+        len,
+        limits
       ),
       call = call
     )
@@ -158,6 +167,18 @@ zar_utf8_limit <- function() {
 # so the switch to large_list can be tested without 2^31 values.
 zar_list_limit <- function() {
   getOption("zuarrow.list_limit", 2^31 - 1)
+}
+
+# The most bytes binary's 32-bit offsets address. Binary is never inferred
+# as large_binary (section 6.2), so this lowers only the builder's refusal.
+zar_binary_limit <- function() {
+  getOption("zuarrow.binary_limit", 2^31 - 1)
+}
+
+# The limits the builder holds a utf8, binary and list batch to under a
+# 32-bit schema: the inference thresholds, so the two agree (#191).
+zar_offset_limits <- function() {
+  as.double(c(zar_utf8_limit(), zar_binary_limit(), zar_list_limit()))
 }
 
 # Each registered column, at the top or inside a data frame, built once by

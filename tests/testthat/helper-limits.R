@@ -36,7 +36,7 @@ limit_read <- function(source, lazy, limits) {
 # The source kinds a straddle runs on: every kind, or on CRAN, where time
 # is short, one of each reader entry (bytes, a path, a list).
 limit_kinds <- function(kinds) {
-  if (!identical(Sys.getenv("NOT_CRAN"), "true")) {
+  if (on_cran()) {
     kinds <- intersect(kinds, c("raw", "path", "list_mixed"))
   }
   gctorture_sample(kinds, 2L)

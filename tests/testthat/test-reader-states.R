@@ -166,7 +166,7 @@ test_that("random sequences of calls follow the reader's state model", {
   good <- three_batches(broken = FALSE)
   broken <- three_batches()
   all_rows <- data.frame(i = 1:3, s = c("aaa", "xQx", "ccc"))
-  runs <- gctorture_sample(seq_len(12L), 4L)
+  runs <- gctorture_sample(seq_len(12L), 4L, cran = 6L)
   for (run in runs) {
     bad <- sample(c(0L, 2L), 1L)
     stream <- arrow_read(if (bad == 0L) good else broken, lazy = TRUE)

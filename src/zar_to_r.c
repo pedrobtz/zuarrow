@@ -147,6 +147,11 @@ struct zar_err {
   SEXP arrays; /* the batches' array handles */
   SEXP keep;   /* the scratch handle, whose protected field holds the
                   deferred strings' shares of `arrays` once made */
+  /* R's limits, the bytes of one string and the levels of one factor:
+     INT_MAX unless a test lowers them (zar_string_limit() and
+     zar_factor_limit() in R). */
+  int64_t string_max;
+  int64_t levels_max;
 };
 
 /* The kind zar_fail() records for a NULL kind, an allocation failure:
@@ -734,10 +739,10 @@ static int zar_string_range(const struct zar_slice *s, int64_t *lo, int64_t *hi)
    within R's string length, decided on their byte range at once. 0 means
    only that each element must be checked by itself: a null slot's bytes,
    which the format leaves undefined, can make the range fail. */
-static int zar_strings_clean(const struct zar_slice *s) {
+static int zar_strings_clean(const struct zar_slice *s, int64_t max) {
   int64_t lo, hi;
   if (!zar_string_range(s, &lo, &hi)) return 0;
-  if (hi - lo > INT_MAX || hi == lo) return hi - lo <= INT_MAX;
+  if (hi - lo > max || hi == lo) return hi - lo <= max;
   const uint8_t *data = s->view->buffer_views[2].data.as_uint8 + lo;
   return memchr(data, 0, (size_t)(hi - lo)) == NULL &&
          zar_utf8_invalid_at(data, hi - lo) < 0;
@@ -1245,7 +1250,7 @@ static int zar_string_bytes(const struct zar_plan *p, const struct zar_slice *s,
     ArrowErrorSet(&e->error, "element %ld is not valid UTF-8", (long)i + 1);
     return zar_fail(e, "format", -1, p->schema->format);
   }
-  if (len > INT_MAX) {
+  if (len > e->string_max) {
     ArrowErrorSet(&e->error, "element %ld is longer than R's string limit",
                   (long)i + 1);
     return zar_fail(e, "limit", -1, p->schema->format);
@@ -1429,7 +1434,7 @@ static int zar_fill(const struct zar_plan *p, const struct zar_slice *s,
       return NANOARROW_OK;
     }
     case ZAR_T_CHR: {
-      int clean = zar_strings_clean(s);
+      int clean = zar_strings_clean(s, e->string_max);
       struct zar_direct d;
       /* Clean and direct: every value is checked, so read the offsets. */
       if (clean && zar_direct_init(s, &d)) {
@@ -1810,7 +1815,7 @@ static SEXP zar_build_factor(struct zar_plan *p, struct zar_slice *slices,
       int64_t len = v.size_bytes;
       const char *nul = len > 0 ? memchr(v.data.data, 0, (size_t)len) : NULL;
       if (nul != NULL) len = nul - v.data.as_char;
-      if (len > INT_MAX) {
+      if (len > e->string_max) {
         ArrowErrorSet(&e->error, "dictionary value %ld is longer than R's string limit",
                       (long)k + 1);
         UNPROTECT(1);
@@ -1834,7 +1839,7 @@ static SEXP zar_build_factor(struct zar_plan *p, struct zar_slice *slices,
       INTEGER(codes)[at] = (int)remap[idx] + 1;
     }
   }
-  if (levels.n > INT_MAX) {
+  if (levels.n > e->levels_max) {
     ArrowErrorSet(&e->error, "the dictionary has more levels than a factor holds");
     UNPROTECT(1);
     zar_fail(e, "limit", -1, p->schema->format);
@@ -1894,7 +1899,7 @@ static SEXP zar_build_deferred(const struct zar_plan *p, const struct zar_slice 
   for (int64_t b = 0; b < n_slices; b++) {
     const struct zar_slice *s = &slices[b];
     const struct ArrowArrayView *v = s->view;
-    int64_t check = zar_strings_clean(s) ? 0 : s->length;
+    int64_t check = zar_strings_clean(s, e->string_max) ? 0 : s->length;
     for (int64_t i = 0; i < check; i++) {
       if (zar_is_null(s, i)) continue;
       struct ArrowBufferView bytes;
@@ -2034,6 +2039,14 @@ static SEXP zar_build(struct zar_plan *p, struct zar_slice *slices,
 
    Returns list(columns, names, warned, rows), or a failure with the
    column, row, format and name. */
+/* Element k of opts, one of R's limits, never above INT_MAX. */
+static int64_t zar_r_limit(SEXP opts, R_xlen_t k) {
+  if (Rf_xlength(opts) <= k) return INT_MAX;
+  double v = Rf_asReal(VECTOR_ELT(opts, k));
+  if (!(v >= 0) || v > INT_MAX) return INT_MAX;
+  return (int64_t)v;
+}
+
 SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   struct zar_err e;
   memset(&e, 0, sizeof(e));
@@ -2046,6 +2059,8 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   int frame = Rf_asLogical(VECTOR_ELT(opts, 3));
   int max_depth = Rf_asInteger(VECTOR_ELT(opts, 4));
   e.copy = Rf_xlength(opts) > 5 ? Rf_asLogical(VECTOR_ELT(opts, 5)) != FALSE : 1;
+  e.string_max = zar_r_limit(opts, 6);
+  e.levels_max = zar_r_limit(opts, 7);
   e.arrays = arrays;
 
   R_xlen_t n_batches = Rf_xlength(arrays);

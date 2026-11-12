@@ -15,6 +15,11 @@ struct zar_build {
   struct ArrowError error;
   const char *kind; /* the failure's kind when a build fails */
   double row;       /* 1-based, or NA */
+  /* The most bytes or child values 32-bit offsets may address in one
+     batch: INT32_MAX unless a test lowers it (zar_offset_limits() in R). */
+  int64_t utf8_max;
+  int64_t binary_max;
+  int64_t list_max;
   /* Arrays a registered handler built, swapped into their slots once the
      rest is finished, since nanoarrow's finishing walks every child's
      private data as its own. */
@@ -320,7 +325,7 @@ static int zar_build_strings(struct ArrowArray *array, enum ArrowType t,
       total += (int64_t)len;
     }
   }
-  if (!large && total > INT32_MAX) {
+  if (!large && total > b->utf8_max) {
     ArrowErrorSet(&b->error, "the strings hold %" PRId64 " bytes, more than utf8 offsets can address", total);
     return zar_build_fail(b, "limit", NA_REAL);
   }
@@ -379,7 +384,7 @@ static int zar_build_blobs(struct ArrowArray *array, enum ArrowType t,
     return NANOARROW_OK;
   }
   int large = t == NANOARROW_TYPE_LARGE_BINARY;
-  if (!large && total > INT32_MAX) {
+  if (!large && total > b->binary_max) {
     ArrowErrorSet(&b->error, "the values hold %" PRId64 " bytes, more than binary offsets can address", total);
     return zar_build_fail(b, "limit", NA_REAL);
   }
@@ -629,7 +634,7 @@ static int zar_build_list(struct ArrowArray *array,
     }
   } else {
     int large = t == NANOARROW_TYPE_LARGE_LIST;
-    if (!large && total > INT32_MAX) {
+    if (!large && total > b->list_max) {
       ArrowErrorSet(&b->error, "the lists hold %" PRId64 " values, more than list offsets address", total);
       return zar_build_fail(b, "limit", NA_REAL);
     }
@@ -1017,13 +1022,26 @@ SEXP zar_c_utf8_raw(SEXP x) {
   return out;
 }
 
-/* Builds rows [start, start + n) of `x` as an array of `schema_xptr`. */
-SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n) {
+/* One of the limits of 32-bit offsets R passes, never above INT32_MAX. */
+static int64_t zar_offset_limit(SEXP limits, int k) {
+  if (TYPEOF(limits) != REALSXP || Rf_xlength(limits) <= k) return INT32_MAX;
+  double v = REAL(limits)[k];
+  if (!(v >= 0) || v > INT32_MAX) return INT32_MAX;
+  return (int64_t)v;
+}
+
+/* Builds rows [start, start + n) of `x` as an array of `schema_xptr`.
+   `limits` holds the utf8, binary and list offset limits. */
+SEXP zar_c_from_r(SEXP x, SEXP schema_xptr, SEXP r_start, SEXP r_n,
+                  SEXP limits) {
   struct zar_build b;
   b.error.message[0] = '\0';
   b.kind = NULL;
   b.row = NA_REAL;
   b.n_prebuilt = 0;
+  b.utf8_max = zar_offset_limit(limits, 0);
+  b.binary_max = zar_offset_limit(limits, 1);
+  b.list_max = zar_offset_limit(limits, 2);
   R_xlen_t start = (R_xlen_t)Rf_asReal(r_start);
   int64_t n = (int64_t)Rf_asReal(r_n);
 
