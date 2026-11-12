@@ -178,7 +178,7 @@ test_that("a list column whose values outnumber its offsets is refused", {
     list(offsets = c(0, 1), null = FALSE, values = 1:3),
     class = "zar_list_prep"
   )
-  out <- .Call(zar_c_from_r, prep, schema, 0, 1)
+  out <- .Call(zar_c_from_r, prep, schema, 0, 1, zar_offset_limits())
   expect_error(zar_check(out), class = "zuarrow_type_error")
 })
 

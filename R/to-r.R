@@ -324,7 +324,9 @@ zar_convert <- function(
     zar_bit64_loaded(),
     frame,
     as.integer(max_depth),
-    copy
+    copy,
+    zar_string_limit(),
+    zar_factor_limit()
   )
   out <- .Call(zar_c_to_r, arrays, schema, opts)
   if (inherits(out, "zar_failure")) {
@@ -807,4 +809,15 @@ zar_raise_conversion <- function(failure, call, prefix = "") {
     row = if (is.na(failure$row)) NULL else failure$row,
     target = target
   )
+}
+
+# The most bytes one R string holds. An internal option lowers it so the
+# refusal can be tested without a 2 GB value (#191).
+zar_string_limit <- function() {
+  as.double(getOption("zuarrow.string_limit", 2^31 - 1))
+}
+
+# The most levels one factor holds, lowered the same way.
+zar_factor_limit <- function() {
+  as.double(getOption("zuarrow.factor_limit", 2^31 - 1))
 }
