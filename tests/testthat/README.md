@@ -34,8 +34,8 @@ Under an explicit 32-bit schema, the builder in `zar_from_r.c` refuses a
 batch whose offsets would pass 2^31 - 1 with a `zuarrow_limit_error`:
 "more than utf8 / binary offsets can address" and "more than list
 offsets address". Inference switches character and list columns to
-`large_utf8` and `large_list` at the same thresholds. Binary never
-switches (design section 6.2), and a factor's levels are always `utf8`.
+`large_utf8`, `large_binary` and `large_list` at the same thresholds
+(design section 6.2, D19). A factor's levels are always `utf8`.
 
 Reaching any of these at its real size takes 2 GiB, or 2^31 child values
 for a list, so internal options lower each threshold. They are read in R
@@ -44,7 +44,7 @@ and passed to C as `zar_c_from_r()`'s `limits` argument, never above
 
 - `zuarrow.utf8_limit`: the `utf8` switch and the `"u"` refusal,
   a factor's levels included;
-- `zuarrow.binary_limit`: the `"z"` refusal, inferred or explicit;
+- `zuarrow.binary_limit`: the `binary` switch and the `"z"` refusal;
 - `zuarrow.list_limit`: the `list` switch and the `"+l"` and `"+m"`
   refusals.
 

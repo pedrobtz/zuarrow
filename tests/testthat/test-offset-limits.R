@@ -77,10 +77,10 @@ test_that("past 2^31 - 1 bytes an explicit 32-bit schema is a limit error", {
   r <- as.raw(rep(1, 2^20))
   blobs <- rep(list(r), 2048)
   expect_error(arrow_array(blobs, schema = "z"), class = "zuarrow_limit_error")
-  # A list of raw vectors is always inferred as binary, never large_binary
-  # (design section 6.2), so the same column inferred is refused too.
+  # Inferred, the same column is large_binary (design section 6.2, D19).
+  # Checked on the spec alone, so no 2 GiB array is built.
   expect_identical(format_of_array(list(r)), "binary")
-  expect_error(arrow_array(blobs), class = "zuarrow_limit_error")
+  expect_identical(zar_infer_spec(blobs, "x")$format, "Z")
   skip_on_cran() # the UTF-8 check reads all 2 GiB
   strings <- rep(rawToChar(as.raw(rep(0x61, 2^20))), 2048)
   expect_error(
@@ -129,20 +129,18 @@ test_that("an explicit utf8 schema refuses past the lowered limit only", {
   )
 })
 
-test_that("binary refuses past the lowered limit only, inferred or not", {
+test_that("binary switches or refuses past the lowered limit only (#191)", {
   withr::local_options(zuarrow.binary_limit = 6)
   blobs <- function(a, b) list(as.raw(seq_len(a)), as.raw(seq_len(b)), NULL)
   cases <- list(blobs(3, 2), blobs(3, 3), blobs(4, 3))
   for (k in 1:3) {
     x <- cases[[k]]
-    df <- data.frame(id = 1:3)
+    df <- data.frame(x = 1:3)
     df$x <- x
     build <- list(
       function() arrow_array(x, schema = "z"),
-      # A list of raw vectors is always inferred as binary (section 6.2).
-      function() arrow_array(x),
       function() arrow_stream(x, schema = "z", batch = 3),
-      function() arrow_write(df, NULL)
+      function() arrow_write(arrow_stream(df, schema = struct_of("z")), NULL)
     )
     for (f in build) {
       if (k < 3) {
@@ -151,6 +149,16 @@ test_that("binary refuses past the lowered limit only, inferred or not", {
         expect_error(f(), class = "zuarrow_limit_error")
       }
     }
+    # Inferred, a list of raw vectors switches to large_binary past the
+    # limit, as character switches to large_utf8 (section 6.2, D19).
+    expected <- if (k < 3) "binary" else "large_binary"
+    expect_identical(format_of_array(x), expected)
+    expect_identical(arrow_to_r(arrow_array(x)), x)
+    expect_identical(
+      format(arrow_schema(arrow_stream(df)))[[1]],
+      sprintf("struct<x: %s>", expected)
+    )
+    expect_identical(arrow_read(arrow_write(df, NULL))$x, x)
   }
   x <- cases[[3]]
   expect_identical(arrow_to_r(arrow_stream(x, schema = "z", batch = 1)), x)

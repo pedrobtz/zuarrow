@@ -493,7 +493,8 @@ On export, R types map by class: `integer` to `int32`, `double` to
 the total bytes exceed 2³¹ − 1), `Date` to `date32`, `POSIXct` to
 `timestamp[us]` with the `tzone` attribute as the zone (`UTC` when
 absent; D10), `difftime` to `duration` at its unit, `factor` to
-`dictionary<int32, utf8>`, a list of raw vectors to `binary`, a list of
+`dictionary<int32, utf8>`, a list of raw vectors to `binary`
+(`large_binary` when the total bytes exceed 2³¹ − 1; D19), a list of
 same-typed vectors to `list<T>`, a matrix to `fixed_size_list` when
 `arrow_array()` is told so, a `data.frame` column to `struct`. A
 registered class goes through its `from` handler. Any other class errors
@@ -1274,6 +1275,14 @@ them. None was discussed before writing.
   harness only, so the golden-file oracle uses Arrow's own JSON reader
   and comparison rather than a reimplementation, and `zuarrow.so` stays
   C.
+- **D19 (C).** A list of raw vectors past 2³¹ − 1 bytes is inferred as
+  `large_binary`, as `character` is inferred as `large_utf8` and a list
+  as `large_list` (added 2026-11-12, #191). The 32-bit type is still
+  the default, so files stay readable by consumers without the large
+  types. An explicit `binary` schema is never widened and refuses the
+  column with `zuarrow_limit_error`, because the caller chose the type.
+  pyarrow instead splits such a column into `binary` chunks; zuarrow
+  writes one array per batch, so it widens the type.
 
 ## 14. Later versions, in the order they are expected
 
