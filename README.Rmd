@@ -109,7 +109,11 @@ inherit from `zuarrow_error`, with a class for each kind, such as
 
 ## Related work
 
-zuarrow bundles the [nanoarrow](https://github.com/apache/arrow-nanoarrow)
-C library and is checked against
+zuarrow uses [nanoarrow](https://github.com/apache/arrow-nanoarrow)'s
+C library and handles, and adds what its R binding leaves open:
+exact-or-error conversion, a registry for exact types, the IPC file
+format, writing dictionaries and compressed data, run-end-encoded and
+view types, and validation of untrusted input. It is checked against
 [apache/arrow-testing](https://github.com/apache/arrow-testing)'s IPC
-golden files and crash corpus, and against the arrow package.
+golden files and crash corpus, and against the arrow and nanoarrow
+packages.
