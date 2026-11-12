@@ -1,15 +1,30 @@
 # R values that would not export exactly are refused (design section 6.3).
 
-test_that("a non-ASCII native string is refused in a C locale (#203)", {
+test_that("a native string in a C locale converts exactly or is refused (#203)", {
   local_ctype(c("C", "POSIX"))
   skip_if(l10n_info()[["UTF-8"]], "the C locale is UTF-8 here")
+  # base R's strict converter is the oracle. In a POSIX C locale the native
+  # encoding is ASCII, so these bytes have no UTF-8 form and are refused.
+  # In Windows' C locale it is a code page in which they are characters,
+  # so they convert to exactly what iconv() gives. Never "<c3><a9>" text.
   for (s in c("\xc3\xa9", "\xff\xfe")) {
+    expected <- iconv(s, "", "UTF-8")
     routes <- export_routes(s)
     for (route in names(routes)) {
-      expect_error(
-        routes[[route]](),
-        class = "zuarrow_type_error",
-        info = route
+      if (is.na(expected)) {
+        expect_error(
+          routes[[route]](),
+          class = "zuarrow_type_error",
+          info = route
+        )
+      } else {
+        expect_no_error(routes[[route]](), message = route)
+      }
+    }
+    if (!is.na(expected)) {
+      expect_identical(
+        charToRaw(arrow_to_r(arrow_array(s))),
+        charToRaw(expected)
       )
     }
   }
