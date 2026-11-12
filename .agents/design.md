@@ -1217,8 +1217,11 @@ them. None was discussed before writing.
   copying stays the default, and `copy = FALSE` on `arrow_to_r()`,
   `arrow_next()`, `arrow_read()` and the `as.data.frame()` methods defers
   string and large_string columns. Each becomes an ALTREP character
-  vector that keeps the batch's array handles and creates an element's
-  R string on first use, caching it. Every value is still checked during
+  vector that keeps its own reference-counted share of the batch's
+  arrays (nanoarrow's shared array; the caller's handle is turned into a
+  share of the same buffers) and creates an element's R string on first
+  use, caching it. The string bytes are not copied, and releasing or
+  reusing the caller's handle does not reach the vector (#181). Every value is still checked during
   the conversion, so exact-or-error holds unchanged. Strings read through
   a dictionary, a run-end encoding or a struct with nulls are copied.
   Amended 2026-11-03 under X3 of the joint review of `zubin`, `zuint` and `zuarrow` (2026-10-22, decisions X1 to X6): the zero-copy path of §14

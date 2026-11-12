@@ -54,9 +54,11 @@ struct ArrowSchema *zar_schema_from_xptr(SEXP x, struct ArrowError *error);
 struct ArrowArray *zar_array_from_xptr(SEXP x, struct ArrowError *error);
 struct ArrowArrayStream *zar_stream_from_xptr(SEXP x, struct ArrowError *error);
 
-/* Whether an array handle can be read: it is live, and so is every
-   parent a field was lent by (zar_c_array_child()). Never raises. */
-int zar_array_handle_live(SEXP x);
+/* A private, reference-counted share of a live array handle's array, or
+   of the root a field was lent by, held in a new owning handle. The first
+   share rewrites the root handle in place into a share of the same
+   buffers. NULL with `error` set on an allocation failure. */
+SEXP zar_array_share(SEXP x, struct ArrowError *error);
 
 /* The schema handle an array handle carries in its tag, or NULL with
    `error` filled when the tag holds none. */
@@ -130,8 +132,8 @@ int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limit
 /* One batch's part of a deferred string column: `length` elements whose
    offsets start at `offsets` (int32_t, or int64_t when `large`), whose
    bytes are in `data`, and whose validity is bit `validity_offset + i` of
-   `validity`, or none when `validity` is NULL. `batch` indexes the array
-   handles that own the buffers. */
+   `validity`, or none when `validity` is NULL. `batch` indexes the shares
+   that own the buffers. */
 struct zar_deferred_chunk {
   int64_t begin;
   int64_t length;
@@ -148,7 +150,8 @@ void zar_altrep_init(DllInfo *dll);
 
 /* A character vector over `chunks`, which are copied; its length is where
    the last chunk ends. `arrays` is the list of array handles the chunks
-   point into, kept until every element has been created. The bytes must
+   point into: the vector's own shares of the batches (zar_array_share()),
+   kept until every element has been created. The bytes must
    already be checked: valid UTF-8 and within R's string length. */
 SEXP zar_deferred_strings(SEXP arrays, const struct zar_deferred_chunk *chunks,
                           int64_t n_chunks);

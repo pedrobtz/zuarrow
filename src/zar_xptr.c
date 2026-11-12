@@ -269,7 +269,45 @@ struct ArrowArray *zar_array_from_xptr(SEXP x, struct ArrowError *error) {
   return array;
 }
 
-int zar_array_handle_live(SEXP x) { return zar_array_xptr_live(x); }
+/* A private share of the array behind handle `x`, or of the root it was
+   lent by, which a deferred string vector keeps (#181). The first share
+   moves the root into nanoarrow's reference-counted shared array and puts
+   a share back in the caller's handle, which reads as before: the buffers
+   stay where they were. The returned share holds a reference to every
+   buffer of the tree, so the caller releasing, moving or reusing the
+   handle no longer reaches the vector. The original release runs when the
+   last share goes, on whichever thread drops it, as it would have when the
+   caller released it. A share's own release calls nothing in R. NULL with
+   `error` set on an allocation failure, which leaves the caller's handle
+   released, as ArrowArrayMoveShared() does. */
+SEXP zar_array_share(SEXP x, struct ArrowError *error) {
+  SEXP root = x;
+  for (;;) {
+    struct ArrowArray *a = (struct ArrowArray *)R_ExternalPtrAddr(root);
+    if (a->release != &zar_release_lent) break;
+    root = R_ExternalPtrProtected(root);
+  }
+  struct ArrowArray *array = (struct ArrowArray *)R_ExternalPtrAddr(root);
+  SEXP out = PROTECT(zar_array_owning_xptr(R_ExternalPtrTag(root)));
+  struct ArrowArray *dst = (struct ArrowArray *)R_ExternalPtrAddr(out);
+  int code = ArrowArrayCloneShared(array, dst);
+  if (code == EINVAL) {
+    struct ArrowArray tmp;
+    tmp.release = NULL;
+    code = ArrowArrayMoveShared(array, &tmp);
+    if (code == NANOARROW_OK) {
+      ArrowArrayMove(&tmp, array);
+      code = ArrowArrayCloneShared(array, dst);
+    }
+  }
+  UNPROTECT(1);
+  if (code != NANOARROW_OK) {
+    ArrowErrorSet(error,
+                  "cannot allocate a share of the array behind a deferred string column");
+    return NULL;
+  }
+  return out;
+}
 
 struct ArrowArrayStream *zar_stream_from_xptr(SEXP x, struct ArrowError *error) {
   struct ArrowArrayStream *stream = (struct ArrowArrayStream *)zar_xptr_addr(

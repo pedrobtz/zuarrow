@@ -144,7 +144,9 @@ struct zar_err {
   int copy;    /* FALSE: string columns may be deferred (zar_altrep.c) */
   int in_list; /* building a list element, which is never deferred */
   int no_text; /* a lossy failure that lossy = "character" cannot fix */
-  SEXP arrays; /* the batches' array handles, which deferred strings keep */
+  SEXP arrays; /* the batches' array handles */
+  SEXP keep;   /* the scratch handle, whose protected field holds the
+                  deferred strings' shares of `arrays` once made */
 };
 
 /* The kind zar_fail() records for a NULL kind, an allocation failure:
@@ -1914,7 +1916,26 @@ static SEXP zar_build_deferred(const struct zar_plan *p, const struct zar_slice 
     chunks[b].large = large;
     begin += s->length;
   }
-  return zar_deferred_strings(e->arrays, chunks, n_slices);
+  /* The vector keeps its own shares of the batches, made once per call,
+     so the caller's handles no longer matter to it (#181). The chunks'
+     pointers stay valid: sharing does not move a buffer. */
+  SEXP shares = R_ExternalPtrProtected(e->keep);
+  if (shares == R_NilValue) {
+    R_xlen_t n = Rf_xlength(e->arrays);
+    shares = PROTECT(Rf_allocVector(VECSXP, n));
+    for (R_xlen_t b = 0; b < n; b++) {
+      SEXP share = zar_array_share(VECTOR_ELT(e->arrays, b), &e->error);
+      if (share == NULL) {
+        UNPROTECT(1);
+        zar_fail(e, NULL, -1, p->schema->format);
+        return R_NilValue;
+      }
+      SET_VECTOR_ELT(shares, b, share);
+    }
+    R_SetExternalPtrProtected(e->keep, shares);
+    UNPROTECT(1);
+  }
+  return zar_deferred_strings(shares, chunks, n_slices);
 }
 
 static SEXP zar_build(struct zar_plan *p, struct zar_slice *slices,
@@ -2057,6 +2078,7 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema_xptr, SEXP opts) {
   }
   ArrowBufferInit(&sc->text);
   R_SetExternalPtrAddr(scratch_xptr, sc);
+  e.keep = scratch_xptr;
   sc->views = (struct ArrowArrayView *)calloc(
       n_batches > 0 ? (size_t)n_batches : 1, sizeof(struct ArrowArrayView));
   if (sc->views == NULL) {

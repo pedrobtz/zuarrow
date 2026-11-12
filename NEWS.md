@@ -45,6 +45,10 @@
   a string column. Values are checked during the conversion either way,
   so the errors are the same. The default, `copy = TRUE`, creates every
   value at once.
+* A deferred string column holds its own reference to the Arrow buffers,
+  so it keeps its strings when the array handle it came from is released,
+  or released and reused. It used to raise `zuarrow_handle_error`, or, for
+  a reused handle, read freed memory (#181).
 * `arrow_array()` and `arrow_stream()` build arrays and streams from R
   vectors and data frames, checking every value against a given schema.
   The exact text that `lossy = "character"` returns is written back as the
