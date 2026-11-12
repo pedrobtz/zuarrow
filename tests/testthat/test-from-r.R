@@ -67,7 +67,7 @@ test_that("a given schema handle is left as it was", {
   s <- arrow_schema("u")
   before <- attributes(s)
   arrow_array(1L, schema = arrow_schema("i"))
-  arrow_array(c("abc", "def"), schema = s)
+  arrow_array(c("ab", "cd"), schema = s)
   arrow_stream(data.frame(x = 1L), schema = arrow_schema(data.frame(x = 1L)))
   expect_identical(attributes(s), before)
   # A schema made without one still switches to large_utf8.
@@ -229,10 +229,14 @@ test_that("strings past utf8's offsets are written as large_utf8", {
   big <- arrow_array(c("abc", "def"))
   expect_identical(format(arrow_schema(big)), "large_string")
   expect_identical(arrow_to_r(big), c("abc", "def"))
-  # A given schema is kept, and its offsets checked.
+  # A given schema is kept, and its offsets checked against the same limit.
   expect_identical(
-    format(arrow_schema(arrow_array(c("abc", "def"), schema = "u"))),
+    format(arrow_schema(arrow_array(c("abc", "de"), schema = "u"))),
     "string"
+  )
+  expect_error(
+    arrow_array(c("abc", "def"), schema = "u"),
+    class = "zuarrow_limit_error"
   )
 })
 

@@ -6,17 +6,19 @@
    conversion to the first use and is paid once per element. When every
    element has been made, the vector lets go of the Arrow batches.
 
-   data1 is list(arrays, chunks): the array handles that own the buffers,
-   which keeps them alive, and a raw vector of struct zar_deferred_chunk.
-   arrays becomes NULL once every element is made.
+   data1 is list(arrays, chunks): the vector's own shares of the batches
+   (zar_array_share()), which keep the buffers alive, and a raw vector of
+   struct zar_deferred_chunk. arrays becomes NULL once every element is
+   made, and the shares are released when R collects them. No R code can
+   reach a share, so the caller releasing, moving or reusing the handles it
+   passed, or the parent a struct's field was lent by, changes nothing
+   here (#181): the strings are still read without a copy.
    data2 is R_NilValue until the first access, then list(cache, made,
    count): the STRSXP of the elements made so far, a raw vector with one
    byte per element that says which, and how many as a double.
 
    The bytes were checked when the column was converted, so an element can
-   no longer fail, except when someone has since released one of the array
-   handles, or the parent a struct's field was lent by: that is a
-   zuarrow_handle_error, not a read of freed memory.
+   no longer fail.
 
    Serialization has no method, so R writes the plain character vector:
    reading it back does not need zuarrow. */
@@ -27,8 +29,6 @@
 #include <R_ext/Altrep.h>
 
 static R_altrep_class_t zar_deferred_class;
-
-static SEXP zar_arrays(SEXP x) { return VECTOR_ELT(R_altrep_data1(x), 0); }
 
 static const struct zar_deferred_chunk *zar_chunks(SEXP x, int64_t *n) {
   SEXP raw = VECTOR_ELT(R_altrep_data1(x), 1);
@@ -48,17 +48,6 @@ static int zar_complete(SEXP x) {
          REAL(VECTOR_ELT(state, 2))[0] == (double)zar_deferred_length(x);
 }
 
-/* Raises zuarrow_handle_error through R's zar_deferred_released(). An
-   ALTREP method may call R; only the conversion kernels may not. */
-static void zar_released(void) {
-  SEXP ns = PROTECT(R_FindNamespace(Rf_mkString("zuarrow")));
-  SEXP fn = PROTECT(Rf_findFun(Rf_install("zar_deferred_released"), ns));
-  SEXP call = PROTECT(Rf_lang1(fn));
-  Rf_eval(call, ns);
-  UNPROTECT(3);
-  Rf_error("the Arrow array behind a deferred character vector was released");
-}
-
 /* The CHARSXP of element i, made from the Arrow buffers. */
 static SEXP zar_make_elt(SEXP x, R_xlen_t i) {
   int64_t n;
@@ -73,11 +62,6 @@ static SEXP zar_make_elt(SEXP x, R_xlen_t i) {
     }
   }
   const struct zar_deferred_chunk *c = &chunks[lo];
-
-  /* A struct's field is a lent child: the check covers its parents. */
-  if (!zar_array_handle_live(VECTOR_ELT(zar_arrays(x), (R_xlen_t)c->batch))) {
-    zar_released();
-  }
 
   int64_t k = (int64_t)i - c->begin;
   if (c->validity != NULL && !ArrowBitGet(c->validity, c->validity_offset + k)) {

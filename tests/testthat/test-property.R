@@ -79,7 +79,7 @@ test_that("arrays with a random offset convert from that offset", {
     Date = "tdD",
     character = "u"
   )
-  cases <- gctorture_sample(seq_len(40), 5)
+  cases <- gctorture_sample(seq_len(40), 5, cran = 8)
   for (case in cases) {
     for (kind in names(formats)) {
       offset <- sample(0:70, 1)

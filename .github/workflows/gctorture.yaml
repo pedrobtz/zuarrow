@@ -33,7 +33,10 @@ jobs:
       # 2026-11-05: the review fixes took the suite from about 1850 to 2400
       # tests, and step 500 ran 10 minutes, just over the budget. Cost
       # scales as about 1/step, so 1000 is about 5 minutes.
-      quick-step: 1000
+      # 2026-11-12: #224 took the suite from about 3100 to 5850 tests, and
+      # step 1000 ran past the budget (333 s for the tests at 3081). 2000 is
+      # about 5 minutes again.
+      quick-step: 2000
       # 2026-11-06: step 20 took 198 of 240 minutes on main (136 in tests),
       # and #172's run passed every file but was killed at 240 on a slower
       # runner. 360 is GitHub's limit for a hosted job; sample more loops

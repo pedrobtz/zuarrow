@@ -66,7 +66,10 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #'   R strings, so a result that is only partly read, or passed on, is much
 #'   cheaper. The values are checked during the conversion either way, so
 #'   `copy = FALSE` raises the same errors at the same time. The vector
-#'   holds the batch's memory until every element has been used, and it is
+#'   holds its own reference to the batch's memory until every element has
+#'   been used, so releasing, moving or reusing `x` afterwards does not
+#'   change it. To take that reference, `x` is turned in place into a
+#'   reference-counted share of the same buffers. The vector is
 #'   saved by [saveRDS()] as an ordinary character vector. Columns of other
 #'   types, and strings read through a dictionary, a run-end encoding or a
 #'   `struct` with nulls, are copied either way.
@@ -210,19 +213,6 @@ as.vector.zuarrow_array <- function(x, mode = "any") {
 
 zar_bit64_loaded <- function() isNamespaceLoaded("bit64")
 
-# Called from C when a deferred character vector's Arrow array was
-# released before all its elements were used (src/zar_altrep.c).
-zar_deferred_released <- function() {
-  zar_abort(
-    "handle",
-    paste(
-      "The Arrow array behind this character vector was released",
-      "before its strings were created."
-    ),
-    call = NULL
-  )
-}
-
 zar_to_code <- function(proto, call) {
   if (is.null(proto)) {
     return(0L)
@@ -324,7 +314,9 @@ zar_convert <- function(
     zar_bit64_loaded(),
     frame,
     as.integer(max_depth),
-    copy
+    copy,
+    zar_string_limit(),
+    zar_factor_limit()
   )
   out <- .Call(zar_c_to_r, arrays, schema, opts)
   if (inherits(out, "zar_failure")) {
@@ -807,4 +799,15 @@ zar_raise_conversion <- function(failure, call, prefix = "") {
     row = if (is.na(failure$row)) NULL else failure$row,
     target = target
   )
+}
+
+# The most bytes one R string holds. An internal option lowers it so the
+# refusal can be tested without a 2 GB value (#191).
+zar_string_limit <- function() {
+  as.double(getOption("zuarrow.string_limit", 2^31 - 1))
+}
+
+# The most levels one factor holds, lowered the same way.
+zar_factor_limit <- function() {
+  as.double(getOption("zuarrow.factor_limit", 2^31 - 1))
 }

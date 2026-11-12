@@ -32,7 +32,9 @@ permissions:
 # matched by their wording, "cannot allocate vector", "... memory block",
 # "... <n> bytes" and R's C helpers' "could not allocate" (deparse(),
 # make.names(), order()), so a zuarrow message such as "cannot allocate
-# the reader" under a wrong class is not accepted by its text.
+# the reader" under a wrong class is not accepted by its text. R's lazy
+# loading of the package's own .rdb can fail too, before zuarrow runs; that
+# message names the .rdb file, so a zuarrow io_error cannot match it.
 # min-target-hits: 222 of the 323 sampled failures reached a zuarrow
 # condition, so about 7,000 of the 10,000; 1000 catches a sweep that stopped
 # reaching the package without depending on the exact count.
@@ -43,7 +45,7 @@ jobs:
       run: R_ENABLE_JIT=0 Rscript tools/alloc-exercise.R
       baseline-run: R_ENABLE_JIT=0 Rscript -e 'suppressPackageStartupMessages(library(zuarrow))'
       max-allocations: 12000
-      expect-pattern: "alloc-exercise: (zuarrow_limit_error/)?zuarrow_error/error/condition|cannot allocate (vector|memory block|[0-9]+ bytes)|[Cc]ould not allocate|memory exhausted|out of virtual memory"
+      expect-pattern: "alloc-exercise: (zuarrow_limit_error/)?zuarrow_error/error/condition|cannot allocate (vector|memory block|[0-9]+ bytes)|[Cc]ould not allocate|memory exhausted|out of virtual memory|cannot open file '[^']*\\.rdb': Cannot allocate memory"
       target-pattern: "alloc-exercise: zuarrow_"
       min-target-hits: 1000
       ignore-crash-pattern: "^ 1: (grepl?|sub|gsub|regexpr|gregexpr|strsplit|gzfile)\\("

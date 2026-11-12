@@ -30,27 +30,45 @@ raises a bare `zuarrow_error` for it.
 
 ## Sizes past 32-bit offsets
 
-With an explicit `"+l"` schema, writing more than 2^31 - 1 child values
-is a `zuarrow_limit_error`: "more than list offsets address" in
-`zar_from_r.c`. Reaching it takes 2^31 values, because R flattens a list
-column before C counts it. The same refusals for `"u"` and `"z"` are
-reached in `test-offset-limits.R` with 2048 copies of one 1 MiB element,
-which R shares, so only their side above the limit is tested. Inferred
-character and list columns switch to `large_utf8` and `large_list` first,
-which `test-offset-limits.R` straddles by lowering the internal
-`zuarrow.utf8_limit` and `zuarrow.list_limit` options. No option lowers
-the builder's own `INT32_MAX`.
+Under an explicit 32-bit schema, the builder in `zar_from_r.c` refuses a
+batch whose offsets would pass 2^31 - 1 with a `zuarrow_limit_error`:
+"more than utf8 / binary offsets can address" and "more than list
+offsets address". Inference switches character and list columns to
+`large_utf8` and `large_list` at the same thresholds. Binary never
+switches (design section 6.2), and a factor's levels are always `utf8`.
+
+Reaching any of these at its real size takes 2 GiB, or 2^31 child values
+for a list, so internal options lower each threshold. They are read in R
+and passed to C as `zar_c_from_r()`'s `limits` argument, never above
+`INT32_MAX`:
+
+- `zuarrow.utf8_limit`: the `utf8` switch and the `"u"` refusal,
+  a factor's levels included;
+- `zuarrow.binary_limit`: the `"z"` refusal, inferred or explicit;
+- `zuarrow.list_limit`: the `list` switch and the `"+l"` and `"+m"`
+  refusals.
+
+`test-offset-limits.R` straddles each at limit - 1, limit and limit + 1
+through `arrow_array()`, `arrow_stream()` and `arrow_write()`. It also
+reaches the `"u"` and `"z"` refusals at the real 2^31 bytes, with 2048
+copies of one 1 MiB element that R shares (the `"u"` case off CRAN).
 
 ## R's string limit
 
 A single string longer than 2^31 - 1 bytes can't become an R string:
 "longer than R's string limit" in `zar_string_bytes()` of `zar_to_r.c`,
 and "dictionary value ... is longer than R's string limit" when a factor's
-levels are built. Reaching either takes a 2 GiB value.
+levels are built. A factor holds at most 2^31 - 1 levels: "the dictionary
+has more levels than a factor holds". Reaching these at their real size
+takes a 2 GiB value or tens of GiB of distinct values.
 
-A factor holds at most 2^31 - 1 levels: "the dictionary has more levels
-than a factor holds" in `zar_to_r.c`. Reaching it takes that many distinct
-dictionary values, tens of GiB.
+Two internal options lower them, passed to C in `zar_c_to_r()`'s
+options and never above `INT_MAX`: `zuarrow.string_limit` (bytes per
+string) and `zuarrow.factor_limit` (levels per factor).
+`test-offset-limits.R` straddles both at limit - 1, limit and limit + 1:
+strings as `utf8`, `large_utf8` and `string_view`, copied and deferred,
+read from IPC, and as dictionary values; levels in one dictionary, read
+from IPC, and in the union of two batches' dictionaries.
 
 ## Internal consistency checks
 

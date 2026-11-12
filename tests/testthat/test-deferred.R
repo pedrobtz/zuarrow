@@ -238,13 +238,36 @@ test_that("large_string arrays are deferred", {
   expect_identical(x, c("p", NA, "qr", ""))
 })
 
-test_that("a released array is a handle error, not a crash", {
+test_that("a deferred vector keeps its strings after the array is released", {
   array <- arrow_array(c("x", "y"))
   x <- arrow_to_r(array, copy = FALSE)
   test_release(array)
-  expect_error(x[[1]], class = "zuarrow_handle_error")
-  expect_error(x[[2]], class = "zuarrow_handle_error")
+  heap_churn()
+  expect_identical(x[[1]], "x")
+  expect_identical(x[[2]], "y")
   expect_error(arrow_to_r(array), class = "zuarrow_handle_error")
+})
+
+test_that("a handle released and reused does not change the vector (#181)", {
+  array <- arrow_array(c("hello", "world"))
+  x <- arrow_to_r(array, copy = FALSE)
+  test_release(array)
+  junk <- lapply(1:2000, function(i) arrow_array(rep("ZZZZZZZZZZ", 50)))
+  test_move(arrow_array(c("other", "thing")), array)
+  rm(junk)
+  heap_churn()
+  expect_identical(x[[1]], "hello")
+  expect_identical(x[[2]], "world")
+  expect_identical(arrow_to_r(array), c("other", "thing"))
+})
+
+test_that("an array moved out of its handle stays readable by both", {
+  array <- arrow_array(c("p", NA, "q"))
+  x <- arrow_to_r(array, copy = FALSE)
+  moved <- test_move(array)
+  test_release(moved)
+  heap_churn()
+  expect_identical(x, c("p", NA, "q"))
 })
 
 test_that("elements made before the array was released stay usable", {
@@ -258,7 +281,7 @@ test_that("elements made before the array was released stay usable", {
   expect_identical(x, c("x", NA, "z"))
 })
 
-test_that("a deferred field of a struct sees the struct's release (#205)", {
+test_that("a deferred field of a struct outlives the struct's release (#205)", {
   # A handler on a sibling field makes the struct convert field by field,
   # so the string field is a child lent by its parent.
   local_registration(
@@ -282,8 +305,8 @@ test_that("a deferred field of a struct sees the struct's release (#205)", {
   expect_identical(x[1], "row-000001")
   test_release(array)
   heap_churn()
-  expect_error(x[n], class = "zuarrow_handle_error")
-  expect_error(y[n], class = "zuarrow_handle_error")
+  expect_identical(x[n], sprintf("row-%06d", n))
+  expect_identical(y[n], sprintf("row-%06d", n))
   expect_identical(x[1], "row-000001")
 })
 

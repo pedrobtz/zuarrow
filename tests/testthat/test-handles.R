@@ -226,13 +226,18 @@ test_that("a borrowed array is a copy that outlives its source (#204)", {
     factor(c("u", "v", "u", NA)),
     nested
   )
-  for (v in values) {
+  # Every source is released before one churn of the heap, then each copy
+  # is read: a gc() per value would cost more than the rest of the test.
+  copies <- lapply(values, function(v) {
     source <- arrow_array(v)
     copy <- borrow(source)
     expect_true(arrow_equal(copy, source))
     test_release(source)
-    heap_churn(n = 5L)
-    expect_identical(arrow_to_r(copy), v)
+    copy
+  })
+  heap_churn(n = 5L)
+  for (k in seq_along(values)) {
+    expect_identical(arrow_to_r(copies[[k]]), values[[k]])
   }
 
   # A slice keeps its offset.

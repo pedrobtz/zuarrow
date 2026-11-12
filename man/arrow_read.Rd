@@ -46,7 +46,10 @@ time it is used. Most of the cost of a string column is creating its
 R strings, so a result that is only partly read, or passed on, is much
 cheaper. The values are checked during the conversion either way, so
 \code{copy = FALSE} raises the same errors at the same time. The vector
-holds the batch's memory until every element has been used, and it is
+holds its own reference to the batch's memory until every element has
+been used, so releasing, moving or reusing \code{x} afterwards does not
+change it. To take that reference, \code{x} is turned in place into a
+reference-counted share of the same buffers. The vector is
 saved by \code{\link[=saveRDS]{saveRDS()}} as an ordinary character vector. Columns of other
 types, and strings read through a dictionary, a run-end encoding or a
 \code{struct} with nulls, are copied either way.}

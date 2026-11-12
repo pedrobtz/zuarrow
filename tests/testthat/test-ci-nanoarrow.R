@@ -132,3 +132,30 @@ test_that("a failed reader stays failed through the C stream's get_next()", {
     expect_identical(conditionMessage(later), conditionMessage(first))
   }
 })
+
+# From test-deferred.R.
+test_that("a deferred vector survives nanoarrow reusing its handle (#181)", {
+  skip_without_oracle("nanoarrow")
+  a <- arrow_array(c("hello", "world"))
+  x <- arrow_to_r(a, copy = FALSE)
+  nanoarrow::nanoarrow_pointer_release(a)
+  junk <- lapply(1:2000, function(i) arrow_array(rep("ZZZZZZZZZZ", 50)))
+  b <- nanoarrow::as_nanoarrow_array(c("other", "thing"))
+  nanoarrow::nanoarrow_pointer_move(b, a)
+  rm(junk)
+  expect_identical(x[[1]], "hello")
+  expect_identical(x[[2]], "world")
+  expect_identical(arrow_to_r(a), c("other", "thing"))
+})
+
+# From test-deferred.R.
+test_that("a deferred vector over a nanoarrow array outlives its handle", {
+  skip_without_oracle("nanoarrow")
+  a <- nanoarrow::as_nanoarrow_array(c("p", NA, "q"))
+  x <- arrow_to_r(a, copy = FALSE)
+  nanoarrow::nanoarrow_pointer_release(a)
+  rm(a)
+  gc()
+  expect_identical(x, c("p", NA, "q"))
+  expect_identical(as.vector(nanoarrow::as_nanoarrow_array(x)), x)
+})
