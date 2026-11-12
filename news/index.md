@@ -47,6 +47,10 @@
   and the package that would read it exactly. `lossy = "character"`
   gives the values’ exact text, `"warn"` and `"allow"` the nearest R
   type.
+- A column with no values is never lossy: under `"error"` and `"warn"`
+  it takes the form `"allow"` gives, so reading a zero-row result, as
+  dbplyr does for a table’s columns, no longer fails
+  ([\#177](https://github.com/pedrobtz/zuarrow/issues/177)).
 - `to` names the R type a column must become.
 - Conversion in both directions reads and writes typed buffers in one
   loop wherever a column has no dictionary or run-end encoding, so most
@@ -67,7 +71,20 @@
   build arrays and streams from R vectors and data frames, checking
   every value against a given schema. The exact text that
   `lossy = "character"` returns is written back as the type its
-  `arrow_type` attribute names.
+  `arrow_type` attribute names. Only that canonical text is read, so
+  other forms of a value, such as `"+1"` or `"01"`, and a time of day of
+  `24:00:00` are a `zuarrow_lossy_error`
+  ([\#213](https://github.com/pedrobtz/zuarrow/issues/213)).
+- A value that would not export exactly is a `zuarrow_type_error`: a
+  non-ASCII native string with no exact UTF-8 form, as in a C locale
+  ([\#203](https://github.com/pedrobtz/zuarrow/issues/203)); a matrix
+  under a schema that is not a list type, or with a class
+  ([\#209](https://github.com/pedrobtz/zuarrow/issues/209)); a factor
+  with an `NA` level
+  ([\#211](https://github.com/pedrobtz/zuarrow/issues/211)); a `tzone`,
+  difftime `units` or `arrow_extension_metadata` attribute that is not
+  one valid value
+  ([\#214](https://github.com/pedrobtz/zuarrow/issues/214)).
 - [`arrow_types()`](https://pedrobtz.github.io/zuarrow/reference/arrow_types.md)
   lists the built-in type table.
 
@@ -81,6 +98,9 @@
 - Factors convert to and from `dictionary<int32, utf8>`, ordered factors
   included; a stream’s batches read as the union of their levels. Other
   dictionaries and run-end encoded arrays decode to their values.
+- A `fixed_size_binary` column read as a list of raw vectors keeps its
+  width in `arrow_width`, and is written back as `fixed_size_binary`
+  ([\#210](https://github.com/pedrobtz/zuarrow/issues/210)).
 - Extension types keep their name and metadata as attributes and are
   restored on export; `arrow.bool8` reads as logical. Field metadata
   round-trips through the `arrow_field_metadata` attribute.
@@ -547,3 +567,32 @@
   slice of an `arrow` struct array is, at the batch’s length. Before,
   each column kept its own length, and `arrow` refused the output
   ([\#206](https://github.com/pedrobtz/zuarrow/issues/206)).
+
+- [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  writes a dictionary whose values hold another dictionary after that
+  inner dictionary, as the format requires. Before, it wrote the outer
+  one first, and
+  [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md)
+  refused the output
+  ([\#186](https://github.com/pedrobtz/zuarrow/issues/186)).
+
+- Running out of memory is a clean error. Failing one allocation could
+  crash R in
+  [`arrow_read()`](https://pedrobtz.github.io/zuarrow/reference/arrow_read.md),
+  [`arrow_next()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  and
+  [`arrow_array()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md),
+  and could make
+  [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)
+  write a corrupt message without an error. The bundled ‘nanoarrow’ and
+  flatcc code now return the failure
+  ([\#232](https://github.com/pedrobtz/zuarrow/issues/232)).
+
+- An allocation failure is a bare `zuarrow_error`, and in
+  [`arrow_write()`](https://pedrobtz.github.io/zuarrow/reference/arrow_write.md)’s
+  encoder a `zuarrow_limit_error`, as design sections 8 and 6.8 say.
+  Before, it could surface as a `zuarrow_format_error`,
+  `zuarrow_handle_error` or `zuarrow_codec_error`, or as a plain R
+  error, so a handler for corrupt input caught it. A stream from any
+  producer that fails with `ENOMEM` is a bare `zuarrow_error` too
+  ([\#233](https://github.com/pedrobtz/zuarrow/issues/233)).

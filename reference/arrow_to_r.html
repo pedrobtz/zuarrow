@@ -155,6 +155,9 @@ becomes <code>bit64</code>'s <code>integer64</code>, exactly, when <code>bit64</
 </ul><p>Intervals and unions have no R form and always fail, unless a handler
 registered with <code><a href="arrow_register.html">arrow_register()</a></code> for the column's extension name
 converts it.</p>
+<p>Any other column with no values loses nothing, so it neither fails nor
+warns. Under <code>"error"</code> and <code>"warn"</code> it takes the form <code>"allow"</code> gives, so
+a query that reads only a table's schema converts under any policy.</p>
 <p><code>to</code> names the R type a column must become: <code><a href="https://rdrr.io/r/base/character.html" class="external-link">character()</a></code>, <code><a href="https://rdrr.io/r/base/double.html" class="external-link">double()</a></code>,
 <code><a href="https://rdrr.io/r/base/integer.html" class="external-link">integer()</a></code>, or <code><a href="arrow_matrix.html">arrow_matrix()</a></code> for a <code>fixed_size_list</code>. A target that
 cannot take the column is a <code>zuarrow_type_error</code>, never a silent

@@ -24,7 +24,8 @@ arrow_stream(x, batch = 65536L, schema = NULL)
 
 - batch:
 
-  The largest number of rows in one batch.
+  The largest number of rows in one batch, a positive whole number.
+  `Inf` is a `zuarrow_type_error`.
 
 ## Value
 
@@ -39,12 +40,17 @@ Without a `schema`, each R class maps to one Arrow type:
 
 - `character` to `utf8`, or `large_utf8` past 2^31 - 1 bytes.
 
-- `factor` to `dictionary<int32, utf8>`.
+- `factor` to `dictionary<int32, utf8>`. A factor with an `NA` level is
+  a `zuarrow_type_error`, because a dictionary value cannot be null.
 
 - `Date` to `date32`, `POSIXct` to `timestamp[us]` in its time zone or
   UTC, `difftime` to `duration[us]`.
 
-- A list of raw vectors to `binary`.
+- A list of raw vectors to `binary`, or to `fixed_size_binary` when it
+  has the `arrow_width` attribute that
+  [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+  gives one. An element of another length is then a
+  `zuarrow_type_error`.
 
 - A list with the `arrow_keys_sorted` attribute that
   [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
@@ -57,9 +63,18 @@ Without a `schema`, each R class maps to one Arrow type:
 A class registered with
 [`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
 goes through its `from` handler. A matrix is written as a
-`fixed_size_list` with `schema = arrow_matrix()`. The attributes
-`arrow_extension`, `arrow_extension_metadata` and `arrow_field_metadata`
-become field metadata. Any other class is a `zuarrow_type_error`.
+`fixed_size_list` with `schema = arrow_matrix()`, and only as a list
+type. A matrix with a class, such as a `Date` matrix, is a
+`zuarrow_type_error`. The attributes `arrow_extension`,
+`arrow_extension_metadata` and `arrow_field_metadata` become field
+metadata. Any other class is a `zuarrow_type_error`, and so is a
+`tzone`, `units` or `arrow_extension_metadata` attribute that R would
+not read as one value: one string, one of R's difftime units, one string
+or a raw vector.
+
+Strings are written as UTF-8. A string in the native encoding that has
+no exact UTF-8 form, as any non-ASCII one in a C locale, is a
+`zuarrow_type_error`, and so is invalid UTF-8.
 
 With a `schema`, the values are written as that type and checked: an
 integer that does not fit `int8`, or a double that is not a whole number
@@ -70,7 +85,12 @@ A character vector with an `arrow_type` attribute, as
 [`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
 returns under `lossy = "character"`, is written back as that type: each
 value is parsed, and text that is not the type's form, or holds more
-precision than the type, is an error. So the exact text round-trips.
+precision than the type, is an error. Only the canonical text that
+[`arrow_to_r()`](https://pedrobtz.github.io/zuarrow/reference/arrow_to_r.md)
+writes is read: other forms of the same value, such as `"+1"`, `"01"`,
+`"-0"` or `"1"` for a decimal of scale 2, are a `zuarrow_lossy_error`,
+and so is a time of day at or past `24:00:00`. So the exact text
+round-trips, at the ends of the int64 range too.
 
 Every `NA` becomes a null with a zeroed slot. `NaN` stays a value.
 

@@ -125,6 +125,10 @@ registered with
 [`arrow_register()`](https://pedrobtz.github.io/zuarrow/reference/arrow_register.md)
 for the column's extension name converts it.
 
+Any other column with no values loses nothing, so it neither fails nor
+warns. Under `"error"` and `"warn"` it takes the form `"allow"` gives,
+so a query that reads only a table's schema converts under any policy.
+
 `to` names the R type a column must become:
 [`character()`](https://rdrr.io/r/base/character.html),
 [`double()`](https://rdrr.io/r/base/double.html),

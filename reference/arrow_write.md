@@ -40,8 +40,10 @@ arrow_write(
 
 - level:
 
-  `NULL` for the codec's default, or a level on its scale. A level
-  outside the codec's range is a `zuarrow_codec_error`.
+  `NULL` for the codec's default, or a level on its scale. A level that
+  is not a whole number in R's integer range is a `zuarrow_type_error`,
+  whatever the codec; one outside the codec's range is a
+  `zuarrow_codec_error`.
 
 - batch:
 
