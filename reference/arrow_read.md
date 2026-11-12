@@ -67,8 +67,11 @@ arrow_read(
   Most of the cost of a string column is creating its R strings, so a
   result that is only partly read, or passed on, is much cheaper. The
   values are checked during the conversion either way, so `copy = FALSE`
-  raises the same errors at the same time. The vector holds the batch's
-  memory until every element has been used, and it is saved by
+  raises the same errors at the same time. The vector holds its own
+  reference to the batch's memory until every element has been used, so
+  releasing, moving or reusing `x` afterwards does not change it. To
+  take that reference, `x` is turned in place into a reference-counted
+  share of the same buffers. The vector is saved by
   [`saveRDS()`](https://rdrr.io/r/base/readRDS.html) as an ordinary
   character vector. Columns of other types, and strings read through a
   dictionary, a run-end encoding or a `struct` with nulls, are copied

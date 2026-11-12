@@ -104,7 +104,10 @@ time it is used. Most of the cost of a string column is creating its
 R strings, so a result that is only partly read, or passed on, is much
 cheaper. The values are checked during the conversion either way, so
 <code>copy = FALSE</code> raises the same errors at the same time. The vector
-holds the batch's memory until every element has been used, and it is
+holds its own reference to the batch's memory until every element has
+been used, so releasing, moving or reusing <code>x</code> afterwards does not
+change it. To take that reference, <code>x</code> is turned in place into a
+reference-counted share of the same buffers. The vector is
 saved by <code><a href="https://rdrr.io/r/base/readRDS.html" class="external-link">saveRDS()</a></code> as an ordinary character vector. Columns of other
 types, and strings read through a dictionary, a run-end encoding or a
 <code>struct</code> with nulls, are copied either way.</p></dd>

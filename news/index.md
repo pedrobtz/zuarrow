@@ -65,6 +65,11 @@
   use, which is most of the cost of a string column. Values are checked
   during the conversion either way, so the errors are the same. The
   default, `copy = TRUE`, creates every value at once.
+- A deferred string column holds its own reference to the Arrow buffers,
+  so it keeps its strings when the array handle it came from is
+  released, or released and reused. It used to raise
+  `zuarrow_handle_error`, or, for a reused handle, read freed memory
+  ([\#181](https://github.com/pedrobtz/zuarrow/issues/181)).
 - [`arrow_array()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
   and
   [`arrow_stream()`](https://pedrobtz.github.io/zuarrow/reference/arrow_array.md)
