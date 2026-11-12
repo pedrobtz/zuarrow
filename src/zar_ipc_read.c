@@ -1086,11 +1086,15 @@ int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limit
 
 static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
                          double max_bytes, struct ArrowError *error, const char **kind) {
+  errno = 0;
   FILE *f = fopen(path, "rb");
   if (f == NULL) {
-    ArrowErrorSet(error, "cannot open '%s': %s", path, strerror(errno));
-    *kind = "io";
-    return EIO;
+    /* fopen() allocates its FILE: out of memory is an allocation failure,
+       a bare zuarrow_error (design section 8), not an io_error. */
+    int err = errno;
+    ArrowErrorSet(error, "cannot open '%s': %s", path, strerror(err));
+    *kind = zar_code_kind(err, "io");
+    return err == ENOMEM ? ENOMEM : EIO;
   }
   /* 64-bit offsets: long is 32 bits on Windows, so ftell() stops at 2 GiB. */
   int64_t n = -1;
@@ -1126,13 +1130,17 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
     *kind = NULL;
     return ENOMEM;
   }
+  errno = 0;
   size_t got = n > 0 ? fread(buf, 1, (size_t)n, f) : 0;
+  /* stdio allocates its buffer on the first read, so a short read can be
+     an allocation failure too. */
+  int err = ferror(f) ? errno : 0;
   fclose(f);
   if ((int64_t)got != n) {
     free(buf);
     ArrowErrorSet(error, "cannot read '%s'", path);
-    *kind = "io";
-    return EIO;
+    *kind = zar_code_kind(err, "io");
+    return err == ENOMEM ? ENOMEM : EIO;
   }
   *out = buf;
   *size = (int64_t)n;
