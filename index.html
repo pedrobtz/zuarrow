@@ -123,7 +123,7 @@
 <div class="section level2">
 <h2 id="related-work">Related work<a class="anchor" aria-label="anchor" href="#related-work"></a>
 </h2>
-<p>zuarrow bundles the <a href="https://github.com/apache/arrow-nanoarrow" class="external-link">nanoarrow</a> C library and is checked against <a href="https://github.com/apache/arrow-testing" class="external-link">apache/arrow-testing</a>’s IPC golden files and crash corpus, and against the arrow package.</p>
+<p>zuarrow uses <a href="https://github.com/apache/arrow-nanoarrow" class="external-link">nanoarrow</a>’s C library and handles, and adds what its R binding leaves open: exact-or-error conversion, a registry for exact types, the IPC file format, writing dictionaries and compressed data, run-end-encoded and view types, and validation of untrusted input. It is checked against <a href="https://github.com/apache/arrow-testing" class="external-link">apache/arrow-testing</a>’s IPC golden files and crash corpus, and against the arrow and nanoarrow packages.</p>
 </div>
 </div>
   </main><aside class="col-md-3"><div class="links">
