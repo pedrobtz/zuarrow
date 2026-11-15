@@ -1,7 +1,4 @@
 on:
-  schedule:
-    # Weekly. A new upstream release is not urgent.
-    - cron: "53 17 * * 6"
   workflow_dispatch:
 
 name: vendor-upstream

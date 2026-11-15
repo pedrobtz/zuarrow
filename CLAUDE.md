@@ -5,16 +5,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Shared conventions
 
-The portfolio's shared rules are synced into `.claude/shared/` from
-`pedrobtz/packages:claude/shared/`. Never edit them here. Where this file and
-a shared file disagree, this file wins for zuarrow.
+<!-- r-skills: shared-rules -->
 
-@.claude/shared/workflow.md
-@.claude/shared/r-package.md
-@.claude/shared/ci.md
-@.claude/shared/native-code.md
-@.claude/shared/correctness.md
-@.claude/shared/assurance.md
+The portfolio's shared rules (`workflow`, `r-package`, `ci`, `native-code`,
+`correctness`, `assurance`) come from the
+[r-skills](https://github.com/pedrobtz/r-skills) plugin's `rules/`, loaded at
+session start because of the marker above. Never copy them here. Where this
+file and a shared rule disagree, this file wins for this package. Cloud
+sessions do not load the plugin and run without them.
 
 ## What this is
 
@@ -73,7 +71,7 @@ happen 2026-11-27 at the earliest. Until then, verified 2026-11-09,
 `LinkingTo`. Once it is on CRAN, the first step of #12 is to remove `Remotes:`
 and set `zukomp (>= 0.2.0)`.
 
-Deviations from `.claude/shared/workflow.md`; this file wins for zuarrow:
+Deviations from the shared `workflow.md` rules; this file wins for zuarrow:
 
 - **The version stays at `0.0.0.9000` until submission** (decided
   2026-11-05), not `0.1.0` from `Pre-flight`. Setting `0.1.0` is a step of
@@ -266,7 +264,7 @@ calls gctorture. Its own and other callers:
   `gh workflow run fuzz.yaml --ref <branch>`. Its seed commit is kept in
   step with `tests/testthat/fixtures-files.txt`.
 - **`assurance.yaml`** calls r-actions' `assurance.yml`, which holds
-  `.agents/assurance.md` to `.claude/shared/assurance.md`: every `done`
+  `.agents/assurance.md` to the shared `assurance.md` rules: every `done`
   backed by a workflow, every gap by an issue labelled `assurance`.
 - **`vendor.yaml`** re-derives `src/vendor/nanoarrow` with
   `tools/verify-vendor` and fails a pull request that changes the vendored
