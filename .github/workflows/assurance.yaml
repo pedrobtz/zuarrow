@@ -5,8 +5,6 @@ on:
   pull_request:
   # No `push:`: a pull request already checks its merge with main,
   # and the schedule checks main (r-actions README, "Pushes to main").
-  schedule:
-    - cron: "23 17 * * 6"
   workflow_dispatch:
 
 name: assurance

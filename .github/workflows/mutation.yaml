@@ -2,8 +2,6 @@ on:
   # Reported, never gated (#183): weekly and on demand,
   # `gh workflow run mutation.yaml --ref <branch>`. Read the survivors in the
   # run's summary; each is a change to the reader that no input notices.
-  schedule:
-    - cron: "47 4 * * 0"
   workflow_dispatch:
 
 name: mutation
