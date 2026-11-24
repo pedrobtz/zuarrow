@@ -1,6 +1,6 @@
 Package: zuarrow
 Title: Exact Conversion Between R Vectors and 'Apache Arrow' Columns
-Version: 0.0.0.9000
+Version: 0.1.0
 Authors@R: c(
     person("Pedro", "Baltazar", , "pedrobtz@gmail.com",
            role = c("aut", "cre", "cph")),
@@ -12,7 +12,7 @@ Authors@R: c(
            comment = "pstdint.h in the bundled flatcc runtime"))
 Description: Moves columns between R and the 'Apache Arrow' columnar
     format: the C data interface in memory and the inter-process
-    communication ('IPC') stream and file formats on disk. Every 'Arrow'
+    communication (IPC) stream and file formats on disk. Every 'Arrow'
     type converts to an R vector and back, and a conversion either keeps
     every value unchanged or raises an error that names the column and the
     R type that would hold it exactly. A registry lets other packages
@@ -30,16 +30,14 @@ BugReports: https://github.com/pedrobtz/zuarrow/issues
 Depends: 
     R (>= 4.1)
 Imports: 
-    zukomp (> 0.1.0)
+    zukomp (>= 0.2.0)
 Suggests: 
     decimal,
     testthat (>= 3.0.0),
     withr,
     zujson
 LinkingTo: 
-    zukomp (> 0.1.0)
-Remotes: 
-    pedrobtz/zukomp
+    zukomp (>= 0.2.0)
 Config/Needs/website: knitr, rmarkdown
 Config/testthat/edition: 3
 Encoding: UTF-8

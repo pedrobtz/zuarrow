@@ -45,11 +45,11 @@ holder in `Authors@R`. `inst/COPYRIGHTS` states the upstream commit, and
 * No vendored code writes to `stdout` or `stderr`, aborts, exits, or uses
   the system RNG.
 
-lz4 and zstd are not bundled; they come from `zukomp` through `LinkingTo`.
+lz4 and zstd are not bundled; they come from `zukomp` (>= 0.2.0, on CRAN)
+through `Imports` and `LinkingTo`.
 
-* Source tarball: 492 KB, measured 2026-11-04 with `R CMD build`.
-* Installed size: 636 KB, of which 388 KB is the shared object.
-* Install time from the tarball: 12 s on macOS 15.7 (x86_64, R 4.5.2).
+* Source tarball: 561 KB, measured 2026-11-24 with `R CMD build`.
+* Installed size: 736 KB, of which 444 KB is the shared object.
 
 The source tarball contains no object code.
 
