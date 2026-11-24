@@ -1,7 +1,7 @@
 # zuarrow: Exact Conversion Between R Vectors and 'Apache Arrow' Columns
 
 Moves columns between R and the 'Apache Arrow' columnar format: the C
-data interface in memory and the inter-process communication ('IPC')
+data interface in memory and the inter-process communication (IPC)
 stream and file formats on disk. Every 'Arrow' type converts to an R
 vector and back, and a conversion either keeps every value unchanged or
 raises an error that names the column and the R type that would hold it

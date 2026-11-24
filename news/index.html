@@ -7,7 +7,7 @@
 
     <a class="navbar-brand me-2" href="../index.html">zuarrow</a>
 
-    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.0.0.9000</small>
+    <small class="nav-text text-muted me-auto" data-bs-toggle="tooltip" data-bs-placement="bottom" title="">0.1.0</small>
 
 
     <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#navbar" aria-controls="navbar" aria-expanded="false" aria-label="Toggle navigation">
@@ -33,10 +33,10 @@
     </div>
 
     <div class="section level2">
-<h2 class="pkg-version" data-toc-text="0.0.0.9000" id="zuarrow-0009000">zuarrow 0.0.0.9000<a class="anchor" aria-label="anchor" href="#zuarrow-0009000"></a></h2>
+<h2 class="pkg-version" data-toc-text="0.1.0" id="zuarrow-010">zuarrow 0.1.0<a class="anchor" aria-label="anchor" href="#zuarrow-010"></a></h2>
 <ul><li>Initial CRAN submission.</li>
 </ul><div class="section level3">
-<h3 id="handles-0-0-0-9000">Handles<a class="anchor" aria-label="anchor" href="#handles-0-0-0-9000"></a></h3>
+<h3 id="handles-0-1-0">Handles<a class="anchor" aria-label="anchor" href="#handles-0-1-0"></a></h3>
 <ul><li>
 <code><a href="../reference/arrow_schema.html">arrow_schema()</a></code> makes a schema handle from an Arrow format string, from an R object, or from any schema, array or stream handle, and <code><a href="https://rdrr.io/r/base/format.html" class="external-link">format()</a></code> and <code><a href="https://rdrr.io/r/base/print.html" class="external-link">print()</a></code> show Arrow’s type notation.</li>
 <li>Handles share the ‘nanoarrow’ package’s layout and inherit from its classes, so handles cross between the two packages without conversion.</li>
@@ -52,7 +52,7 @@
 <li>An error names the function or S3 method you called, such as <code><a href="../reference/arrow_array.html">arrow_stream()</a></code> or <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code>, never an internal helper (<a href="https://github.com/pedrobtz/zuarrow/issues/124" class="external-link">#124</a>).</li>
 </ul></div>
 <div class="section level3">
-<h3 id="converting-to-and-from-r-0-0-0-9000">Converting to and from R<a class="anchor" aria-label="anchor" href="#converting-to-and-from-r-0-0-0-9000"></a></h3>
+<h3 id="converting-to-and-from-r-0-1-0">Converting to and from R<a class="anchor" aria-label="anchor" href="#converting-to-and-from-r-0-1-0"></a></h3>
 <ul><li>
 <code><a href="../reference/arrow_to_r.html">arrow_to_r()</a></code> converts an array to an R vector and a stream or struct array to a data frame; <code><a href="https://rdrr.io/r/base/as.data.frame.html" class="external-link">as.data.frame()</a></code> and <code><a href="https://rdrr.io/r/base/vector.html" class="external-link">as.vector()</a></code> do the same, and <code><a href="../reference/arrow_to_r.html">arrow_next()</a></code> reads one batch.</li>
 <li>A conversion is exact or it fails: <code>lossy = "error"</code>, the default everywhere, raises <code>zuarrow_lossy_error</code> naming the column, the row and the package that would read it exactly. <code>lossy = "character"</code> gives the values’ exact text, <code>"warn"</code> and <code>"allow"</code> the nearest R type.</li>
@@ -70,7 +70,7 @@
 <code><a href="../reference/arrow_types.html">arrow_types()</a></code> lists the built-in type table.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="nested-types-dictionaries-and-the-registry-0-0-0-9000">Nested types, dictionaries and the registry<a class="anchor" aria-label="anchor" href="#nested-types-dictionaries-and-the-registry-0-0-0-9000"></a></h3>
+<h3 id="nested-types-dictionaries-and-the-registry-0-1-0">Nested types, dictionaries and the registry<a class="anchor" aria-label="anchor" href="#nested-types-dictionaries-and-the-registry-0-1-0"></a></h3>
 <ul><li>Structs convert to nested data frames, lists of every kind to list columns, fixed-size lists to list columns or, with <code><a href="../reference/arrow_matrix.html">arrow_matrix()</a></code>, to matrices, and maps to lists of key/value data frames. Each converts back.</li>
 <li>Factors convert to and from <code>dictionary&lt;int32, utf8&gt;</code>, ordered factors included; a stream’s batches read as the union of their levels. Other dictionaries and run-end encoded arrays decode to their values.</li>
 <li>A <code>fixed_size_binary</code> column read as a list of raw vectors keeps its width in <code>arrow_width</code>, and is written back as <code>fixed_size_binary</code> (<a href="https://github.com/pedrobtz/zuarrow/issues/210" class="external-link">#210</a>).</li>
@@ -82,7 +82,7 @@
 <li>A registered extension over a <code>dense_union</code> or <code>sparse_union</code>, such as <code>geoarrow.geometry</code>, reads through its <code>to</code> handler, which receives the union array with its type ids, offsets and children as they are. A union with no handler still fails with a <code>zuarrow_lossy_error</code> (<a href="https://github.com/pedrobtz/zuarrow/issues/171" class="external-link">#171</a>).</li>
 </ul></div>
 <div class="section level3">
-<h3 id="the-ipc-file-and-stream-formats-0-0-0-9000">The IPC file and stream formats<a class="anchor" aria-label="anchor" href="#the-ipc-file-and-stream-formats-0-0-0-9000"></a></h3>
+<h3 id="the-ipc-file-and-stream-formats-0-1-0">The IPC file and stream formats<a class="anchor" aria-label="anchor" href="#the-ipc-file-and-stream-formats-0-1-0"></a></h3>
 <ul><li>
 <code><a href="../reference/arrow_read.html">arrow_read()</a></code> reads the Arrow IPC file format (<code>.arrow</code>, Feather version 2) and stream format (<code>.arrows</code>) from a path, a raw vector or a connection, eagerly into a data frame or lazily as a stream, with column selection.</li>
 <li>
@@ -98,7 +98,7 @@
 <li>The output is deterministic: the same input gives the same bytes, with no timestamps and every padding byte zeroed.</li>
 </ul></div>
 <div class="section level3">
-<h3 id="fixes-0-0-0-9000">Fixes<a class="anchor" aria-label="anchor" href="#fixes-0-0-0-9000"></a></h3>
+<h3 id="fixes-0-1-0">Fixes<a class="anchor" aria-label="anchor" href="#fixes-0-1-0"></a></h3>
 <ul><li><p>A lossy value in a dictionary or run-end encoded column is checked as the rows read it. The <code>zuarrow_lossy_error</code> names its row, and a value that no row reads, or that only null rows read, is not lossy. Before, any such value in the dictionary or the runs raised an error with no row (<a href="https://github.com/pedrobtz/zuarrow/issues/107" class="external-link">#107</a>).</p></li>
 <li><p>The <code>zuarrow_lossy_error</code> of a dictionary column names the package that reads its value type exactly, such as ‘zuint’ for <code>int64</code> values, as a run-end encoded column’s does. It used to look the target up by the index type and name none (<a href="https://github.com/pedrobtz/zuarrow/issues/144" class="external-link">#144</a>).</p></li>
 <li><p><code><a href="../reference/arrow_array.html">arrow_array()</a></code> refuses a list column of data frames whose elements differ in column names, column order, or a column’s class, type or attributes, with a <code>zuarrow_type_error</code> naming the column. It used to let <code><a href="https://rdrr.io/r/base/cbind.html" class="external-link">rbind()</a></code> coerce an integer column to character. A plain factor column’s levels may still differ; an ordered factor’s may not (<a href="https://github.com/pedrobtz/zuarrow/issues/103" class="external-link">#103</a>).</p></li>

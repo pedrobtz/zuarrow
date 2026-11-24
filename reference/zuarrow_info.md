@@ -18,7 +18,7 @@ A named list with `zuarrow`, `nanoarrow` and `ipc_metadata`.
 ``` r
 zuarrow_info()
 #> $zuarrow
-#> [1] "0.0.0.9000"
+#> [1] "0.1.0"
 #> 
 #> $nanoarrow
 #> [1] "0.9.0"
