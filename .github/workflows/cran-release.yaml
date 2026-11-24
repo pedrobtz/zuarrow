@@ -1,0 +1,29 @@
+# Tags each CRAN submission and opens the development-version bump, from
+# r-actions' cran-release.yml. Commit CRAN-SUBMISSION after
+# `devtools::submit_cran()`; that push is the whole release step:
+#
+#   * the submitted commit (the file's SHA) is tagged with the bare version,
+#     `0.1.0`, and the `zuarrow 0.1.0` release is created from NEWS.md;
+#   * a pull request bumps main to `0.1.0.9000` with the development heading.
+#     Merge it only after CRAN accepts.
+#
+# CRAN-SUBMISSION stays committed (it is in .Rbuildignore, not .gitignore):
+# it records what was last submitted, and the next submit_cran() overwriting
+# it is what triggers the next release.
+on:
+  push:
+    branches: [main]
+    paths: [CRAN-SUBMISSION]
+  workflow_dispatch:
+
+name: cran-release.yaml
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  cran-release:
+    # Pinned to a commit, not the v1 tag: this job holds a write token
+    # (ci.md, Workflows).
+    uses: pedrobtz/r-actions/.github/workflows/cran-release.yml@72ecdaf3536ed6b5984ed12815e168ee16ab8aa4 # v1.46.1

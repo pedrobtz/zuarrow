@@ -44,9 +44,6 @@ docs
 # Translation temp files
 po/*~
 
-# Written by devtools::submit_cran(); records one submission, not the source.
-CRAN-SUBMISSION
-
 # macOS
 .DS_Store
 
