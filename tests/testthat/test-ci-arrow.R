@@ -432,3 +432,65 @@ test_that("libarrow and zuarrow read a dictionary inside a dictionary's values",
     )
   }
 })
+
+# From test-from-r-types.R (2026-11-26).
+test_that("libarrow reads the intervals, half floats and int64 zuarrow writes", {
+  skip_without_oracle("arrow")
+  df <- data.frame(id = 1:4)
+  df$m <- structure(c("14M", NA, "-1M", "-2147483648M"), arrow_type = "tiM")
+  df$d <- structure(
+    c("3d1500ms", NA, "-2d-5ms", "2147483647d-2147483648ms"),
+    arrow_type = "tiD"
+  )
+  df$n <- structure(
+    c(
+      "1M-2d3ns",
+      NA,
+      "0M0d-9223372036854775808ns",
+      "0M0d9223372036854775807ns"
+    ),
+    arrow_type = "tin"
+  )
+  df$h <- c(0.5, NA, 2^-24, -65504)
+  df$i64 <- bit64::as.integer64(c(
+    "1",
+    NA,
+    "-9223372036854775807",
+    "4294967296"
+  ))
+  for (format in c("file", "stream")) {
+    bytes <- arrow_write(
+      arrow_stream(df, schema = c(h = "e")),
+      NULL,
+      format = format
+    )
+    table <- libarrow_read(bytes, format)
+    expect_true(table$ValidateFull(), info = format)
+    expect_identical(
+      table$schema$ToString(),
+      paste(
+        "id: int32",
+        "m: month_interval",
+        "d: day_time_interval",
+        "n: month_day_nano_interval",
+        "h: halffloat",
+        "i64: int64",
+        sep = "\n"
+      ),
+      info = format
+    )
+    # libarrow's printer writes an interval in the text zuarrow reads.
+    for (name in c("m", "d", "n")) {
+      printed <- strsplit(table[[name]]$chunk(0)$ToString(), "\n")[[1L]]
+      values <- sub(",$", "", trimws(printed[-c(1L, 2L, length(printed))]))
+      values[values == "null"] <- NA
+      expect_identical(
+        values,
+        as.vector(df[[name]]),
+        info = paste(format, name)
+      )
+    }
+    expect_identical(table$h$as_vector(), df$h, info = format)
+    expect_identical(table$i64$as_vector(), df$i64, info = format)
+  }
+})

@@ -9,7 +9,10 @@
 #' layout, such as 'arrow', 'duckdb' or an 'ADBC' driver.
 #'
 #' A single string is read as an Arrow format string, such as `"i"` for
-#' `int32` or `"tsu:UTC"` for a microsecond timestamp in UTC. Any other R
+#' `int32` or `"tsu:UTC"` for a microsecond timestamp in UTC. A named
+#' character vector of format strings is a `struct` with one field of each,
+#' in its order, so `arrow_schema(c(x = "i", y = "vu"))` is
+#' `struct<x: int32, y: string_view>`. Any other R
 #' object gives the schema it would be written with: a data frame gives a
 #' `struct` with one field per column. On a handle, `arrow_schema()` never
 #' raises on the content: it returns a zuarrow schema handle as it is,
@@ -28,6 +31,7 @@
 #' @examples
 #' arrow_schema("l")
 #' arrow_schema(data.frame(x = 1:3, y = c("a", "b", "c")))
+#' arrow_schema(c(x = "i", y = "vu"))
 #' format(arrow_schema(as.Date("2026-10-21")))
 arrow_schema <- function(x) {
   zar_as_schema(x, sys.call())
@@ -42,6 +46,12 @@ zar_as_schema <- function(x, call) {
   }
   if (zar_is_handle(x)) {
     return(zar_check(.Call(zar_c_schema_copy, x), call = call))
+  }
+  if (zar_is_type_vector(x)) {
+    return(zar_check(
+      .Call(zar_c_schema_from_spec, zar_struct_spec(x, call)),
+      call = call
+    ))
   }
   if (is.character(x) && length(x) == 1L && is.null(attributes(x))) {
     if (is.na(x) || !nzchar(x)) {

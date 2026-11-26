@@ -157,6 +157,38 @@ test_that("golden interval columns read as the text of their JSON", {
   expect_setequal(unique(checked), c("tiM", "tiD", "tin"))
 })
 
+test_that("golden view and interval batches are written back as they were", {
+  # arrow_array() rebuilds each batch libarrow wrote from the R values it
+  # reads as, and the two compare equal value by value.
+  checked <- character()
+  for (version in c("0.14.1", "0.17.1", "1.0.0-littleendian", "cpp-21.0.0")) {
+    cases <- golden_cases(version)
+    cases <- cases[grepl("^generated_(interval|binary_view)", names(cases))]
+    for (case in names(cases)) {
+      stream <- arrow_read(paste0(cases[[case]], ".stream"), lazy = TRUE)
+      schema <- arrow_schema(stream)
+      for (batch in zar_stream_batches(stream, NULL)) {
+        values <- arrow_to_r(batch, lossy = "character")
+        rebuilt <- arrow_array(values, schema = schema)
+        expect_true(arrow_equal(rebuilt, batch), info = paste(version, case))
+        expect_true(
+          arrow_validate(rebuilt, "full"),
+          info = paste(version, case)
+        )
+      }
+      checked <- c(checked, case)
+    }
+  }
+  expect_true(all(
+    c(
+      "generated_interval",
+      "generated_interval_mdn",
+      "generated_binary_view"
+    ) %in%
+      checked
+  ))
+})
+
 # Optional (design section 12): decimal's registration is not part of 0.1.0,
 # so this runs only when an installed decimal registers "d:*".
 test_that("with decimal's registration the golden decimal cases decode exactly", {

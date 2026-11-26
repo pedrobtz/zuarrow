@@ -255,3 +255,15 @@ heap_churn <- function(n = 50L, size = 5000L) {
   gc()
   invisible()
 }
+
+# bit64's integer64 without bit64: the int64 values, as their two 32-bit
+# halves, low first, in a double vector. An NA high half over a zero low
+# half is INT64_MIN, bit64's NA.
+test_integer64 <- function(lo, hi) {
+  words <- as.vector(rbind(as.integer(lo), as.integer(hi)))
+  bits <- writeBin(words, raw(), endian = "little")
+  structure(
+    readBin(bits, "double", length(lo), endian = "little"),
+    class = "integer64"
+  )
+}
