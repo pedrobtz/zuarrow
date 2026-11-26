@@ -353,6 +353,7 @@ arrow_schema(x)                          # from an R object, a format string,
                                          # or any handle; prints the tree
 arrow_array(x, schema = NULL)            # one vector or data frame -> array
 arrow_stream(x, batch = 65536L, schema = NULL)   # data frame -> stream
+arrow_release(x)                         # release a handle now (D24)
 # back to R
 arrow_to_r(x, to = NULL,
            lossy = c("error", "character", "warn", "allow"))
@@ -485,8 +486,9 @@ calling the types lossy outright while §6.3 checks them by value.
 | `interval` (all three) | none; always an error | `zutempo` |
 | `dense_union`, `sparse_union` | none; always an error, unless a registered extension handler claims the field (§6.10) | none planned |
 
-Every row but the last two also has an exact character form, which
-`lossy = "character"` selects (§6.3).
+Every row but the last also has an exact character form, which
+`lossy = "character"` selects (§6.3); intervals have that form and no
+other (D21).
 
 On export, R types map by class: `integer` to `int32`, `double` to
 `double`, `logical` to `bool`, `character` to `utf8` (`large_utf8` when
@@ -499,6 +501,15 @@ same-typed vectors to `list<T>`, a matrix to `fixed_size_list` when
 `arrow_array()` is told so, a `data.frame` column to `struct`. A
 registered class goes through its `from` handler. Any other class errors
 as `zuarrow_type_error` naming the class.
+
+*2026-11-26:* `bit64`'s `integer64` exports as `int64` (D23), and a
+column marked with `I()` as its value without the mark, which is how
+`data.frame()` takes a list column. With a schema, a character vector
+also writes as `utf8_view` and a list of raw vectors as `binary_view`
+(D20), a double as `half_float` when the half holds it exactly (D22),
+and the character form of an interval back as the interval (D21). For a
+data frame, `schema` may be a named character vector of format strings
+that types only the columns it names (D24).
 
 Stage 3 (2026-10-21) read "`difftime` to `duration` at its unit" as
 `duration[us]`: R's `mins`, `hours`, `days` and `weeks` are not Arrow
@@ -518,12 +529,13 @@ decides what happens otherwise:
   2⁵³ + 1), and the exact target: the registered class if one exists, or
   the family package that would register it.
 - `"character"`: the value's canonical text, which is exact, for every
-  type in §6.2's second table except intervals and unions: integers as
+  type in §6.2's second table except unions: integers as
   digits, decimals with their scale's digits through nanoarrow's decimal
   helpers, timestamps and `date64` as ISO 8601 at the type's precision
   with the zone, times as `HH:MM:SS` with the fractional digits of the
   unit, durations as the count with the unit in the `arrow_unit`
-  attribute. The column carries the Arrow format string in the
+  attribute, intervals as the text Arrow's own formatter writes (D21).
+  The column carries the Arrow format string in the
   `arrow_type` attribute so export restores the type. This is how a
   session without `zuint`, `decimal` or `zutempo` sees the data without
   losing it (D16).
@@ -1284,6 +1296,54 @@ them. None was discussed before writing.
   pyarrow instead splits such a column into `binary` chunks; zuarrow
   writes one array per batch, so it widens the type.
 
+- **D20 (C).** `arrow_array()` writes `utf8_view` from a character vector
+  and `binary_view` from a list of raw vectors when the schema names them
+  (added 2026-11-26), through nanoarrow's appender: a value of at most 12
+  bytes inlined, a longer one in 32 KB data buffers. A view is never
+  inferred: the default stays `utf8` and `binary`, which every consumer
+  reads. The IPC writer still refuses views, as nanoarrow's encoder does.
+  The consumer is `zugodb`, whose tests feed its Arrow C stream adapter
+  from zuarrow.
+- **D21 (C).** Intervals have an exact character form (added
+  2026-11-26): the text Arrow C++'s formatter writes, which libarrow's
+  printer shows, so `test-ci-arrow.R` checks it against libarrow. Every
+  component is written with its sign and its unit, in order: `14M` for
+  `interval_months`, `3d1500ms` (days, milliseconds) for
+  `interval_day_time`, `1M-2d3ns` (months, days, nanoseconds) for
+  `interval_month_day_nano`. An ISO 8601 duration was rejected: it has
+  several forms of one value (`P1Y2M`, `P14M`), no sign per component and
+  no nanoseconds. Only `lossy = "character"` and `to = character()` give
+  the text; under `error`, `warn` and `allow` an interval is still a
+  `zuarrow_lossy_error`, because no other R form is exact. Written back,
+  only that text is read, as for every text form (#213): no `+`, no
+  leading zero, no `-0`, each component in its type's range.
+- **D22 (C).** A double writes as `half_float` only when the half holds
+  it exactly (added 2026-11-26), the rule `float` already follows: any
+  other value is a `zuarrow_lossy_error` naming the row, never rounded.
+  `NaN`, the infinities and both zeros are exact; every half NaN is
+  written as `0x7e00`.
+- **D23 (C).** `bit64`'s `integer64` writes as `int64` by default and as
+  any integer type with a schema (added 2026-11-26), read from its bits,
+  so `bit64` need not be loaded and stays out of `DESCRIPTION` (D5). Its
+  `NA` is `INT64_MIN`'s bit pattern, so that value is always a null, as
+  `arrow` and `nanoarrow` treat it. A value the target cannot hold, a
+  negative one for an unsigned type, is a `zuarrow_lossy_error` naming
+  the row. It does not write as a floating-point type.
+- **D24 (C).** Two additions for consumers that build Arrow data in tests
+  (added 2026-11-26, for `zugodb`). `schema =` for a data frame may be a
+  named character vector of format strings: the named columns take those
+  types and the others their default, so a test types one column without
+  spelling out the rest; a name that is not a column is a
+  `zuarrow_type_error`. `arrow_schema()` of such a vector is the `struct`
+  of exactly those fields, in its order, which a named character vector
+  of length one used to infer as `utf8`. A format string has no
+  children, so a nested column may be named only with its own format.
+  `arrow_release()` calls a handle's release callback now rather than at
+  collection, and a released handle is then a `zuarrow_handle_error`
+  everywhere, as one a consumer moved out already is; nanoarrow's
+  equivalent is `$release()`. The struct stays allocated, released,
+  until the finalizer frees it, so nothing is released twice.
+
 ## 14. Later versions, in the order they are expected
 
 - **A C table**: `inst/include/zuarrow.h` and
@@ -1308,8 +1368,9 @@ them. None was discussed before writing.
   by `zufast`'s rule; §4's layer 3 over `zubin`'s kernels and `column.h`;
   zero copy through `zubin`'s foreign buffer (D8). The DuckDB helper left
   this list for §6.12 the same day, and the package on 2026-11-04.
-- **Writing run-end-encoded and view types**, if a consumer produces
-  them.
+- **Writing run-end-encoded and list view types**, if a consumer
+  produces them. String and binary views are written since 2026-11-26
+  (D20), for `zugodb`'s tests of its Arrow C stream adapter.
 - **Arrow's cross-implementation integration suite**: the `integration/`
   hooks that let archery drive zuarrow as an IPC producer and consumer
   beside the C++, Rust, Go and Java implementations.
