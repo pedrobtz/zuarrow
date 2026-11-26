@@ -102,9 +102,13 @@ precision. The column carries the Arrow format string in its
 becomes \code{bit64}'s \code{integer64}, exactly, when \code{bit64} is loaded.
 }
 
-Intervals and unions have no R form and always fail, unless a handler
-registered with \code{\link[=arrow_register]{arrow_register()}} for the column's extension name
-converts it.
+Unions have no R form and always fail, unless a handler registered with
+\code{\link[=arrow_register]{arrow_register()}} for the column's extension name converts it.
+Intervals fail too, under every policy but \code{"character"}, which gives
+the text Arrow's own formatter writes: \code{"14M"} for \code{interval_months},
+\code{"3d1500ms"} (days and milliseconds) for \code{interval_day_time}, and
+\code{"1M-2d3ns"} (months, days and nanoseconds) for
+\code{interval_month_day_nano}. Every component is written, with its sign.
 
 Any other column with no values loses nothing, so it neither fails nor
 warns. Under \code{"error"} and \code{"warn"} it takes the form \code{"allow"} gives, so

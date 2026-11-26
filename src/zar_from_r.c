@@ -431,6 +431,9 @@ static int zar_has_text_target(enum ArrowType t) {
     case NANOARROW_TYPE_TIME32:
     case NANOARROW_TYPE_TIME64:
     case NANOARROW_TYPE_DURATION:
+    case NANOARROW_TYPE_INTERVAL_MONTHS:
+    case NANOARROW_TYPE_INTERVAL_DAY_TIME:
+    case NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO:
       return 1;
     default:
       return 0;
@@ -461,6 +464,8 @@ static int zar_build_text(struct ArrowArray *array,
   int decimal = t == NANOARROW_TYPE_DECIMAL32 || t == NANOARROW_TYPE_DECIMAL64 ||
                 t == NANOARROW_TYPE_DECIMAL128 || t == NANOARROW_TYPE_DECIMAL256;
   int64_t width = decimal ? sv->decimal_bitwidth / 8 : zar_type_bytes(t);
+  if (t == NANOARROW_TYPE_INTERVAL_MONTHS) width = 4;
+  if (t == NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO) width = 16;
   uint8_t *data = (uint8_t *)zar_data(array, 1, n * width, b);
   if (data == NULL && n > 0) return zar_build_fail(b, NULL, NA_REAL);
 
@@ -537,6 +542,35 @@ static int zar_build_text(struct ArrowArray *array,
             ((int64_t *)data)[i] = v;
           }
           break;
+        case NANOARROW_TYPE_INTERVAL_MONTHS:
+        case NANOARROW_TYPE_INTERVAL_DAY_TIME:
+        case NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO: {
+          static const char *const months[] = {"M"};
+          static const char *const day_time[] = {"d", "ms"};
+          static const char *const mdn[] = {"M", "d", "ns"};
+          int64_t c[3];
+          int parts = t == NANOARROW_TYPE_INTERVAL_MONTHS ? 1
+                      : t == NANOARROW_TYPE_INTERVAL_DAY_TIME ? 2 : 3;
+          code = zar_parse_interval(
+              text,
+              t == NANOARROW_TYPE_INTERVAL_MONTHS ? months
+              : t == NANOARROW_TYPE_INTERVAL_DAY_TIME ? day_time : mdn,
+              parts, c);
+          /* Every component is 32-bit but a month_day_nano's nanoseconds. */
+          int n32 = t == NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO ? 2 : parts;
+          for (int k = 0; code == NANOARROW_OK && k < n32; k++) {
+            if (c[k] < INT32_MIN || c[k] > INT32_MAX) code = ERANGE;
+          }
+          if (code == NANOARROW_OK) {
+            uint8_t *slot = data + i * width;
+            for (int k = 0; k < n32; k++) {
+              int32_t v32 = (int32_t)c[k];
+              memcpy(slot + 4 * k, &v32, 4);
+            }
+            if (parts == 3) memcpy(slot + 8, &c[2], 8);
+          }
+          break;
+        }
         default: /* signed integers and durations */
           code = zar_parse_int64(text, &v);
           if (code == NANOARROW_OK && t != NANOARROW_TYPE_INT64 &&

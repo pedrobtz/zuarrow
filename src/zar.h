@@ -109,6 +109,8 @@ int zar_parse_decimal(const char *s, struct ArrowDecimal *decimal);
 int zar_parse_date(const char *s, int64_t *days);
 int zar_parse_instant(const char *s, int digits, int utc, int64_t *out);
 int zar_parse_time(const char *s, int digits, int64_t *out);
+int zar_parse_interval(const char *s, const char *const *units, int n,
+                       int64_t *out);
 
 /* The condition kind of a reader stream's last failure, or NULL when the
    stream is not one arrow_read() made (src/zar_ipc_read.c). */

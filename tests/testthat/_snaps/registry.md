@@ -19,7 +19,7 @@
       arrow_to_r(union)
     Condition
       Error in `arrow_to_r()`:
-      ! Column 1 (Arrow format `+ud:3,7`) can't be converted to R exactly: dense_union has no R form. Arrow intervals and unions have no R form.
+      ! Column 1 (Arrow format `+ud:3,7`) can't be converted to R exactly: dense_union has no R form. Arrow unions have no R form.
 
 ---
 
@@ -27,5 +27,5 @@
       arrow_to_r(union)
     Condition
       Error in `arrow_to_r()`:
-      ! Column 1 (Arrow format `+ud:3,7`) can't be converted to R exactly: dense_union has no R form. Arrow intervals and unions have no R form.
+      ! Column 1 (Arrow format `+ud:3,7`) can't be converted to R exactly: dense_union has no R form. Arrow unions have no R form.
 
