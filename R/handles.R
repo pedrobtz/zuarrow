@@ -70,6 +70,37 @@ zar_as_schema <- function(x, call) {
   zar_check(.Call(zar_c_schema_from_spec, spec), call = call)
 }
 
+#' Release a handle early
+#'
+#' `arrow_release()` calls the release callback of the schema, array or
+#' stream a handle holds, as the handle's finalizer would when it is
+#' collected, so the memory it owns, and for a stream its producer, is
+#' freed now. Releasing a released handle does nothing. Afterwards the
+#' handle prints as released and any use of it, such as [arrow_next()] or
+#' [arrow_to_r()], raises `zuarrow_handle_error`. The handle may come from
+#' zuarrow or from any producer that uses 'nanoarrow' layout.
+#'
+#' @param x A schema, array or stream handle.
+#' @returns `x`, invisibly.
+#' @export
+#' @examples
+#' stream <- arrow_stream(data.frame(x = 1:3))
+#' arrow_release(stream)
+#' stream
+#' try(arrow_next(stream))
+arrow_release <- function(x) {
+  call <- sys.call()
+  if (!zar_is_handle(x)) {
+    zar_abort(
+      "handle",
+      "`x` must be a schema, array or stream handle.",
+      call = call
+    )
+  }
+  .Call(zar_c_handle_release, x)
+  invisible(x)
+}
+
 zar_is_schema <- function(x) inherits(x, "nanoarrow_schema")
 zar_is_array <- function(x) inherits(x, "nanoarrow_array")
 zar_is_stream <- function(x) inherits(x, "nanoarrow_array_stream")
