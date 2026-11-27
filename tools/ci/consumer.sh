@@ -78,17 +78,34 @@ echo "==> the fixture's tests, with zuarrow as the oracle"
 R_LIBS="$LIB" ZUARROWLINK_ORACLE=true Rscript --vanilla "$WORK/run-tests.R"
 
 echo "==> the fixture's tests with zuarrow absent from the library"
-# CI installs zuarrow's dependencies and testthat, never zuarrow itself,
-# outside $LIB; absent.R fails if one is reachable anyway, so this step
-# cannot pass with zuarrow standing in. (Locally, a zuarrow in the user
-# library makes it fail; uninstall it, or run on CI.)
+# A runner's library may hold a CRAN zuarrow (a dependency installer can
+# put one there), so zuarrow is not only moved out of $LIB: the run gets a
+# library of its own, every package reachable now except zuarrow, and
+# nothing else beside R's own.
 mv "$LIB/zuarrow" "$WORK/zuarrow-hidden"
+cat > "$WORK/without.R" <<'WITHOUT_R'
+dest <- commandArgs(trailingOnly = TRUE)[[1]]
+dir.create(dest, showWarnings = FALSE)
+for (lib in setdiff(.libPaths(), .Library)) {
+  for (p in setdiff(list.files(lib), c("zuarrow", list.files(dest)))) {
+    if (!file.copy(file.path(lib, p), dest, recursive = TRUE)) {
+      stop("could not copy ", p, " from ", lib)
+    }
+  }
+}
+WITHOUT_R
+R_LIBS="$LIB" Rscript --vanilla "$WORK/without.R" "$WORK/without"
 cat > "$WORK/absent.R" <<'ABSENT_R'
 if (nzchar(system.file(package = "zuarrow"))) {
   stop("zuarrow is still reachable at ", system.file(package = "zuarrow"))
 }
 ABSENT_R
-R_LIBS="$LIB" Rscript --vanilla "$WORK/absent.R"
-R_LIBS="$LIB" Rscript --vanilla "$WORK/run-tests.R"
+# Nonexistent directories, so neither the user nor the site library is on
+# the path.
+NONE="$WORK/no-library"
+R_LIBS="$WORK/without" R_LIBS_USER="$NONE" R_LIBS_SITE="$NONE" \
+  Rscript --vanilla "$WORK/absent.R"
+R_LIBS="$WORK/without" R_LIBS_USER="$NONE" R_LIBS_SITE="$NONE" \
+  Rscript --vanilla "$WORK/run-tests.R"
 mv "$WORK/zuarrow-hidden" "$LIB/zuarrow"
 echo "==> the consumer builds, links, builds arrays and reads IPC on $(uname -s)"

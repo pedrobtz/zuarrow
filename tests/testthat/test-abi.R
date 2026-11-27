@@ -56,9 +56,15 @@ test_that("objdump import tables parse with and without an ordinal column", {
 test_that("the archive and its headers are installed", {
   skip_on_cran()
   expect_true(file.exists(abi_archive_path()))
+  # Loaded from source (devtools::test(), as gctorture runs it), there is
+  # no installed include directory to check; R CMD check installs one.
+  testthat::skip_if_not(
+    dir.exists(system.file("Meta", package = "zuarrow")),
+    "zuarrow is loaded from source, not installed"
+  )
   include <- system.file("include", package = "zuarrow")
   if (!file.exists(file.path(include, "zuarrow", "nanoarrow.h"))) {
-    abi_unavailable("zuarrow is not installed with its headers")
+    abi_unavailable("zuarrow is installed without its headers")
   }
   for (f in c("zuarrow.h", "zukomp.h", file.path("zuarrow", "nanoarrow.h"))) {
     expect_true(file.exists(file.path(include, f)), info = f)

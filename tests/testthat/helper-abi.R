@@ -187,19 +187,29 @@ abi_archive_path <- function() {
 }
 
 abi_archive_nm <- function(args) {
-  out <- abi_run(abi_tool("nm"), c(args, shQuote(abi_archive_path())))
-  out <- out[nzchar(out)]
-  # An archive of LTO bitcode has no object symbols to judge.
-  if (any(grepl("__gnu_lto|\\.gnu\\.lto", out))) {
-    testthat::skip("libzuarrow.a holds LTO bitcode")
+  path <- shQuote(abi_archive_path())
+  out <- abi_archive_symbols(abi_run(abi_tool("nm"), c(args, path)))
+  # Under an LTO configuration the archive holds bitcode (src/Makevars),
+  # which plain nm lists as nothing; gcc-nm reads GCC's through its plugin.
+  if (length(out) == 0L && nzchar(Sys.which("gcc-nm"))) {
+    out <- abi_archive_symbols(abi_run(Sys.which("gcc-nm"), c(args, path)))
+  }
+  if (length(out) == 0L || any(grepl("__gnu_lto|\\.gnu\\.lto", out))) {
+    testthat::skip(
+      "libzuarrow.a holds LTO bitcode, which has no object symbols to judge"
+    )
   }
   out
+}
+
+# nm's lines without blank lines and archive member headers ("x.o:").
+abi_archive_symbols <- function(out) {
+  out[nzchar(trimws(out)) & !grepl(":$", out)]
 }
 
 # Symbol names in nm's default format, without archive member headers.
 abi_archive_names <- function(args) {
   out <- abi_archive_nm(args)
-  out <- out[!grepl(":$", out)]
   abi_clean(sub("^.*\\s", "", trimws(out)))
 }
 
@@ -216,7 +226,9 @@ abi_archive_defined_globals <- function() {
 
 # Defined symbols in a writable data section, which would be mutable state
 # shared by every stream in a process. Sanitizer and compiler bookkeeping
-# (asan, ubsan, coverage, local labels) is not the package's.
+# (asan, ubsan, coverage, local labels, section symbols) is not the
+# package's. A static that is never written but not const counts: Linux
+# puts it in .data (patch 0023).
 abi_archive_writable <- function() {
   if (Sys.info()[["sysname"]] == "Darwin") {
     out <- abi_archive_nm("-m")
@@ -236,5 +248,11 @@ abi_archive_writable <- function() {
     names <- names[writable | section %in% c("*COM*", "COMMON")]
   }
   names <- abi_clean(names)
-  names[!grepl("^(\\.L|L|l_|ltmp|__odr_)|asan|ubsan|sancov|gcov|__llvm", names)]
+  # COFF's nm lists each section as a symbol of its own name (".data").
+  names[
+    !grepl(
+      "^(\\.|L[0-9_.]|l_|ltmp|__odr_)|asan|ubsan|sancov|gcov|__llvm",
+      names
+    )
+  ]
 }
