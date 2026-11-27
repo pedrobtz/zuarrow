@@ -400,14 +400,33 @@ test_that("a duration's text carries its unit", {
   expect_identical(attr(out, "arrow_unit"), "ms")
 })
 
-test_that("intervals and unions always fail", {
+test_that("unions always fail, and intervals but for their text", {
   interval <- test_array("tiM", 1, list(NULL, le_int(1, 4L)))
-  for (lossy in c("error", "character", "warn", "allow")) {
-    expect_error(
+  for (lossy in c("error", "warn", "allow")) {
+    err <- expect_error(
       arrow_to_r(interval, lossy = lossy),
       class = "zuarrow_lossy_error"
     )
+    expect_match(conditionMessage(err), "lossy = \"character\"", fixed = TRUE)
   }
+  # The text Arrow's formatter writes (2026-11-26), built from raw buffers
+  # so the reader is checked apart from the writer.
+  text <- function(format, bytes, n = 1) {
+    as.vector(arrow_to_r(
+      test_array(format, n, list(NULL, bytes)),
+      lossy = "character"
+    ))
+  }
+  expect_identical(text("tiM", le_int(1, 4L)), "1M")
+  expect_identical(text("tiM", le_int(c(-14, 0), 4L), 2), c("-14M", "0M"))
+  expect_identical(text("tiD", le_int(c(3, -1500), 4L)), "3d-1500ms")
+  expect_identical(
+    text(
+      "tin",
+      c(le_int(c(-2147483648, 2147483647), 4L), le_hex("8000000000000000"))
+    ),
+    "-2147483648M2147483647d-9223372036854775808ns"
+  )
   union_schema <- test_schema(zspec("+us:0", children = list(zspec("i", "a"))))
   union <- test_array(
     union_schema,

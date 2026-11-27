@@ -7,12 +7,16 @@
 #   make -C tools/fuzz replay CC="$MULL_CC"
 #   tools/fuzz/replay
 #
-# The flags are fuzz.yaml's cflags, without the fuzzer.
+# The flags are fuzz.yaml's cflags, without the fuzzer. zukomp.h, which
+# src/zar_codecs.c includes, comes from ZUKOMP_INCLUDE: a checkout's
+# inst/include, or an installed zukomp's include directory.
 ROOT := $(abspath ../..)
+ZUKOMP_INCLUDE ?= $(ROOT)/.zukomp/inst/include
 CC ?= cc
 CFLAGS ?= -g -O1
 ZAR_CFLAGS = -DZAR_STANDALONE -DNANOARROW_NAMESPACE=zuarrow -DNANOARROW_DLL= \
-  -DFLATCC_NO_ASSERT -I$(ROOT)/src -I$(ROOT)/src/vendor/nanoarrow
+  -DFLATCC_NO_ASSERT -I$(ROOT)/src -I$(ROOT)/src/vendor/nanoarrow \
+  -I$(ROOT)/inst/include -I$(ZUKOMP_INCLUDE)
 BUILD = build
 SOURCES = $(ROOT)/src/zar_ipc_read.c $(ROOT)/src/zar_utf8.c $(ROOT)/src/zar_codecs.c \
   $(ROOT)/src/vendor/nanoarrow/nanoarrow.c $(ROOT)/src/vendor/nanoarrow/nanoarrow_ipc.c \

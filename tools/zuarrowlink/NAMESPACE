@@ -1,0 +1,12 @@
+# No import directive, and no Imports: entry in DESCRIPTION to permit one:
+# the reader and the builders are linked statically from zuarrow's
+# installed libzuarrow.a, so zuarrow never has to be loadable at run time.
+# tools/ci/consumer.sh checks both, and runs the fixture with zuarrow
+# moved out of the library.
+useDynLib(zuarrowlink, .registration = TRUE)
+export(abi)
+export(build_stream)
+export(parse_date)
+export(parse_int64)
+export(read_ipc)
+export(stream_columns)

@@ -9,8 +9,12 @@ concurrency:
   cancel-in-progress: true
 
 # The IPC reader built without R (ZAR_STANDALONE, design section 9): framing,
-# verification, limits and validation over hostile bytes. Without R there
-# are no codecs, so compressed bodies stop at a codec error.
+# verification, limits and validation over hostile bytes, opened through
+# the static archive's entry point zuarrow_open_stream() (design section
+# 14.1), and the public exact parsers over the same bytes as text. Without
+# R there are no codecs, so compressed bodies stop at a codec error.
+# zukomp.h, which types the options' codec table, comes from zukomp's
+# 0.2.0 tag, the release DESCRIPTION's LinkingTo floor names.
 #
 # Seeds: apache/arrow-testing at the commit tests/testthat/fixtures-files.txt
 # pins, checked out by github-packages. seed-corpus takes one directory, so
@@ -31,14 +35,19 @@ jobs:
         src/zar_ipc_read.c
         src/zar_utf8.c
         src/zar_codecs.c
+        src/zar_api.c
+        src/zar_parse.c
         src/vendor/nanoarrow/nanoarrow.c
         src/vendor/nanoarrow/nanoarrow_ipc.c
         src/vendor/nanoarrow/flatcc.c
       cflags: >-
         -g -O1 -fno-omit-frame-pointer -DZAR_STANDALONE
         -DNANOARROW_NAMESPACE=zuarrow -DNANOARROW_DLL= -DFLATCC_NO_ASSERT
-        -Isrc -Isrc/vendor/nanoarrow
-      github-packages: apache/arrow-testing@9ff285c88565f0f6abc855918c6a342e70e4909c
+        -Isrc -Isrc/vendor/nanoarrow -Iinst/include
+        -I.github-packages/zukomp/inst/include
+      github-packages: |
+        apache/arrow-testing@9ff285c88565f0f6abc855918c6a342e70e4909c
+        pedrobtz/zukomp@0.2.0
       seed-corpus: .github-packages/arrow-testing/data/arrow-ipc-stream
       libfuzzer-args: >-
         -timeout=10

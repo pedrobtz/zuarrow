@@ -288,3 +288,30 @@ int zar_parse_time(const char *s, int digits, int64_t *out) {
   *out = (h * 3600 + mi * 60 + se) * zar_pow10(digits) + frac;
   return NANOARROW_OK;
 }
+
+/* An interval in the text Arrow's own formatter writes (design section
+   6.3, 2026-11-26): the signed components, each followed by its unit and
+   in this order, every component written, as "14M" for interval_months,
+   "3d1500ms" for interval_day_time and "1M-2d3ns" for
+   interval_month_day_nano. `units` lists the suffixes, `out` gets one
+   value per suffix, and the caller checks each against its width. */
+int zar_parse_interval(const char *s, const char *const *units, int n,
+                       int64_t *out) {
+  for (int k = 0; k < n; k++) {
+    const char *start = s;
+    if (*s == '-' || *s == '+') s++;
+    if (!zar_digit(*s)) return EINVAL;
+    while (zar_digit(*s)) s++;
+    size_t len = strlen(units[k]);
+    if (strncmp(s, units[k], len) != 0) return EINVAL;
+    char number[32];
+    /* More digits than any int64 has: out of range, as a long integer is. */
+    if ((size_t)(s - start) >= sizeof(number)) return ERANGE;
+    memcpy(number, start, (size_t)(s - start));
+    number[s - start] = '\0';
+    int code = zar_parse_int64(number, &out[k]);
+    if (code != NANOARROW_OK) return code;
+    s += len;
+  }
+  return *s == '\0' ? NANOARROW_OK : EINVAL;
+}

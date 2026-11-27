@@ -7,7 +7,9 @@
  * (tools/patches/0014-list-view-bound-overflow.patch), and a failed
  * allocation while an array is initialised, given children or shared
  * returns ENOMEM with nothing left half built or leaked
- * (tools/patches/0021-array-alloc-failure.patch).
+ * (tools/patches/0021-array-alloc-failure.patch), and the default
+ * allocator's static is const, so the library holds no writable global
+ * (tools/patches/0023-const-default-allocator.patch).
  */
 // Licensed to the Apache Software Foundation (ASF) under one
 // or more contributor license agreements.  See the NOTICE file
@@ -271,7 +273,7 @@ static void ArrowBufferAllocatorMallocFree(struct ArrowBufferAllocator* allocato
   }
 }
 
-static struct ArrowBufferAllocator ArrowBufferAllocatorMalloc = {
+static const struct ArrowBufferAllocator ArrowBufferAllocatorMalloc = {
     &ArrowBufferAllocatorMallocReallocate, &ArrowBufferAllocatorMallocFree, NULL};
 
 struct ArrowBufferAllocator ArrowBufferAllocatorDefault(void) {

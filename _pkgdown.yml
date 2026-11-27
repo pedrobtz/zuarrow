@@ -10,6 +10,7 @@ reference:
     contents:
       - arrow_schema
       - arrow_array
+      - arrow_release
   - title: Back to R
     desc: Exact conversion to R vectors and data frames, or an error.
     contents:

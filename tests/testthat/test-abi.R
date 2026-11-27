@@ -52,3 +52,68 @@ test_that("objdump import tables parse with and without an ordinal column", {
   ))
   expect_false(any(grepl("Member-Name|<none>", imports)))
 })
+
+test_that("the archive and its headers are installed", {
+  skip_on_cran()
+  expect_true(file.exists(abi_archive_path()))
+  # Loaded from source (devtools::test(), as gctorture runs it), there is
+  # no installed include directory to check; R CMD check installs one.
+  testthat::skip_if_not(
+    dir.exists(system.file("Meta", package = "zuarrow")),
+    "zuarrow is loaded from source, not installed"
+  )
+  include <- system.file("include", package = "zuarrow")
+  if (!file.exists(file.path(include, "zuarrow", "nanoarrow.h"))) {
+    abi_unavailable("zuarrow is installed without its headers")
+  }
+  for (f in c("zuarrow.h", "zukomp.h", file.path("zuarrow", "nanoarrow.h"))) {
+    expect_true(file.exists(file.path(include, f)), info = f)
+  }
+  # The copies are the files the archive was built from.
+  vendored <- test_path("..", "..", "src", "vendor", "nanoarrow", "nanoarrow.h")
+  if (file.exists(vendored)) {
+    expect_identical(
+      unname(tools::md5sum(file.path(include, "zuarrow", "nanoarrow.h"))),
+      unname(tools::md5sum(vendored))
+    )
+  }
+  licenses <- system.file("licenses", package = "zuarrow")
+  expect_true(all(file.exists(
+    file.path(licenses, c("nanoarrow-LICENSE.txt", "nanoarrow-NOTICE.txt"))
+  )))
+})
+
+test_that("the archive calls no R and nothing CRAN's check reports", {
+  skip_on_cran()
+  abi_skip_instrumented()
+  undefined <- sub("^_+", "", abi_archive_undefined())
+  # It does call the C library, so an empty listing is a broken tool.
+  expect_true("malloc" %in% undefined)
+  expect_identical(
+    grep("^(Rf_|R_|Rprintf|REprintf)", undefined, value = TRUE),
+    character()
+  )
+  expect_identical(intersect(undefined, abi_forbidden), character())
+})
+
+test_that("every symbol the archive defines is zuarrow's, zar_ or flatcc's", {
+  skip_on_cran()
+  abi_skip_instrumented()
+  defined <- abi_archive_defined_globals()
+  expect_true("zuarrow_open_stream" %in% defined)
+  expect_true("zuarrowArrowArrayInitFromType" %in% defined)
+  expect_true("zuarrowArrowBasicArrayStreamInit" %in% defined)
+  # nanoarrow's names are namespaced to zuarrowArrow*; flatcc's runtime is
+  # not, which design section 14.1 records.
+  expect_identical(
+    grep("^(zuarrow|zar_|flatcc_)", defined, value = TRUE, invert = TRUE),
+    character()
+  )
+  expect_identical(grep("^Arrow", defined, value = TRUE), character())
+})
+
+test_that("the archive holds no mutable global", {
+  skip_on_cran()
+  abi_skip_instrumented()
+  expect_identical(abi_archive_writable(), character())
+})

@@ -90,6 +90,8 @@ tools/update-vendor                              # re-vendor nanoarrow, rewrite 
 tools/verify-vendor                              # vendored tree is upstream plus patches
 tools/verify-vendor --canary                     # the verifier catches a missing patch
 tools/run-benchmarks [--rows N] [--reps R]       # design §10 timings, as Markdown rows
+bash tools/ci/consumer.sh                        # the C API consumer fixture, end to end
+Rscript tools/make-consumer-fixture.R [--check]  # its IPC files, written or checked
 tools/bench-types [--rows N] [--reps R]          # per-type conversion against nanoarrow
 NOT_CRAN=true Rscript -e 'devtools::test(filter = "abi")'   # symbol checks (skip on CRAN)
 
@@ -172,6 +174,17 @@ Design §4 names five layers. What exists so far:
   on first access, and drops the handles once every element exists. It
   has no serialization method, so `saveRDS()` writes a plain vector.
 
+- **The C API** (design §14.1, #251): `inst/include/zuarrow.h`,
+  implemented R-free in `src/zar_api.c` over the reader's
+  `zar_reader_open_path()` and `zar_reader_select()`. `src/Makevars`
+  compiles the R-free sources a second time with `-DZAR_STANDALONE`, and
+  without R's include directory, into `libzuarrow.a`; `src/install.libs.R`
+  installs it to `lib${R_ARCH}` with `zuarrow/nanoarrow.h` and `zukomp.h`
+  copied beside `zuarrow.h`. `zar_api.c` is also in `zuarrow.so`, hidden,
+  for `test-c-api.R` through `src/zar_api_r.c`. `tools/zuarrowlink` is the
+  consumer fixture, run by `tools/ci/consumer.sh` from `consumer.yaml`;
+  `Rscript tools/make-consumer-fixture.R` rewrites its IPC files.
+
 **C never raises a condition.** An entry point that fails frees what it
 owns and returns a `zar_failure`, `list(kind, message)`. The R caller
 wraps every `.Call()` in `zar_check()`, which raises
@@ -197,6 +210,13 @@ test or CI leg will catch late. Add more as stages establish them.
 - **`lossy = "error"` is the default everywhere**, including the
   `as.data.frame()` and `as.vector()` S3 methods (D4, §15 Q4). A registration
   may make a lossy default exact and never an exact default lossy (§6.10).
+- **The archive calls no R and holds no mutable global** (§14.1).
+  `libzuarrow.a` is linked into other packages and may run off R's main
+  thread. A file it compiles that includes an R header does not build;
+  `test-abi.R` fails on an R or `abort`/`printf` import, a symbol not
+  `zuarrow*`, `zar_*` or `flatcc_*`, or a writable data symbol. A change
+  to a declaration a reader reaches, in `zuarrow.h` or a re-vendored or
+  patched `nanoarrow.h`, bumps `ZUARROW_ABI_VERSION`.
 - **Vendored nanoarrow builds with `NANOARROW_NAMESPACE` set to `zuarrow`**
   and hidden visibility, so the shared object exports `R_init_zuarrow` only
   and no `Arrow*` symbol (§7, §9). Without it, loading `nanoarrow` in the

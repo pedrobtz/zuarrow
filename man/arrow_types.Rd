@@ -8,15 +8,21 @@ arrow_types()
 }
 \value{
 A data frame of character columns: \code{arrow}, \code{format}, \code{r},
-\code{exact}, \code{lossy_r} and \code{exact_with}. \code{exact} describes when the R form
-is exact, as text such as \code{"yes"}, \code{"no"} or \code{"within +/-2^53"}, not
-as a logical.
+\code{exact}, \code{lossy_r}, \code{exact_with} and \code{from_r}. \code{exact} describes when
+the R form is exact, as text such as \code{"yes"}, \code{"no"} or
+\code{"within +/-2^53"}, not as a logical. \code{from_r} lists the R values
+written as the type: "(schema)" marks those written as it only when
+\code{schema} names it, and in a row of several types \code{schema} picks any
+but the one each value infers. "text" is the character vector with an
+\code{arrow_type} attribute that \code{\link[=arrow_to_r]{arrow_to_r()}} gives under
+\code{lossy = "character"}, written as the type that attribute names.
+\code{from_r} is empty for a type zuarrow reads but does not write.
 }
 \description{
 Lists every Arrow type zuarrow converts without a registration: its
 format string, its R form, whether that form is exact, the R form
-\code{lossy = "allow"} gives otherwise, and the package that reads it
-exactly.
+\code{lossy = "allow"} gives otherwise, the package that reads it exactly,
+and the R values \code{\link[=arrow_array]{arrow_array()}} writes as it.
 }
 \examples{
 arrow_types()

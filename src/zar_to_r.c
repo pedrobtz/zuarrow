@@ -446,6 +446,9 @@ static int zar_has_text_form(enum ArrowType type) {
     case NANOARROW_TYPE_TIME32:
     case NANOARROW_TYPE_TIME64:
     case NANOARROW_TYPE_DURATION:
+    case NANOARROW_TYPE_INTERVAL_MONTHS:
+    case NANOARROW_TYPE_INTERVAL_DAY_TIME:
+    case NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO:
       return 1;
     default:
       return 0;
@@ -651,6 +654,7 @@ static int zar_plan_to(struct zar_plan *p, int to, struct zar_err *e) {
       p->target = ZAR_T_TEXT;
       p->scan = ZAR_SCAN_NONE;
       p->lossy_by_schema = 0;
+      p->never = 0;
       return NANOARROW_OK;
     case ZAR_TO_DOUBLE:
       if (p->target == ZAR_T_DBL ||
@@ -1016,6 +1020,12 @@ static int zar_resolve(struct zar_plan *p, struct zar_slice *slices,
   }
 
   if (p->never) {
+    /* Intervals have their exact text, and nothing else (2026-11-26). */
+    if (lossy == ZAR_LOSSY_CHARACTER && zar_has_text_form(p->sv.type)) {
+      p->target = ZAR_T_TEXT;
+      return NANOARROW_OK;
+    }
+    e->no_text = !zar_has_text_form(p->sv.type);
     ArrowErrorSet(&e->error, "%s has no R form", ArrowTypeString(p->sv.type));
     return zar_fail(e, "lossy", -1, p->schema->format);
   }
@@ -1207,6 +1217,23 @@ static int zar_text(const struct zar_plan *p, const struct ArrowArrayView *v,
         text[1] = '\0';
       }
       *out = text;
+      return NANOARROW_OK;
+    }
+    case NANOARROW_TYPE_INTERVAL_MONTHS:
+    case NANOARROW_TYPE_INTERVAL_DAY_TIME:
+    case NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO: {
+      /* Arrow's own formatter's text: "14M", "3d1500ms", "1M-2d3ns". */
+      struct ArrowInterval iv;
+      ArrowIntervalInit(&iv, p->sv.type);
+      ArrowArrayViewGetIntervalUnsafe(v, j, &iv);
+      if (p->sv.type == NANOARROW_TYPE_INTERVAL_MONTHS) {
+        snprintf(buf, n, "%" PRId32 "M", iv.months);
+      } else if (p->sv.type == NANOARROW_TYPE_INTERVAL_DAY_TIME) {
+        snprintf(buf, n, "%" PRId32 "d%" PRId32 "ms", iv.days, iv.ms);
+      } else {
+        snprintf(buf, n, "%" PRId32 "M%" PRId32 "d%" PRId64 "ns", iv.months,
+                 iv.days, iv.ns);
+      }
       return NANOARROW_OK;
     }
     default:

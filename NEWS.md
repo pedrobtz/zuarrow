@@ -1,3 +1,34 @@
+# zuarrow (development version)
+
+* zuarrow ships a C API for other packages' C code, with `LinkingTo:
+  zuarrow` and no R at run time: the static archive `libzuarrow.a`,
+  `zuarrow.h` with `zuarrow_open_stream()`, which reads an Arrow IPC file
+  as an `ArrowArrayStream` with every check `arrow_read()` makes, the
+  bundled nanoarrow as `zuarrow/nanoarrow.h` for building arrays, and the
+  exact text parsers. No R function changes (#251).
+
+* `arrow_array()` and `arrow_stream()` write more of the types zuarrow
+  reads:
+  * `string_view` (`"vu"`) from a character vector and `binary_view`
+    (`"vz"`) from a list of raw vectors.
+  * `half_float` (`"e"`) from a double the half float holds exactly; any
+    other double is a `zuarrow_lossy_error` naming the row.
+  * `interval_months`, `interval_day_time` and `interval_month_day_nano`
+    from their text, such as `"14M"`, `"3d1500ms"` and `"1M-2d3ns"`.
+  * `bit64`'s `integer64`, as `int64` by default and as any integer type
+    with a `schema`, without loading 'bit64'.
+* `arrow_to_r()` reads an interval under `lossy = "character"`, or with
+  `to = character()`, as the text Arrow's own formatter writes. Under the
+  other policies an interval is still an error.
+* For a data frame, `schema` may be a named character vector of format
+  strings, such as `c(x = "e", y = "vu")`, that types the columns it
+  names. `arrow_schema()` of such a vector is that `struct`.
+* `arrow_release()` releases a schema, array or stream handle now instead
+  of when it is collected.
+* A column marked with `I()` is written as its value.
+* `arrow_types()` has a `from_r` column: the R values `arrow_array()`
+  writes as each type.
+
 # zuarrow 0.1.0
 
 * Initial CRAN submission.

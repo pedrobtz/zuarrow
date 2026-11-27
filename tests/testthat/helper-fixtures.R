@@ -91,8 +91,9 @@ golden_cases <- function(version) {
   stats::setNames(file.path(dir, cases), cases)
 }
 
-# Unions and intervals have no R form; golden cases are read as exact text.
-no_r_form <- function(case) grepl("union|interval", case)
+# Unions have no R form; golden cases are read as exact text, which
+# intervals have (2026-11-26).
+no_r_form <- function(case) grepl("union", case)
 
 read_golden <- function(path) {
   tryCatch(arrow_read(path, lossy = "character"), zuarrow_error = function(e) e)
@@ -148,6 +149,70 @@ golden_json_text <- function(case_path) {
     }
     out[[field$name]] <- if (is.null(text)) character() else text
   }
+  out
+}
+
+# The text arrow_to_r(lossy = "character") gives each interval column of a
+# golden case's JSON twin, built from the JSON's components: "14M",
+# "3d1500ms", "1M-2d3ns". A month_day_nano's nanoseconds pass 2^53, which
+# the parser would round, so their digits are taken from the JSON text, in
+# the order the values appear: so a case may hold one such column, as each
+# golden case does.
+golden_json_interval_text <- function(case_path) {
+  con <- gzfile(paste0(case_path, ".json.gz"), "rb")
+  bytes <- readBin(con, "raw", 1e8)
+  close(con)
+  json <- zujson::json_parse_raw(bytes)
+  raw_text <- rawToChar(bytes)
+  nanos <- regmatches(
+    raw_text,
+    gregexpr("\"nanoseconds\"\\s*:\\s*\"?-?[0-9]+", raw_text)
+  )[[1L]]
+  nanos <- sub("^.*:\\s*\"?", "", nanos)
+  used <- 0L
+  component <- function(data, name) {
+    json_number_text(lapply(data, `[[`, name))
+  }
+  out <- list()
+  for (i in seq_along(json$schema$fields)) {
+    field <- json$schema$fields[[i]]
+    if (field$type$name != "interval") {
+      next
+    }
+    text <- unlist(lapply(json$batches, function(batch) {
+      column <- batch$columns[[i]]
+      data <- column$DATA
+      values <- switch(
+        field$type$unit,
+        YEAR_MONTH = paste0(json_number_text(data), "M"),
+        DAY_TIME = paste0(
+          component(data, "days"),
+          "d",
+          component(data, "milliseconds"),
+          "ms"
+        ),
+        MONTH_DAY_NANO = {
+          ns <- nanos[used + seq_along(data)]
+          used <<- used + length(data)
+          paste0(
+            component(data, "months"),
+            "M",
+            component(data, "days"),
+            "d",
+            ns,
+            "ns"
+          )
+        }
+      )
+      if (length(data) == 0L) {
+        values <- character()
+      }
+      values[!as.logical(unlist(column$VALIDITY))] <- NA
+      values
+    }))
+    out[[field$name]] <- if (is.null(text)) character() else text
+  }
+  stopifnot(used == length(nanos))
   out
 }
 

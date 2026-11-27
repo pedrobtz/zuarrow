@@ -31,6 +31,7 @@ Vendored dependency: Apache Arrow nanoarrow C library, core and ipc
                  0020-encode-metadata-length.patch
                  0021-array-alloc-failure.patch
                  0022-flatcc-vtable-alloc-failure.patch
+                 0023-const-default-allocator.patch
 
 src/vendor/nanoarrow/ is the output of upstream's ci/scripts/bundle.py
 run on the archive with --symbol-namespace=zuarrow --with-ipc
@@ -135,6 +136,11 @@ Patches:
       descriptor it had linked. Upstream returned -1, a nonzero
       reference, so the encoder wrote a corrupt message and reported
       success (#232). To be offered to flatcc upstream.
+  0023-const-default-allocator.patch  declares the default allocator's
+      static ArrowBufferAllocatorMalloc const. It is only ever read, but
+      as a non-const static it lands in a writable section, and the
+      static archive libzuarrow.a holds no writable global (design
+      section 14.1, #251). nanoarrow.c only; no declaration changes.
 
 SHA-256 of every vendored file:
   abdc436530c715318d843424f4f9b7b817f80f592678526942c2070ace3cba71  LICENSE.txt
@@ -175,7 +181,7 @@ SHA-256 of every vendored file:
   c13599ddbca131cf223d3a09ebef9decf9cd65f46cf45181dd1815c54ad3f22f  flatcc/portable/punaligned.h
   439eabad27674a5a8bb556330ece3b6715e588c1bb18969f497d9fb9ecf4ff1c  flatcc/portable/pversion.h
   17cfa18dbb6f81adb0006a9c7adf2776093f54fc760a89112e619ce796b67aa6  flatcc/portable/pwarnings.h
-  8cdbed124503b7080deac970ba6c081bb50d5b81cf120baabe869322b2a0c7fa  nanoarrow.c
+  76aea79231c0f7cb5165c765465b226d3e768922811185aa2643234606e280f3  nanoarrow.c
   fb4f48913ad6b90680555b5a7885dd3858ad5846d5da9022ab6f8cda799cb5f3  nanoarrow.h
   1905ec3fd62604d98da2606164a75fd9502211427f3a8c127b3b7826856876ae  nanoarrow_ipc.c
   f75b394226d48394d22f394985e2c3cf0df671387847288148ab3204e2d91ce8  nanoarrow_ipc.h

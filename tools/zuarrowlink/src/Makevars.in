@@ -1,0 +1,14 @@
+# Generated into src/Makevars by ../configure (src/Makevars.win by
+# ../configure.win) on every install; do not edit the generated file.
+#
+# No include path: LinkingTo: zuarrow adds <zuarrow>/include, which holds
+# zuarrow.h, zuarrow/nanoarrow.h and zukomp.h. NANOARROW_DLL is defined
+# empty so the builders' declarations take this build's hidden visibility,
+# as they do inside zuarrow; nothing else needs defining, because the
+# header already names every nanoarrow function zuarrowArrow*.
+PKG_CPPFLAGS = -DNANOARROW_DLL=
+PKG_CFLAGS = $(C_VISIBILITY)
+
+# Single-quoted: a library path with a space (the Windows user library)
+# would otherwise reach the linker as two arguments.
+PKG_LIBS = '@ZUARROW_LIB@/libzuarrow.a'

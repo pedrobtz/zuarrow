@@ -4,6 +4,7 @@
 #include "zar.h"
 
 SEXP zar_c_handle_status(SEXP x);
+SEXP zar_c_handle_release(SEXP x);
 SEXP zar_c_schema_copy(SEXP x);
 SEXP zar_c_schema_format(SEXP x, SEXP recursive);
 SEXP zar_c_schema_from_spec(SEXP spec);
@@ -37,11 +38,17 @@ SEXP zar_c_to_r(SEXP arrays, SEXP schema, SEXP opts);
 SEXP zar_c_from_r(SEXP x, SEXP schema, SEXP start, SEXP n, SEXP limits);
 SEXP zar_c_utf8_over(SEXP x, SEXP limit);
 SEXP zar_c_utf8_raw(SEXP x);
+SEXP zar_c_api_open(SEXP path, SEXP columns, SEXP indices, SEXP limits, SEXP codecs,
+                    SEXP struct_size);
+SEXP zar_c_api_kind(SEXP x);
+SEXP zar_c_api_parse(SEXP what, SEXP x, SEXP digits, SEXP utc);
+SEXP zar_c_api_utf8(SEXP x);
 
 #define ZAR_CALL(name, n) {#name, (DL_FUNC)&name, n}
 
 static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_handle_status, 1),
+    ZAR_CALL(zar_c_handle_release, 1),
     ZAR_CALL(zar_c_schema_copy, 1),
     ZAR_CALL(zar_c_schema_format, 2),
     ZAR_CALL(zar_c_schema_from_spec, 1),
@@ -77,6 +84,10 @@ static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_from_r, 5),
     ZAR_CALL(zar_c_utf8_over, 2),
     ZAR_CALL(zar_c_utf8_raw, 1),
+    ZAR_CALL(zar_c_api_open, 6),
+    ZAR_CALL(zar_c_api_kind, 1),
+    ZAR_CALL(zar_c_api_parse, 4),
+    ZAR_CALL(zar_c_api_utf8, 1),
     {NULL, NULL, 0}};
 
 void attribute_visible R_init_zuarrow(DllInfo *dll) {
