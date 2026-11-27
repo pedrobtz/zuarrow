@@ -1490,7 +1490,8 @@ nanoarrow 0.9.0 as `src/vendor/PROVENANCE` records it. Of the patches,
 one changes code a reader compiles: 0021 (`ArrowArrayAddVariadicBuffers`,
 inline in `nanoarrow.h`, checks both reallocations). The rest change
 `nanoarrow.c`, `nanoarrow_ipc.c`, `nanoarrow_ipc.h` (not installed) or
-flatcc, which the archive holds. A re-vendor, or a patch to
+flatcc, which the archive holds. 0023 was added for the archive: the
+default allocator's static is `const`, so no writable global is left. A re-vendor, or a patch to
 `nanoarrow.h`, bumps `ZUARROW_ABI_VERSION`.
 
 **Builders.** A reader includes `<zuarrow/nanoarrow.h>` and calls
