@@ -52,6 +52,7 @@ Two dependencies outside this repository shape the plan:
 | 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | [#86](https://github.com/pedrobtz/zuarrow/pull/86) | 2026-11-03 |
 | 10 | [v0.1.0 readiness](#stage-10--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | [#88](https://github.com/pedrobtz/zuarrow/pull/88) | 2026-11-04 |
 | 11 | [Review](#stage-11--review) | full | [#29](https://github.com/pedrobtz/zuarrow/issues/29) | | |
+| 12 | [The C API for readers](#stage-12--the-c-api-for-readers) | full — a second compilation into a static archive, installed headers and a consumer on three systems | [#251](https://github.com/pedrobtz/zuarrow/issues/251) | | 2026-11-27 |
 
 ## Stage 0 — Package identity
 
@@ -658,6 +659,51 @@ itself is left.
 
 **Design.** §12 of design.md.
 
+## Stage 12 — The C API for readers
+
+*Added 2026-11-27, after 0.1.0 (#251).* The first stage of the next minor
+version. It is on `post-release-0.1.0`, the branch the next version's
+work merges into (zuarrow#256 is there), not `main`. It has no `v0.1.0`
+parent: #251 is its issue, and the next version's umbrella issue, which
+waits for 0.1.0's acceptance, will take it.
+
+**Issue.** [#251](https://github.com/pedrobtz/zuarrow/issues/251).
+
+**CI.** `full — a second compilation of the reader and nanoarrow into a
+static archive, headers installed for other packages, and a consumer
+fixture that must build on Linux, macOS and Windows.`
+
+**Goal.** A reader in another package (zucsv#23, qio#71, zujson#108) and
+`zugodb` (zugodb#60) build Arrow arrays with zuarrow's nanoarrow and read
+Arrow IPC files as an `ArrowArrayStream`, from C, with `LinkingTo:
+zuarrow` and no R at run time. No R function's result changes.
+
+**Work.**
+
+- Design §2, §3 and §14.1 rewritten for it, and `zar.h`'s "Nothing here
+  is public"; D25 and §15 Q7 recorded.
+- `inst/include/zuarrow.h`; `src/zar_api.c`; the reader's path opening and
+  column selection moved out of R (`zar_reader_open_path()`,
+  `zar_reader_select()`), the R entry points kept as wrappers with the
+  same messages; `zar_codecs.c` one table-driven adapter for both builds.
+- `libzuarrow.a` from `src/Makevars`, installed with
+  `zuarrow/nanoarrow.h` and `zukomp.h` by `src/install.libs.R`.
+- `test-c-api.R` (the entry point against `arrow_read()`), the archive's
+  symbol checks in `test-abi.R`, the fuzz target through the entry point.
+- `tools/zuarrowlink`, `tools/make-consumer-fixture.R`,
+  `tools/ci/consumer.sh` and `consumer.yaml`.
+
+**Exit criteria.**
+
+- The fixture passes on the three systems, and its values equal
+  `arrow_read()`'s for the same file.
+- The fuzz harness calls the archive's entry point.
+- `test-abi.R` still finds only `R_init_zuarrow` exported from the
+  shared object.
+- A full-profile run is green on the pull request.
+
+**Design.** §2, §3, §14.1, D25, §15 Q7.
+
 ## After 0.1.0
 
 From design §14, in the order it expects them, plus the three items the
@@ -677,6 +723,8 @@ changes what a user sees, so they wait for the zero-copy work):
 
 - **A C table** (`zuarrow_api_v1`) so `zuint`, `zutempo` and `qio` convert
   from C. Waits for the registry's R-level shape to settle in use.
+  The R-free C API for readers (design §14.1) is not that table; it is
+  Stage 12.
 - **Zero-copy views** through `zuint`'s ALTREP classes. v0.1.0 copies once
   so the first release has one memory model (D8).
 - **Memory-mapped files**, once zero-copy exists and `zufs` is there to map.
