@@ -1,36 +1,40 @@
 /* The IPC body codecs (design D2, section 6.7): nanoarrow's decompression
    hook driven through zukomp's C table, with the 8-byte length prefix as
    the expected size and the bound on the output. A body that decodes to
-   any other size is an error, so a lying prefix never passes. */
+   any other size is an error, so a lying prefix never passes.
+
+   The table is all this file needs, and zukomp.h, which types it, is
+   R-free, so the same code serves both builds (design section 14.1). Only
+   where the table comes from differs: R resolves it through zukomp_api()
+   while the reader's .Call runs; the static archive (ZAR_STANDALONE) holds
+   no codec and takes the table its caller passes in zuarrow_options, or
+   none. */
 #include <inttypes.h>
 #include <string.h>
 
 #include "zar.h"
 #include "nanoarrow_ipc.h"
+#include "zukomp.h"
 
 #ifdef ZAR_STANDALONE
 
-/* Without R there is no zukomp: compressed bodies stay compressed and are
+/* Without R there is no zukomp to resolve: a reader opened without a
+   table of its caller's leaves compressed bodies compressed, and they are
    a codec error, so the fuzz target exercises framing and validation. */
 const void *zar_codecs_api(void) { return NULL; }
 
-int zar_codec_decompress(const void *table, int codec, const uint8_t *src,
-                         int64_t src_size, uint8_t *dst, int64_t dst_size,
-                         struct ArrowError *error, const char **kind) {
-  NANOARROW_UNUSED(table);
-  NANOARROW_UNUSED(src);
-  NANOARROW_UNUSED(src_size);
-  NANOARROW_UNUSED(dst);
-  NANOARROW_UNUSED(dst_size);
-  *kind = "codec";
-  ArrowErrorSet(error, "codec %d is not built into the standalone reader", codec);
-  return ENOTSUP;
-}
+#define ZAR_NO_TABLE_MESSAGE "no codec table was given, so compressed bodies cannot be read"
 
 #else
 
-#include <R_ext/Rdynload.h>
 #include "zukomp-r.h"
+
+/* zukomp's table, resolved once while R is running the reader's .Call. */
+const void *zar_codecs_api(void) { return (const void *)zukomp_api(); }
+
+#define ZAR_NO_TABLE_MESSAGE "zukomp's C table is unavailable"
+
+#endif /* ZAR_STANDALONE */
 
 static zu_codec zar_codec_id(int codec) {
   switch (codec) {
@@ -43,16 +47,13 @@ static zu_codec zar_codec_id(int codec) {
   }
 }
 
-/* zukomp's table, resolved once while R is running the reader's .Call. */
-const void *zar_codecs_api(void) { return (const void *)zukomp_api(); }
-
 int zar_codec_decompress(const void *table, int codec, const uint8_t *src,
                          int64_t src_size, uint8_t *dst, int64_t dst_size,
                          struct ArrowError *error, const char **kind) {
   const zukomp_api_v1 *api = (const zukomp_api_v1 *)table;
   *kind = "codec";
   if (api == NULL) {
-    ArrowErrorSet(error, "zukomp's C table is unavailable");
+    ArrowErrorSet(error, ZAR_NO_TABLE_MESSAGE);
     return ENOTSUP;
   }
   zu_codec id = zar_codec_id(codec);
@@ -108,7 +109,7 @@ int zar_codec_compress(const void *table, int codec, int level, const uint8_t *s
                        struct ArrowError *error) {
   const zukomp_api_v1 *api = (const zukomp_api_v1 *)table;
   if (api == NULL) {
-    ArrowErrorSet(error, "zukomp's C table is unavailable");
+    ArrowErrorSet(error, ZAR_NO_TABLE_MESSAGE);
     return ENOTSUP;
   }
   zu_codec id = zar_codec_id(codec);
@@ -136,5 +137,3 @@ int64_t zar_codec_bound(const void *table, int codec, int level, int64_t n) {
   }
   return (int64_t)out;
 }
-
-#endif /* ZAR_STANDALONE */

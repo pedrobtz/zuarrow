@@ -1,5 +1,8 @@
 /* Internal declarations shared by zuarrow's own C files. Nothing here is
-   public: the C table of design section 14 comes after v0.1.0. */
+   public. The public C API is inst/include/zuarrow.h, implemented R-free
+   in src/zar_api.c over the declarations below and shipped as the static
+   archive libzuarrow.a (design section 14.1); the C table of conversion
+   kernels of section 14 is still to come. */
 #ifndef ZAR_H
 #define ZAR_H
 
@@ -127,6 +130,25 @@ const char *zar_reader_recorded_kind(const struct ArrowArrayStream *stream);
 int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limits,
                           struct ArrowArrayStream *out, struct ArrowError *error,
                           const char **kind);
+
+/* Opens a reader over the file at `path`, read whole first, as
+   zar_reader_open_bytes() does over bytes; `codecs` is zukomp's table or
+   NULL. R-free, for the R entry point and the C API. */
+int zar_reader_open_path(const char *path, const double *limits, const void *codecs,
+                         struct ArrowArrayStream *out, struct ArrowError *error,
+                         const char **kind);
+
+/* Selects top-level columns by 0-based index before the first batch. On
+   failure returns non-zero with `error` and `*kind` set. R-free. */
+int zar_reader_select(struct ArrowArrayStream *stream, const int64_t *select, int64_t n,
+                      struct ArrowError *error, const char **kind);
+
+/* The code a reader stream's failed get_next() repeats, 0 when none. */
+int zar_reader_failure(const struct ArrowArrayStream *stream);
+
+/* The kind a stream of zuarrow_open_stream() recorded for its failure,
+   NULL when none was (src/zar_api.c), for the fuzz target. */
+const char *zar_api_recorded_kind(const struct ArrowArrayStream *stream);
 
 #ifndef ZAR_STANDALONE
 /* ---- deferred strings (src/zar_altrep.c) -------------------------------- */

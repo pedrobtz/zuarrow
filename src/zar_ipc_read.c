@@ -1080,9 +1080,7 @@ int zar_reader_open_bytes(const uint8_t *data, int64_t size, const double *limit
   return zar_reader_open_over(copy, 1, size, limits, zar_codecs_api(), out, error, kind);
 }
 
-#ifndef ZAR_STANDALONE
-
-/* ---- R entry points --------------------------------------------------- */
+/* ---- paths and column selection, R-free ------------------------------ */
 
 static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
                          double max_bytes, struct ArrowError *error, const char **kind) {
@@ -1147,6 +1145,86 @@ static int zar_read_path(const char *path, uint8_t **out, int64_t *size,
   return NANOARROW_OK;
 }
 
+/* Opens a reader over the file at `path`, read whole into memory first,
+   with the limits and codec table of zar_reader_open_over(). */
+int zar_reader_open_path(const char *path, const double *limits, const void *codecs,
+                         struct ArrowArrayStream *out, struct ArrowError *error,
+                         const char **kind) {
+  uint8_t *data = NULL;
+  int64_t size = 0;
+  int code = zar_read_path(path, &data, &size, limits[3], error, kind);
+  if (code != NANOARROW_OK) return code;
+  return zar_reader_open_over(data, 1, size, limits, codecs, out, error, kind);
+}
+
+/* Selects the top-level columns `select[0..n)`, 0-based field indices in
+   output order, of a reader stream before its first batch. On failure
+   returns non-zero with `error` and `*kind` set and changes nothing. */
+int zar_reader_select(struct ArrowArrayStream *stream, const int64_t *select_in, int64_t n,
+                      struct ArrowError *error, const char **kind) {
+  if (stream->get_next != &zar_stream_get_next) {
+    ArrowErrorSet(error, "only a stream from arrow_read() selects columns");
+    *kind = "handle";
+    return EINVAL;
+  }
+  struct zar_reader *r = (struct zar_reader *)stream->private_data;
+  if (r->started) {
+    ArrowErrorSet(error, "columns are selected before the first batch");
+    *kind = "handle";
+    return EINVAL;
+  }
+  int64_t *select = (int64_t *)malloc(n > 0 ? (size_t)n * sizeof(int64_t) : sizeof(int64_t));
+  if (select == NULL) {
+    ArrowErrorSet(error, "cannot allocate the selection");
+    *kind = NULL;
+    return ENOMEM;
+  }
+  for (int64_t k = 0; k < n; k++) {
+    int64_t idx = select_in[k];
+    if (idx < 0 || idx >= r->schema.n_children) {
+      free(select);
+      ArrowErrorSet(error, "a selected column is out of range");
+      *kind = "type";
+      return EINVAL;
+    }
+    select[k] = idx;
+  }
+  /* The output schema: the selected fields, in order. */
+  struct ArrowSchema out;
+  ArrowSchemaInit(&out);
+  int code = ArrowSchemaSetFormat(&out, "+s");
+  if (code == NANOARROW_OK) code = ArrowSchemaSetMetadata(&out, r->schema.metadata);
+  if (code == NANOARROW_OK) code = ArrowSchemaAllocateChildren(&out, n);
+  for (int64_t k = 0; code == NANOARROW_OK && k < n; k++) {
+    code = ArrowSchemaDeepCopy(r->schema.children[select[k]], out.children[k]);
+  }
+  if (code != NANOARROW_OK) {
+    free(select);
+    out.release(&out);
+    ArrowErrorSet(error, "cannot allocate the selected schema");
+    *kind = NULL;
+    return ENOMEM;
+  }
+  out.flags = r->schema.flags;
+  free(r->select);
+  r->select = select;
+  r->n_select = n;
+  r->out_schema.release(&r->out_schema);
+  ArrowSchemaMove(&out, &r->out_schema);
+  return NANOARROW_OK;
+}
+
+/* The code of a reader stream's failed get_next(), which it repeats, or 0
+   when it has not failed or is not a reader stream. */
+int zar_reader_failure(const struct ArrowArrayStream *stream) {
+  if (stream->get_next != &zar_stream_get_next) return 0;
+  return ((const struct zar_reader *)stream->private_data)->failed;
+}
+
+#ifndef ZAR_STANDALONE
+
+/* ---- R entry points --------------------------------------------------- */
+
 /* Opens a reader over a path (a string) or bytes (a raw vector) and returns
    it as a stream handle. `limits` is c(max_message, max_depth,
    max_batch_rows, max_bytes, max_dictionary).
@@ -1175,13 +1253,7 @@ SEXP zar_c_reader_open(SEXP source, SEXP limits, SEXP in_place) {
                                  stream, &error, &kind);
   } else {
     const char *path = R_ExpandFileName(Rf_translateChar(STRING_ELT(source, 0)));
-    uint8_t *data = NULL;
-    int64_t size = 0;
-    code = zar_read_path(path, &data, &size, REAL(limits)[3], &error, &kind);
-    if (code == NANOARROW_OK) {
-      code = zar_reader_open_over(data, 1, size, REAL(limits), zar_codecs_api(), stream,
-                                  &error, &kind);
-    }
+    code = zar_reader_open_path(path, REAL(limits), zar_codecs_api(), stream, &error, &kind);
   }
   UNPROTECT(1);
   if (code != NANOARROW_OK) return zar_failure_from_error(kind, &error);
@@ -1191,44 +1263,16 @@ SEXP zar_c_reader_open(SEXP source, SEXP limits, SEXP in_place) {
 /* Selects top-level columns by 0-based index, before the first batch. */
 SEXP zar_c_reader_select(SEXP stream_xptr, SEXP columns) {
   struct ArrowError error;
+  error.message[0] = '\0';
   struct ArrowArrayStream *stream = zar_stream_from_xptr(stream_xptr, &error);
   if (stream == NULL) return zar_failure_from_error("handle", &error);
-  if (stream->get_next != &zar_stream_get_next) {
-    return zar_failure("handle", "only a stream from arrow_read() selects columns");
-  }
-  struct zar_reader *r = (struct zar_reader *)stream->private_data;
-  if (r->started) return zar_failure("handle", "columns are selected before the first batch");
   R_xlen_t n = Rf_xlength(columns);
-  int64_t *select = (int64_t *)malloc(n > 0 ? (size_t)n * sizeof(int64_t) : sizeof(int64_t));
-  if (select == NULL) return zar_failure(NULL, "cannot allocate the selection");
-  for (R_xlen_t k = 0; k < n; k++) {
-    int idx = INTEGER(columns)[k];
-    if (idx < 0 || idx >= r->schema.n_children) {
-      free(select);
-      return zar_failure("type", "a selected column is out of range");
-    }
-    select[k] = idx;
+  int64_t *select = (int64_t *)R_alloc(n > 0 ? (size_t)n : 1, sizeof(int64_t));
+  for (R_xlen_t k = 0; k < n; k++) select[k] = INTEGER(columns)[k];
+  const char *kind = NULL;
+  if (zar_reader_select(stream, select, (int64_t)n, &error, &kind) != NANOARROW_OK) {
+    return zar_failure_from_error(kind, &error);
   }
-  /* The output schema: the selected fields, in order. */
-  struct ArrowSchema out;
-  ArrowSchemaInit(&out);
-  int code = ArrowSchemaSetFormat(&out, "+s");
-  if (code == NANOARROW_OK) code = ArrowSchemaSetMetadata(&out, r->schema.metadata);
-  if (code == NANOARROW_OK) code = ArrowSchemaAllocateChildren(&out, (int64_t)n);
-  for (R_xlen_t k = 0; code == NANOARROW_OK && k < n; k++) {
-    code = ArrowSchemaDeepCopy(r->schema.children[select[k]], out.children[k]);
-  }
-  if (code != NANOARROW_OK) {
-    free(select);
-    out.release(&out);
-    return zar_failure(NULL, "cannot allocate the selected schema");
-  }
-  out.flags = r->schema.flags;
-  free(r->select);
-  r->select = select;
-  r->n_select = (int64_t)n;
-  r->out_schema.release(&r->out_schema);
-  ArrowSchemaMove(&out, &r->out_schema);
   return Rf_ScalarLogical(TRUE);
 }
 
