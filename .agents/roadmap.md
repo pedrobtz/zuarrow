@@ -52,7 +52,7 @@ Two dependencies outside this repository shape the plan:
 | 9 | [DuckDB helper and the typed-package contract](#stage-9--duckdb-helper-and-the-typed-package-contract) | full — new Suggests guard and a contract a sibling builds on | [#28](https://github.com/pedrobtz/zuarrow/issues/28) | [#86](https://github.com/pedrobtz/zuarrow/pull/86) | 2026-11-03 |
 | 10 | [v0.1.0 readiness](#stage-10--v010-readiness) | full | [#11](https://github.com/pedrobtz/zuarrow/issues/11) | [#88](https://github.com/pedrobtz/zuarrow/pull/88) | 2026-11-04 |
 | 11 | [Review](#stage-11--review) | full | [#29](https://github.com/pedrobtz/zuarrow/issues/29) | | |
-| 12 | [The C API for readers](#stage-12--the-c-api-for-readers) | full — a second compilation into a static archive, installed headers and a consumer on three systems | [#251](https://github.com/pedrobtz/zuarrow/issues/251) | | 2026-11-27 |
+| 12 | [The C API for readers](#stage-12--the-c-api-for-readers) | full — a second compilation into a static archive, installed headers and a consumer on three systems | [#251](https://github.com/pedrobtz/zuarrow/issues/251) | [#257](https://github.com/pedrobtz/zuarrow/pull/257) | 2026-11-27 |
 
 ## Stage 0 — Package identity
 
