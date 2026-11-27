@@ -187,17 +187,22 @@ abi_archive_path <- function() {
 }
 
 abi_archive_nm <- function(args) {
-  path <- shQuote(abi_archive_path())
-  out <- abi_archive_symbols(abi_run(abi_tool("nm"), c(args, path)))
+  path <- abi_archive_path()
   # Under an LTO configuration the archive holds bitcode (src/Makevars),
-  # which plain nm lists as nothing; gcc-nm reads GCC's through its plugin.
-  if (length(out) == 0L && nzchar(Sys.which("gcc-nm"))) {
-    out <- abi_archive_symbols(abi_run(Sys.which("gcc-nm"), c(args, path)))
+  # whose symbol table leaves out what the compiler treats as builtins
+  # (malloc), so nm cannot judge it. GCC's objects carry .gnu.lto_
+  # sections, LLVM's are bitcode ("BC" 0xC0DE).
+  bytes <- readBin(path, "raw", file.size(path))
+  if (
+    length(grepRaw(".gnu.lto_", bytes, fixed = TRUE)) > 0L ||
+      length(grepRaw(as.raw(c(0x42, 0x43, 0xc0, 0xde)), bytes, fixed = TRUE)) >
+        0L
+  ) {
+    testthat::skip("libzuarrow.a holds LTO bitcode, which nm cannot judge")
   }
-  if (length(out) == 0L || any(grepl("__gnu_lto|\\.gnu\\.lto", out))) {
-    testthat::skip(
-      "libzuarrow.a holds LTO bitcode, which has no object symbols to judge"
-    )
+  out <- abi_archive_symbols(abi_run(abi_tool("nm"), c(args, shQuote(path))))
+  if (length(out) == 0L) {
+    abi_unavailable("nm lists nothing in libzuarrow.a")
   }
   out
 }
