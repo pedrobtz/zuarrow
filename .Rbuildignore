@@ -8,7 +8,7 @@
 ^CRAN-SUBMISSION$
 ^\.Rproj\.user$
 ^\.vscode$
-^src/.*\.(o|so|dll|dylib)$
+^src/.*\.(o|so|dll|dylib|a)$
 ^\.github$
 ^_pkgdown\.yml$
 ^docs$

@@ -12,7 +12,9 @@ or function, since line numbers drift.
 nanoarrow allocators fail only when memory runs out. Every "cannot
 allocate ..." and "... could not be copied" or "could not be allocated"
 branch is of this kind, in `zar_from_r.c`, `zar_build.c`, `zar_xptr.c`,
-`zar_ipc_read.c`, `zar_ipc_write.c` and `zar_to_r.c`. So is
+`zar_ipc_read.c`, `zar_ipc_write.c`, `zar_to_r.c` and `zar_api.c` (the
+error stream that cannot be allocated, which leaves `out->release` NULL
+with `ENOMEM`, and the name selection's schema copy and index array). So is
 `zar_alloc_abort()` in the owning handle constructors of `zar_xptr.c`,
 the one place outside ALTREP where C raises, because no handle exists
 yet to return a failure through.

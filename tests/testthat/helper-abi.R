@@ -164,3 +164,77 @@ abi_forbidden <- c(
   "assert_fail",
   "assert_rtn"
 )
+
+# ---- the static archive (design section 14.1) ---------------------------
+
+# The installed libzuarrow.a: under lib/<r_arch> (lib/x64 on Windows), or
+# lib on single-arch platforms. Under devtools, before any install, the one
+# src/Makevars built in the source tree.
+abi_archive_path <- function() {
+  arch <- .Platform$r_arch
+  candidates <- c(
+    if (nzchar(arch)) {
+      system.file("lib", arch, "libzuarrow.a", package = "zuarrow")
+    },
+    system.file("lib", "libzuarrow.a", package = "zuarrow"),
+    test_path("..", "..", "src", "libzuarrow.a")
+  )
+  candidates <- candidates[nzchar(candidates) & file.exists(candidates)]
+  if (length(candidates) == 0L) {
+    abi_unavailable("libzuarrow.a is not installed")
+  }
+  candidates[[1]]
+}
+
+abi_archive_nm <- function(args) {
+  out <- abi_run(abi_tool("nm"), c(args, shQuote(abi_archive_path())))
+  out <- out[nzchar(out)]
+  # An archive of LTO bitcode has no object symbols to judge.
+  if (any(grepl("__gnu_lto|\\.gnu\\.lto", out))) {
+    testthat::skip("libzuarrow.a holds LTO bitcode")
+  }
+  out
+}
+
+# Symbol names in nm's default format, without archive member headers.
+abi_archive_names <- function(args) {
+  out <- abi_archive_nm(args)
+  out <- out[!grepl(":$", out)]
+  abi_clean(sub("^.*\\s", "", trimws(out)))
+}
+
+abi_archive_undefined <- function() unique(abi_archive_names("-u"))
+
+abi_archive_defined_globals <- function() {
+  args <- if (Sys.info()[["sysname"]] == "Darwin") {
+    "-gU"
+  } else {
+    c("-g", "--defined-only")
+  }
+  unique(abi_archive_names(args))
+}
+
+# Defined symbols in a writable data section, which would be mutable state
+# shared by every stream in a process. Sanitizer and compiler bookkeeping
+# (asan, ubsan, coverage, local labels) is not the package's.
+abi_archive_writable <- function() {
+  if (Sys.info()[["sysname"]] == "Darwin") {
+    out <- abi_archive_nm("-m")
+    hits <- out[grepl(
+      "\\(__DATA,__(data|bss|common)\\)|\\(__DATA,__thread",
+      out
+    )]
+    names <- sub("^.*\\s", "", trimws(hits))
+  } else {
+    out <- abi_archive_nm(c("-f", "sysv", "--defined-only"))
+    rows <- strsplit(out[grepl("\\|", out)], "\\|")
+    rows <- rows[lengths(rows) >= 7L]
+    section <- trimws(vapply(rows, `[[`, "", 7L))
+    names <- trimws(vapply(rows, `[[`, "", 1L))
+    writable <- grepl("^\\.(data|bss|tdata|tbss)", section) &
+      !grepl("^\\.data\\.rel\\.ro", section)
+    names <- names[writable | section %in% c("*COM*", "COMMON")]
+  }
+  names <- abi_clean(names)
+  names[!grepl("^(\\.L|L|l_|ltmp|__odr_)|asan|ubsan|sancov|gcov|__llvm", names)]
+}
