@@ -1,0 +1,86 @@
+# The consumer fixture of design section 14.1 (family rule R10.4):
+# tools/zuarrowlink, a package with only LinkingTo: zuarrow, builds arrays
+# and a stream with the bundled nanoarrow, reads IPC files through
+# zuarrow_open_stream() from the installed libzuarrow.a, and runs with
+# zuarrow moved out of the library. tools/ci/consumer.sh is the whole check;
+# this file only gives it R on each system.
+#
+# Linux on every code change; macOS and Windows in the full profile (a
+# `full-ci` pull request, the schedule, a dispatch), so a quick pull request
+# takes no macOS runner. Whether a push or pull request runs at all is
+# r-actions' `changes` gate, as in oracles.yaml: prose skips it, and so does
+# a pull request labelled `skip-ci:consumer` or `ci:minimal`.
+on:
+  # No `push:`: a pull request already checks its merge with the base, and
+  # the schedule checks main (r-actions README, "Pushes to main").
+  pull_request:
+    # `labeled`/`unlabeled` so that adding or removing a CI label reruns it.
+    types: [opened, synchronize, reopened, labeled, unlabeled]
+  schedule:
+    - cron: "41 6 * * 1"
+  workflow_dispatch:
+
+name: consumer
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: true
+
+jobs:
+  changes:
+    uses: pedrobtz/r-actions/.github/workflows/changes.yml@v1
+    with:
+      name: consumer
+
+  linux:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs-only != 'true' }}
+    runs-on: ubuntu-latest
+    name: consumer fixture (ubuntu-latest)
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      # zuarrow's hard dependencies (zukomp) and testthat; never zuarrow
+      # itself, which tools/ci/consumer.sh installs from this checkout and
+      # then hides.
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"hard"'
+          extra-packages: any::testthat
+
+      - name: the consumer fixture
+        run: bash tools/ci/consumer.sh
+
+  other:
+    needs: changes
+    if: ${{ !cancelled() && needs.changes.outputs.docs-only != 'true' && needs.changes.outputs.profile == 'full' }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-latest, windows-latest]
+    runs-on: ${{ matrix.os }}
+    name: consumer fixture (${{ matrix.os }})
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@v6
+
+      - uses: r-lib/actions/setup-r@v2
+        with:
+          use-public-rspm: true
+
+      - uses: r-lib/actions/setup-r-dependencies@v2
+        with:
+          dependencies: '"hard"'
+          extra-packages: any::testthat
+
+      - name: the consumer fixture
+        shell: bash
+        run: bash tools/ci/consumer.sh

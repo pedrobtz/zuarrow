@@ -1,0 +1,20 @@
+Package: zuarrowlink
+Title: Static-Archive Consumer Fixture for zuarrow
+Version: 0.0.0.9000
+Authors@R: 
+    person("Pedro", "Baltazar", , "pedrobtz@gmail.com", role = c("aut", "cre"))
+Description: Not for release. Consumes zuarrow as zucsv, qio, zujson and
+    zugodb will, through LinkingTo alone: zuarrow.h and the bundled
+    nanoarrow header come off the LinkingTo include path, and ./configure
+    links the installed libzuarrow.a statically, so there is no Imports
+    entry and no run-time dependency on zuarrow. It builds Arrow arrays and
+    a stream with the archive's nanoarrow builders, and reads IPC files
+    through zuarrow_open_stream().
+License: MIT + file LICENSE
+Encoding: UTF-8
+LinkingTo: 
+    zuarrow
+Suggests: 
+    testthat (>= 3.2.0),
+    zuarrow
+Config/testthat/edition: 3
