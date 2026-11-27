@@ -1,6 +1,9 @@
 /* libFuzzer target for the IPC reader (design section 9), built with
-   ZAR_STANDALONE: no R, no codecs. Each input is opened as an IPC file or
-   stream and read to its end.
+   ZAR_STANDALONE: no R, no codecs. Each input is written to a file and
+   opened through the static archive's public entry point,
+   zuarrow_open_stream() (design section 14.1), as an IPC file or stream,
+   and read to its end. Its first 64 bytes, as text, also go through the
+   public exact parsers, which must return 0, EINVAL or ERANGE.
 
    A failure must be a clean error. A clean error names its condition kind
    and a message: a failure without a kind would reach R as an unclassed
@@ -25,17 +28,69 @@
 #include <errno.h>
 #include <stddef.h>
 #include <stdint.h>
+#include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <unistd.h>
 
 #include "zar.h"
 #include "nanoarrow_ipc.h"
+#include "zuarrow.h"
 
 #define ZAR_FUZZ_MAX_BATCHES 1000
 
 static void zar_check_failure(int code, const char *kind, const char *message) {
   if (code == ENOMEM) return;
   if (kind == NULL || message == NULL || message[0] == '\0') abort();
+  if (strcmp(kind, "memory") == 0) abort();
+}
+
+/* The file each input is written to: one per process, made once. */
+static char zar_fuzz_path[64];
+
+int LLVMFuzzerInitialize(int *argc, char ***argv) {
+  (void)argc;
+  (void)argv;
+  snprintf(zar_fuzz_path, sizeof(zar_fuzz_path), "/tmp/zuarrow-fuzz-XXXXXX");
+  int fd = mkstemp(zar_fuzz_path);
+  if (fd < 0) abort();
+  close(fd);
+  return 0;
+}
+
+static void zar_fuzz_write(const uint8_t *data, size_t size) {
+  FILE *f = fopen(zar_fuzz_path, "wb");
+  if (f == NULL) abort();
+  if (size > 0 && fwrite(data, 1, size, f) != size) abort();
+  if (fclose(f) != 0) abort();
+}
+
+/* Every parser answers 0, EINVAL or ERANGE, and a valid UTF-8 prefix ends
+   where zuarrow_utf8_invalid_at() says. */
+static void zar_fuzz_text(const uint8_t *data, size_t size) {
+  char text[65];
+  size_t n = size < 64 ? size : 64;
+  memcpy(text, data, n);
+  text[n] = '\0';
+  int64_t i64;
+  uint64_t u64;
+  int codes[7];
+  codes[0] = zuarrow_parse_int64(text, &i64);
+  codes[1] = zuarrow_parse_uint64(text, &u64);
+  codes[2] = zuarrow_parse_date(text, &i64);
+  codes[3] = zuarrow_parse_instant(text, n > 0 ? data[0] % 10 : 0, 1, &i64);
+  codes[4] = zuarrow_parse_time(text, n > 1 ? data[1] % 10 : 0, &i64);
+  struct ArrowDecimal decimal;
+  ArrowDecimalInit(&decimal, 128, 38, n > 2 ? (int32_t)(data[2] % 40) - 2 : 2);
+  codes[5] = zuarrow_parse_decimal(text, &decimal);
+  ArrowDecimalInit(&decimal, 256, 76, n > 2 ? (int32_t)(data[2] % 80) - 2 : 2);
+  codes[6] = zuarrow_parse_decimal(text, &decimal);
+  for (int k = 0; k < 7; k++) {
+    if (codes[k] != 0 && codes[k] != EINVAL && codes[k] != ERANGE) abort();
+  }
+  int64_t at = zuarrow_utf8_invalid_at(data, (int64_t)size);
+  if (at < -1 || at >= (int64_t)size) abort();
+  if (at > 0 && zuarrow_utf8_invalid_at(data, at) != -1) abort();
 }
 
 /* The reader's own depth rule, restated: a leaf field is depth 1 and the
@@ -179,13 +234,32 @@ static void zar_fuzz_compare(const struct ArrowBuffer *written, const struct Arr
 int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
   const double limits[5] = {16.0 * 1024 * 1024, 64.0, 1e6, 64.0 * 1024 * 1024,
                             64.0 * 1024 * 1024};
+  zar_fuzz_text(data, size);
+  zar_fuzz_write(data, size);
+  zuarrow_options options;
+  zuarrow_options_init(&options);
+  options.max_message = limits[0];
+  options.max_depth = (int32_t)limits[1];
+  options.max_batch_rows = limits[2];
+  options.max_bytes = limits[3];
+  options.max_dictionary = limits[4];
   struct ArrowArrayStream stream;
   struct ArrowError error;
   error.message[0] = '\0';
-  const char *kind = NULL;
-  int code = zar_reader_open_bytes(data, (int64_t)size, limits, &stream, &error, &kind);
+  int code = zuarrow_open_stream(zar_fuzz_path, &options, &stream);
   if (code != 0) {
-    zar_check_failure(code, kind, error.message);
+    if (stream.release == NULL) {
+      if (code != ENOMEM) abort();
+      return 0;
+    }
+    /* The error stream repeats the failure and names its kind. */
+    struct ArrowArray none;
+    if (stream.get_next(&stream, &none) != code || none.release != NULL) abort();
+    zar_check_failure(code, zar_api_recorded_kind(&stream), stream.get_last_error(&stream));
+    if (code != ENOMEM && strcmp(zuarrow_error_kind(&stream), zar_api_recorded_kind(&stream))) {
+      abort();
+    }
+    stream.release(&stream);
     return 0;
   }
   if ((double)size > limits[3]) abort();
@@ -219,8 +293,14 @@ int LLVMFuzzerTestOneInput(const uint8_t *data, size_t size) {
     array.release = NULL;
     code = stream.get_next(&stream, &array);
     if (code != 0) {
-      zar_check_failure(code, zar_reader_recorded_kind(&stream),
-                        stream.get_last_error(&stream));
+      zar_check_failure(code, zar_api_recorded_kind(&stream), stream.get_last_error(&stream));
+      const char *named = zuarrow_error_kind(&stream);
+      if (code != ENOMEM && (named == NULL || strcmp(named, zar_api_recorded_kind(&stream)))) {
+        abort();
+      }
+      /* A failed stream stays failed. */
+      struct ArrowArray again;
+      if (stream.get_next(&stream, &again) != code || again.release != NULL) abort();
       break;
     }
     if (array.release == NULL) break;
