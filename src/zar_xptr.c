@@ -347,6 +347,25 @@ const char *zar_handle_status(SEXP x) {
 
 SEXP zar_c_handle_status(SEXP x) { return Rf_mkString(zar_handle_status(x)); }
 
+/* Releases the struct a handle holds, once: arrow_release(). The struct
+   itself stays allocated, released, until the finalizer frees it, so the
+   handle reads as released and is never released twice (2026-11-26). */
+SEXP zar_c_handle_release(SEXP x) {
+  if (strcmp(zar_handle_status(x), "live") != 0) return R_NilValue;
+  void *addr = R_ExternalPtrAddr(x);
+  if (Rf_inherits(x, "nanoarrow_schema")) {
+    struct ArrowSchema *schema = (struct ArrowSchema *)addr;
+    schema->release(schema);
+  } else if (Rf_inherits(x, "nanoarrow_array")) {
+    struct ArrowArray *array = (struct ArrowArray *)addr;
+    array->release(array);
+  } else {
+    struct ArrowArrayStream *stream = (struct ArrowArrayStream *)addr;
+    stream->release(stream);
+  }
+  return R_NilValue;
+}
+
 /* ---- schema copy -------------------------------------------------------- */
 
 SEXP zar_schema_copy_of(SEXP x) {

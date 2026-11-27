@@ -48,6 +48,51 @@ test_that("string and binary views convert", {
   )
 })
 
+# From test-from-r-types.R (2026-11-26).
+test_that("the views and half floats zuarrow writes match nanoarrow's", {
+  skip_without_oracle("nanoarrow")
+  strings <- c(
+    "short",
+    NA,
+    "",
+    "a string longer than twelve bytes",
+    strrep("x", 40000)
+  )
+  blobs <- lapply(strings, function(v) if (!is.na(v)) charToRaw(v))
+  pairs <- list(
+    list(
+      arrow_array(strings, schema = "vu"),
+      strings,
+      nanoarrow::na_string_view()
+    ),
+    list(arrow_array(blobs, schema = "vz"), blobs, nanoarrow::na_binary_view()),
+    # No subnormal: nanoarrow's half float conversion gets them wrong
+    # (design section 6.2), which test-from-r-types.R checks by hand.
+    list(
+      arrow_array(c(0.5, NA, -65504, 2^-14, Inf, -0), schema = "e"),
+      c(0.5, NA, -65504, 2^-14, Inf, -0),
+      nanoarrow::na_half_float()
+    )
+  )
+  for (pair in pairs) {
+    zu <- pair[[1L]]
+    na <- nanoarrow::as_nanoarrow_array(pair[[2L]], schema = pair[[3L]])
+    expect_true(arrow_equal(zu, na))
+    expect_true(arrow_validate(zu, "full"))
+    # nanoarrow's own reading of zuarrow's array.
+    expect_identical(
+      nanoarrow::convert_array(
+        zu,
+        if (is.list(pair[[2L]])) NULL else pair[[2L]][0L]
+      ),
+      nanoarrow::convert_array(
+        na,
+        if (is.list(pair[[2L]])) NULL else pair[[2L]][0L]
+      )
+    )
+  }
+})
+
 # From test-write.R.
 test_that("nanoarrow reads what arrow_write() writes as a stream", {
   skip_without_oracle("nanoarrow")

@@ -3,10 +3,10 @@
 # raw buffers where it does not. `arrow` names the arrow_types() entry it
 # covers. `zuarrow` builds the same values with zuarrow's internal
 # constructor, for the types arrow_array() does not write (design section
-# 2: views, run-end encoding, unions; also half floats, intervals and
-# dictionaries of other values); otherwise arrow_array() builds them from
-# the R values zuarrow reads. `r_form` is FALSE for the types with no R
-# form, intervals and unions.
+# 2: list views, run-end encoding, unions; also dictionaries of other
+# values); otherwise arrow_array() builds them from the R values zuarrow
+# reads, half floats, views and intervals among them since 2026-11-26.
+# `r_form` is FALSE for the types with no R form, the unions.
 interop_cases <- function() {
   na <- asNamespace("nanoarrow")
   build <- function(values, schema) {
@@ -27,8 +27,6 @@ interop_cases <- function() {
   }
   i32 <- function(x) writeBin(as.integer(x), raw(), endian = "little")
   i64 <- function(x) le_int(x, 8L)
-  # A string or binary view of at most 12 bytes, inlined.
-  view <- function(x) c(i32(length(x)), x, raw(12L - length(x)))
   case <- function(arrow, nanoarrow, zuarrow = NULL, r_form = TRUE) {
     list(
       arrow = arrow,
@@ -69,32 +67,20 @@ interop_cases <- function() {
       }
     )
   }
+  # Views of at most 12 bytes, inlined: nanoarrow_array_modify() cannot
+  # place a view array with a data buffer in a struct. Longer views are
+  # compared in test-ci-nanoarrow.R.
   views <- function(format, schema) {
-    bytes <- list(charToRaw("a"), raw(), charToRaw("twelve bytes"))
-    list(
-      nanoarrow = function() {
-        values <- if (format == "vu") {
-          c("a", NA, "twelve bytes")
-        } else {
-          list(charToRaw("a"), NULL, charToRaw("twelve bytes"))
-        }
-        build(values, schema)
-      },
-      zuarrow = function() {
-        test_array(
-          format,
-          3,
-          list(valid13, unlist(lapply(bytes, view))),
-          null_count = 1
-        )
+    function() {
+      values <- c("a", NA, "twelve bytes")
+      if (format == "vz") {
+        values <- lapply(values, function(v) if (!is.na(v)) charToRaw(v))
       }
-    )
+      build(values, schema)
+    }
   }
-  intervals <- function(format, schema, bytes) {
-    list(
-      nanoarrow = function() na_raw(schema, 2, list(NULL, bytes)),
-      zuarrow = function() test_array(format, 2, list(NULL, bytes))
-    )
+  intervals <- function(schema, bytes) {
+    function() na_raw(schema, 2, list(NULL, bytes))
   }
   unions <- function(dense) {
     format <- if (dense) "+ud:0,1" else "+us:0,1"
@@ -144,10 +130,9 @@ interop_cases <- function() {
   vz <- views("vz", na$na_binary_view())
   ud <- unions(TRUE)
   us <- unions(FALSE)
-  im <- intervals("tiM", na$na_interval_months(), i32(c(14, -1)))
-  idt <- intervals("tiD", na$na_interval_day_time(), i32(c(1, 500, -2, 0)))
+  im <- intervals(na$na_interval_months(), i32(c(14, -1)))
+  idt <- intervals(na$na_interval_day_time(), i32(c(1, 500, -2, 0)))
   imdn <- intervals(
-    "tin",
     na$na_interval_month_day_nano(),
     c(i32(c(1, 2)), i64(3), i32(c(0, -1)), i64(0))
   )
@@ -164,15 +149,7 @@ interop_cases <- function() {
     case("uint64", function() build(c(1, NA, 3), na$na_uint64())),
     case(
       "half_float",
-      function() build(c(1.5, NA, -2), na$na_half_float()),
-      function() {
-        test_array(
-          "e",
-          3,
-          list(valid13, le_int(c(0x3e00, 0, 0xc000), 2L)),
-          null_count = 1
-        )
-      }
+      function() build(c(1.5, NA, -2), na$na_half_float())
     ),
     case("float", function() build(c(1.5, NA, -2), na$na_float())),
     case("double", function() build(c(1.5, NA, -2), na$na_double())),
@@ -181,7 +158,7 @@ interop_cases <- function() {
       "large_utf8",
       function() build(c("a", NA, "\u00e9"), na$na_large_string())
     ),
-    case("utf8_view", vu$nanoarrow, vu$zuarrow),
+    case("utf8_view", vu),
     case(
       "binary",
       function() build(list(as.raw(1:2), NULL, raw()), na$na_binary())
@@ -190,7 +167,7 @@ interop_cases <- function() {
       "large_binary",
       function() build(list(as.raw(1:2), NULL, raw()), na$na_large_binary())
     ),
-    case("binary_view", vz$nanoarrow, vz$zuarrow),
+    case("binary_view", vz),
     case(
       "fixed_size_binary",
       function() {
@@ -225,9 +202,9 @@ interop_cases <- function() {
     case("decimal64", function() build(dec, na$na_decimal64(5, 2))),
     case("decimal128", function() build(dec, na$na_decimal128(5, 2))),
     case("decimal256", function() build(dec, na$na_decimal256(5, 2))),
-    case("interval", im$nanoarrow, im$zuarrow, r_form = FALSE),
-    case("interval", idt$nanoarrow, idt$zuarrow, r_form = FALSE),
-    case("interval", imdn$nanoarrow, imdn$zuarrow, r_form = FALSE),
+    case("interval", im),
+    case("interval", idt),
+    case("interval", imdn),
     case("dense_union", ud$nanoarrow, ud$zuarrow, r_form = FALSE),
     case("sparse_union", us$nanoarrow, us$zuarrow, r_form = FALSE),
     case(

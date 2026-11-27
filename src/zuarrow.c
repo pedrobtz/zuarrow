@@ -4,6 +4,7 @@
 #include "zar.h"
 
 SEXP zar_c_handle_status(SEXP x);
+SEXP zar_c_handle_release(SEXP x);
 SEXP zar_c_schema_copy(SEXP x);
 SEXP zar_c_schema_format(SEXP x, SEXP recursive);
 SEXP zar_c_schema_from_spec(SEXP spec);
@@ -42,6 +43,7 @@ SEXP zar_c_utf8_raw(SEXP x);
 
 static const R_CallMethodDef zar_call_methods[] = {
     ZAR_CALL(zar_c_handle_status, 1),
+    ZAR_CALL(zar_c_handle_release, 1),
     ZAR_CALL(zar_c_schema_copy, 1),
     ZAR_CALL(zar_c_schema_format, 2),
     ZAR_CALL(zar_c_schema_from_spec, 1),

@@ -409,6 +409,177 @@ static int zar_build_blobs(struct ArrowArray *array, enum ArrowType t,
   return NANOARROW_OK;
 }
 
+/* string_view from a character vector, binary_view from a list of raw
+   vectors, through nanoarrow's appender: a value of at most 12 bytes is
+   inlined in its view, a longer one goes to a data buffer. */
+static int zar_build_views(struct ArrowArray *array, enum ArrowType t, SEXP x,
+                           R_xlen_t start, int64_t n, struct zar_build *b) {
+  array->length = 0;
+  array->null_count = 0;
+  if (ArrowArrayStartAppending(array) != NANOARROW_OK) {
+    ArrowErrorSet(&b->error, "cannot start a %s array", ArrowTypeString(t));
+    return zar_build_fail(b, NULL, NA_REAL);
+  }
+  int strings = t == NANOARROW_TYPE_STRING_VIEW;
+  for (int64_t i = 0; i < n; i++) {
+    R_xlen_t k = start + (R_xlen_t)i;
+    struct ArrowBufferView value;
+    int code;
+    if (strings) {
+      SEXP s = STRING_ELT(x, k);
+      if (s == NA_STRING) {
+        code = ArrowArrayAppendNull(array, 1);
+        goto appended;
+      }
+      size_t len;
+      const char *u = zar_char_utf8(s, &len);
+      if (u == NULL) {
+        ArrowErrorSet(&b->error, "row %" PRId64 " is not valid UTF-8", (int64_t)k + 1);
+        return zar_build_fail(b, "type", (double)k + 1);
+      }
+      value.data.data = u;
+      value.size_bytes = (int64_t)len;
+    } else {
+      SEXP e = VECTOR_ELT(x, k);
+      if (e == R_NilValue) {
+        code = ArrowArrayAppendNull(array, 1);
+        goto appended;
+      }
+      if (TYPEOF(e) != RAWSXP) {
+        ArrowErrorSet(&b->error, "element %" PRId64 " is not a raw vector", (int64_t)k + 1);
+        return zar_build_fail(b, "type", (double)k + 1);
+      }
+      value.data.data = RAW(e);
+      value.size_bytes = (int64_t)Rf_xlength(e);
+    }
+    /* A view's length and offset are 32-bit. */
+    if (value.size_bytes > INT32_MAX) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " holds more bytes than a view addresses",
+                    (int64_t)k + 1);
+      return zar_build_fail(b, "limit", (double)k + 1);
+    }
+    code = ArrowArrayAppendBytes(array, value);
+  appended:
+    if (code != NANOARROW_OK) {
+      ArrowErrorSet(&b->error, "cannot append row %" PRId64, (int64_t)k + 1);
+      return zar_build_fail(b, NULL, NA_REAL);
+    }
+  }
+  return NANOARROW_OK;
+}
+
+/* A double as IEEE 754 binary16, when it is one exactly (design section
+   6.2): NaN, the infinities and both zeros are; any other value must have
+   at most 11 significant bits and lie within the half float's range,
+   subnormals included. Returns 0 when the double has no exact half. */
+static int zar_double_to_half(double v, uint16_t *out) {
+  if (ISNAN(v)) {
+    *out = 0x7e00;
+    return 1;
+  }
+  uint16_t sign = signbit(v) ? 0x8000 : 0;
+  double a = fabs(v);
+  if (isinf(a)) {
+    *out = sign | 0x7c00;
+    return 1;
+  }
+  if (a == 0) {
+    *out = sign;
+    return 1;
+  }
+  int e;
+  double m = frexp(a, &e); /* a = m * 2^e, m in [0.5, 1) */
+  int biased = e + 14;     /* the half's exponent field */
+  if (biased >= 31) return 0;
+  if (biased >= 1) {
+    double f = ldexp(m, 11); /* the significand with its leading bit */
+    if (f != floor(f)) return 0;
+    *out = (uint16_t)(sign | (biased << 10) | ((int)f - 1024));
+    return 1;
+  }
+  double f = ldexp(a, 24); /* a subnormal: a multiple of 2^-24 */
+  if (f != floor(f)) return 0;
+  *out = (uint16_t)(sign | (int)f);
+  return 1;
+}
+
+static int zar_build_half(struct ArrowArray *array, SEXP x, R_xlen_t start,
+                          int64_t n, struct zar_build *b) {
+  int is_int = TYPEOF(x) == INTSXP;
+  if (zar_set_validity(array, x, start, n, is_int ? zar_na_int : zar_na_dbl, b) !=
+      NANOARROW_OK) {
+    return EINVAL;
+  }
+  uint16_t *data = (uint16_t *)zar_data(array, 1, n * 2, b);
+  if (data == NULL) return zar_build_fail(b, NULL, NA_REAL);
+  for (int64_t i = 0; i < n; i++) {
+    R_xlen_t k = start + (R_xlen_t)i;
+    double v;
+    if (is_int) {
+      if (INTEGER(x)[k] == NA_INTEGER) continue;
+      v = (double)INTEGER(x)[k];
+    } else {
+      v = REAL(x)[k];
+      if (ZAR_NA_DBL(v)) continue;
+    }
+    if (!zar_double_to_half(v, &data[i])) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " holds %.17g, which a half_float cannot hold exactly",
+                    (int64_t)k + 1, v);
+      return zar_build_fail(b, "lossy", (double)k + 1);
+    }
+  }
+  return NANOARROW_OK;
+}
+
+/* bit64's integer64, the int64 bits in a double with INT64_MIN as NA, into
+   any integer type, checked as doubles are. */
+static int zar_na_i64(SEXP x, R_xlen_t i) {
+  int64_t v;
+  memcpy(&v, REAL(x) + i, sizeof(v));
+  return v == INT64_MIN;
+}
+
+static int zar_build_integer64(struct ArrowArray *array, enum ArrowType t,
+                               SEXP x, R_xlen_t start, int64_t n,
+                               struct zar_build *b) {
+  if (zar_set_validity(array, x, start, n, zar_na_i64, b) != NANOARROW_OK) {
+    return EINVAL;
+  }
+  void *data = zar_data(array, 1, n * zar_type_bytes(t), b);
+  if (data == NULL) return zar_build_fail(b, NULL, NA_REAL);
+  const double *src = n > 0 ? REAL(x) : NULL;
+  for (int64_t i = 0; i < n; i++) {
+    R_xlen_t k = start + (R_xlen_t)i;
+    int64_t v;
+    memcpy(&v, src + k, sizeof(v));
+    if (v == INT64_MIN) continue;
+    int fits;
+    switch (t) {
+      case NANOARROW_TYPE_INT64:
+      case NANOARROW_TYPE_UINT64:
+        fits = t == NANOARROW_TYPE_INT64 || v >= 0;
+        break;
+      default:
+        /* Every smaller type's range is exact in a double. */
+        fits = zar_int_fits(t, (double)v);
+        break;
+    }
+    if (!fits) {
+      ArrowErrorSet(&b->error, "row %" PRId64 " holds %" PRId64 ", which %s cannot hold exactly",
+                    (int64_t)k + 1, v, ArrowTypeString(t));
+      return zar_build_fail(b, "lossy", (double)k + 1);
+    }
+    if (t == NANOARROW_TYPE_INT64) {
+      ((int64_t *)data)[i] = v;
+    } else if (t == NANOARROW_TYPE_UINT64) {
+      ((uint64_t *)data)[i] = (uint64_t)v;
+    } else {
+      zar_store_int(data, t, i, (double)v);
+    }
+  }
+  return NANOARROW_OK;
+}
+
 /* ---- the exact text forms, read back ----------------------------------- */
 
 static int zar_has_text_target(enum ArrowType t) {
@@ -431,6 +602,9 @@ static int zar_has_text_target(enum ArrowType t) {
     case NANOARROW_TYPE_TIME32:
     case NANOARROW_TYPE_TIME64:
     case NANOARROW_TYPE_DURATION:
+    case NANOARROW_TYPE_INTERVAL_MONTHS:
+    case NANOARROW_TYPE_INTERVAL_DAY_TIME:
+    case NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO:
       return 1;
     default:
       return 0;
@@ -461,6 +635,8 @@ static int zar_build_text(struct ArrowArray *array,
   int decimal = t == NANOARROW_TYPE_DECIMAL32 || t == NANOARROW_TYPE_DECIMAL64 ||
                 t == NANOARROW_TYPE_DECIMAL128 || t == NANOARROW_TYPE_DECIMAL256;
   int64_t width = decimal ? sv->decimal_bitwidth / 8 : zar_type_bytes(t);
+  if (t == NANOARROW_TYPE_INTERVAL_MONTHS) width = 4;
+  if (t == NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO) width = 16;
   uint8_t *data = (uint8_t *)zar_data(array, 1, n * width, b);
   if (data == NULL && n > 0) return zar_build_fail(b, NULL, NA_REAL);
 
@@ -537,6 +713,35 @@ static int zar_build_text(struct ArrowArray *array,
             ((int64_t *)data)[i] = v;
           }
           break;
+        case NANOARROW_TYPE_INTERVAL_MONTHS:
+        case NANOARROW_TYPE_INTERVAL_DAY_TIME:
+        case NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO: {
+          static const char *const months[] = {"M"};
+          static const char *const day_time[] = {"d", "ms"};
+          static const char *const mdn[] = {"M", "d", "ns"};
+          int64_t c[3];
+          int parts = t == NANOARROW_TYPE_INTERVAL_MONTHS ? 1
+                      : t == NANOARROW_TYPE_INTERVAL_DAY_TIME ? 2 : 3;
+          code = zar_parse_interval(
+              text,
+              t == NANOARROW_TYPE_INTERVAL_MONTHS ? months
+              : t == NANOARROW_TYPE_INTERVAL_DAY_TIME ? day_time : mdn,
+              parts, c);
+          /* Every component is 32-bit but a month_day_nano's nanoseconds. */
+          int n32 = t == NANOARROW_TYPE_INTERVAL_MONTH_DAY_NANO ? 2 : parts;
+          for (int k = 0; code == NANOARROW_OK && k < n32; k++) {
+            if (c[k] < INT32_MIN || c[k] > INT32_MAX) code = ERANGE;
+          }
+          if (code == NANOARROW_OK) {
+            uint8_t *slot = data + i * width;
+            for (int k = 0; k < n32; k++) {
+              int32_t v32 = (int32_t)c[k];
+              memcpy(slot + 4 * k, &v32, 4);
+            }
+            if (parts == 3) memcpy(slot + 8, &c[2], 8);
+          }
+          break;
+        }
         default: /* signed integers and durations */
           code = zar_parse_int64(text, &v);
           if (code == NANOARROW_OK && t != NANOARROW_TYPE_INT64 &&
@@ -863,7 +1068,8 @@ static int zar_build_array(struct ArrowArray *array,
     if (t == NANOARROW_TYPE_DICTIONARY) {
       return zar_build_dictionary(array, schema, x, start, n, b);
     }
-    if (t == NANOARROW_TYPE_STRING || t == NANOARROW_TYPE_LARGE_STRING) {
+    if (t == NANOARROW_TYPE_STRING || t == NANOARROW_TYPE_LARGE_STRING ||
+        t == NANOARROW_TYPE_STRING_VIEW) {
       /* dictionary = FALSE: the factor's labels as strings. */
       SEXP levels = Rf_getAttrib(x, R_LevelsSymbol);
       if (zar_check_factor(x, levels, start, n, b) != NANOARROW_OK) {
@@ -876,7 +1082,9 @@ static int zar_build_array(struct ArrowArray *array,
         SET_STRING_ELT(labels, (R_xlen_t)i,
                        code == NA_INTEGER ? NA_STRING : STRING_ELT(levels, code - 1));
       }
-      int status = zar_build_strings(array, t, labels, 0, n, b);
+      int status = t == NANOARROW_TYPE_STRING_VIEW
+                       ? zar_build_views(array, t, labels, 0, n, b)
+                       : zar_build_strings(array, t, labels, 0, n, b);
       UNPROTECT(1);
       return status;
     }
@@ -900,9 +1108,38 @@ static int zar_build_array(struct ArrowArray *array,
     return zar_build_text(array, &sv, x, start, n, b);
   }
 
+  if (type == REALSXP && Rf_inherits(x, "integer64")) {
+    switch (t) {
+      case NANOARROW_TYPE_INT8:
+      case NANOARROW_TYPE_INT16:
+      case NANOARROW_TYPE_INT32:
+      case NANOARROW_TYPE_INT64:
+      case NANOARROW_TYPE_UINT8:
+      case NANOARROW_TYPE_UINT16:
+      case NANOARROW_TYPE_UINT32:
+      case NANOARROW_TYPE_UINT64:
+        return zar_build_integer64(array, t, x, start, n, b);
+      default:
+        goto unsupported;
+    }
+  }
+
   switch (t) {
     case NANOARROW_TYPE_BOOL:
       if (type == LGLSXP) return zar_build_bool(array, x, start, n, b);
+      break;
+    case NANOARROW_TYPE_HALF_FLOAT:
+      if ((type == INTSXP || type == REALSXP) && !Rf_isObject(x)) {
+        return zar_build_half(array, x, start, n, b);
+      }
+      break;
+    case NANOARROW_TYPE_STRING_VIEW:
+      if (type == STRSXP) return zar_build_views(array, t, x, start, n, b);
+      break;
+    case NANOARROW_TYPE_BINARY_VIEW:
+      if (type == VECSXP && !Rf_isObject(x)) {
+        return zar_build_views(array, t, x, start, n, b);
+      }
       break;
     case NANOARROW_TYPE_INT8:
     case NANOARROW_TYPE_INT16:

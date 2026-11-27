@@ -21,7 +21,10 @@ layout, such as 'arrow', 'duckdb' or an 'ADBC' driver.
 }
 \details{
 A single string is read as an Arrow format string, such as \code{"i"} for
-\code{int32} or \code{"tsu:UTC"} for a microsecond timestamp in UTC. Any other R
+\code{int32} or \code{"tsu:UTC"} for a microsecond timestamp in UTC. A named
+character vector of format strings is a \code{struct} with one field of each,
+in its order, so \code{arrow_schema(c(x = "i", y = "vu"))} is
+\verb{struct<x: int32, y: string_view>}. Any other R
 object gives the schema it would be written with: a data frame gives a
 \code{struct} with one field per column. On a handle, \code{arrow_schema()} never
 raises on the content: it returns a zuarrow schema handle as it is,
@@ -33,6 +36,7 @@ copies any other schema, or asks a stream for it.
 \examples{
 arrow_schema("l")
 arrow_schema(data.frame(x = 1:3, y = c("a", "b", "c")))
+arrow_schema(c(x = "i", y = "vu"))
 format(arrow_schema(as.Date("2026-10-21")))
 }
 \seealso{

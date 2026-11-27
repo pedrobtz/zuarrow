@@ -24,6 +24,10 @@
 #'   gives a map to `map`.
 #' * Any other list to `list<T>`, with `T` from its elements.
 #' * A data frame to a `struct`.
+#' * `bit64`'s `integer64` to `int64`. Its `NA` is the bit pattern of
+#'   `INT64_MIN`, which is therefore always a null. 'bit64' need not be
+#'   loaded.
+#' * A column marked with [I()] as its value without the mark.
 #'
 #' A class registered with [arrow_register()] goes through its `from`
 #' handler. A matrix is written as a `fixed_size_list` with
@@ -42,7 +46,28 @@
 #' With a `schema`, the values are written as that type and checked: an
 #' integer that does not fit `int8`, or a double that is not a whole
 #' number for `int64`, is a `zuarrow_lossy_error` naming the row. `POSIXct`
-#' and `difftime` values are rounded to the schema's unit.
+#' and `difftime` values are rounded to the schema's unit. An `integer64`
+#' writes as any integer type the same way, and only its non-negative
+#' values as an unsigned one.
+#'
+#' A double, or an integer, writes as `half_float` (`"e"`) only when the
+#' half float holds it exactly: within +/-65504, with at most 11
+#' significant bits, and no smaller than 2^-24 in magnitude. Any other is
+#' a `zuarrow_lossy_error` naming the row; `NaN`, `Inf`, `-Inf` and both
+#' zeros stay what they are.
+#'
+#' A character vector writes as `string_view` (`"vu"`) and a list of raw
+#' vectors as `binary_view` (`"vz"`), with a value of at most 12 bytes
+#' inlined in its view and a longer one in a data buffer. The IPC writer
+#' does not write the view types; [arrow_stream()] passes them on.
+#'
+#' For a data frame, `schema` may also be a named character vector of
+#' format strings, such as `c(x = "e", y = "vu")`: each named column is
+#' written as that type and checked as above, and any other column as its
+#' own default type. A name that is not a column is a `zuarrow_type_error`.
+#' A format string names no children, so a nested column may be named only
+#' with the format it has anyway; to choose a nested type, pass a schema
+#' handle. [arrow_schema()] of such a vector gives the `struct` itself.
 #'
 #' A character vector with an `arrow_type` attribute, as `arrow_to_r()`
 #' returns under `lossy = "character"`, is written back as that type: each
@@ -51,12 +76,18 @@
 #' `arrow_to_r()` writes is read: other forms of the same value, such as
 #' `"+1"`, `"01"`, `"-0"` or `"1"` for a decimal of scale 2, are a
 #' `zuarrow_lossy_error`, and so is a time of day at or past `24:00:00`. So
-#' the exact text round-trips, at the ends of the int64 range too.
+#' the exact text round-trips, at the ends of the int64 range too. An
+#' interval is read from the text Arrow's own formatter writes, every
+#' component with its unit: `"14M"` for `interval_months` (`"tiM"`),
+#' `"3d1500ms"` for `interval_day_time` (`"tiD"`) and `"1M-2d3ns"` for
+#' `interval_month_day_nano` (`"tin"`), each component in its type's range.
 #'
 #' Every `NA` becomes a null with a zeroed slot. `NaN` stays a value.
 #'
 #' @param x An R vector or a data frame.
-#' @param schema `NULL`, a format string or a schema handle.
+#' @param schema `NULL`, a format string or a schema handle; for a data
+#'   frame, also a named character vector of format strings, one per
+#'   column it names.
 #' @param batch The largest number of rows in one batch, a positive whole
 #'   number. `Inf` is a `zuarrow_type_error`.
 #' @returns `arrow_array()` returns an array handle; `arrow_stream()` a
@@ -137,6 +168,10 @@ zar_stream_from_r <- function(x, batch, schema, call) {
 }
 
 zar_schema_for <- function(x, schema, call) {
+  if (zar_is_type_vector(schema) && is.data.frame(x)) {
+    spec <- zar_frame_spec(x, schema, call)
+    return(zar_check(.Call(zar_c_schema_from_spec, spec), call = call))
+  }
   if (inherits(schema, "zuarrow_matrix")) {
     if (!is.matrix(x)) {
       zar_abort(
@@ -156,6 +191,103 @@ zar_schema_for <- function(x, schema, call) {
     ))
   }
   zar_as_schema(schema, call)
+}
+
+# Whether `schema` is a named character vector of format strings, one per
+# column (2026-11-26).
+zar_is_type_vector <- function(x) {
+  is.character(x) && identical(names(attributes(x)), "names")
+}
+
+# The names and format strings of a named character vector of types: every
+# name present and unique, every format a non-empty string.
+zar_check_type_vector <- function(types, call) {
+  nms <- names(types)
+  if (anyNA(nms) || !all(nzchar(nms)) || anyDuplicated(nms)) {
+    zar_abort(
+      "type",
+      "A named character vector of types needs unique, non-empty names.",
+      call = call
+    )
+  }
+  if (anyNA(types) || !all(nzchar(types))) {
+    zar_abort(
+      "format",
+      "A format string can't be empty or `NA`.",
+      call = call
+    )
+  }
+  invisible(types)
+}
+
+# The struct a named character vector of types describes: one field per
+# element, in its order, each of that format (arrow_schema()).
+zar_struct_spec <- function(types, call) {
+  zar_check_type_vector(types, call)
+  children <- lapply(seq_along(types), function(k) {
+    zar_spec(types[[k]], names(types)[[k]])
+  })
+  zar_spec("+s", "", children = children)
+}
+
+# A data frame's schema with the named columns of the given types and every
+# other column of its default type (2026-11-26). A nested format string
+# names no children, so a nested column keeps its own schema and may only
+# be named with the format it already has.
+zar_frame_spec <- function(x, types, call) {
+  zar_check_type_vector(types, call)
+  cols <- names(x)
+  unknown <- setdiff(names(types), cols)
+  if (length(unknown) > 0L) {
+    zar_abort(
+      "type",
+      sprintf(
+        "`schema` names %s, which `x` has no column called.",
+        paste0("`", unknown, "`", collapse = ", ")
+      ),
+      call = call
+    )
+  }
+  if (anyDuplicated(cols[cols %in% names(types)])) {
+    zar_abort(
+      "type",
+      "`schema` names a column that `x` has more than once.",
+      call = call
+    )
+  }
+  children <- lapply(seq_along(x), function(k) {
+    name <- cols[[k]]
+    col <- x[[k]]
+    if (!name %in% names(types)) {
+      return(zar_infer_spec(col, name, call))
+    }
+    format <- types[[name]]
+    if (startsWith(format, "+")) {
+      spec <- zar_infer_spec(col, name, call)
+      if (!identical(spec$format, format)) {
+        zar_abort(
+          "type",
+          sprintf(
+            paste(
+              "Column `%s` can't be given the nested format `%s`, which",
+              "names no children; give `schema` as a schema handle."
+            ),
+            name,
+            format
+          ),
+          call = call,
+          column = name
+        )
+      }
+      return(spec)
+    }
+    zar_with_field_metadata(zar_spec(format, name), col, call)
+  })
+  zar_with_field_metadata(
+    zar_spec("+s", "", children = unname(children)),
+    x,
+    call
+  )
 }
 
 # The most bytes utf8's 32-bit offsets address. An internal option lowers it
@@ -187,6 +319,7 @@ zar_offset_limits <- function() {
 # array's, so a handler whose type depends on the values gives one type for
 # the column. A batch is that array, or a copied slice of it (#215).
 zar_prebuild <- function(x, call = NULL) {
+  x <- zar_drop_asis(x)
   handler <- zar_handler_for_class(x)
   if (!is.null(handler)) {
     attrs <- attributes(x)
@@ -214,6 +347,15 @@ zar_prebuild <- function(x, call = NULL) {
       attributes(cols) <- attrs
       return(cols)
     }
+  }
+  x
+}
+
+# I() marks a column to keep as it is, which is how data.frame() takes a
+# list column: the mark itself is not written (2026-11-26).
+zar_drop_asis <- function(x) {
+  if (inherits(x, "AsIs")) {
+    class(x) <- setdiff(oldClass(x), "AsIs")
   }
   x
 }
@@ -451,6 +593,7 @@ zar_batch <- function(x, start, n, call = NULL) {
 # The schema an R object is written with (design section 6.2), with its
 # field metadata and extension name from the attributes section 6.6 names.
 zar_infer_spec <- function(x, name, call = NULL) {
+  x <- zar_drop_asis(x)
   spec <- zar_infer_type(x, name, call)
   zar_with_field_metadata(spec, x, call)
 }
@@ -548,6 +691,10 @@ zar_infer_type <- function(x, name, call = NULL) {
   }
   if (inherits(x, "difftime")) {
     return(zar_spec("tDu", name))
+  }
+  if (inherits(x, "integer64") && is.double(x)) {
+    # bit64's integer64: the int64 bits, INT64_MIN as NA (2026-11-26).
+    return(zar_spec("l", name))
   }
   if (is.character(x) && !is.null(attr(x, "arrow_type"))) {
     # The exact text of section 6.3 is written back as the type it names.
@@ -786,6 +933,14 @@ zar_flatten <- function(x, call = NULL) {
         )
       }
     }
+  }
+  # integer64's c() method is bit64's, which need not be loaded: c() would
+  # read its bits as doubles.
+  if (inherits(first, "integer64")) {
+    return(structure(
+      unlist(lapply(present, unclass), use.names = FALSE),
+      class = "integer64"
+    ))
   }
   # Plain atomic vectors concatenate in one call; classed ones, such as
   # dates or factors, need their c() method.

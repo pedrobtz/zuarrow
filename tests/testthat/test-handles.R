@@ -274,3 +274,55 @@ test_that("only a struct lends its fields (#173)", {
     class = "zuarrow_handle_error"
   )
 })
+
+test_that("arrow_release() releases a handle once", {
+  stream <- arrow_stream(data.frame(a = 1:3))
+  expect_identical(arrow_release(stream), stream)
+  expect_invisible(arrow_release(stream))
+  expect_identical(format(stream), "<zuarrow_array_stream [released]>")
+  expect_error(arrow_next(stream), class = "zuarrow_handle_error")
+  expect_error(arrow_to_r(stream), class = "zuarrow_handle_error")
+
+  array <- arrow_array(1:3)
+  arrow_release(array)
+  arrow_release(array)
+  expect_identical(format(array), "<zuarrow_array [released]>")
+  expect_error(arrow_to_r(array), class = "zuarrow_handle_error")
+
+  schema <- arrow_schema("i")
+  arrow_release(schema)
+  expect_identical(format(schema), "<zuarrow_schema [released]>")
+  expect_error(arrow_schema(schema), class = "zuarrow_handle_error")
+  expect_error(arrow_release(1:3), class = "zuarrow_handle_error")
+})
+
+test_that("a stream read to its end is still live until arrow_release()", {
+  stream <- arrow_stream(data.frame(a = 1:3))
+  expect_s3_class(arrow_next(stream), "data.frame")
+  expect_null(arrow_next(stream))
+  expect_identical(format(stream), "<zuarrow_array_stream struct<a: int32>>")
+  arrow_release(stream)
+  expect_identical(format(stream), "<zuarrow_array_stream [released]>")
+  expect_error(arrow_next(stream), class = "zuarrow_handle_error")
+})
+
+test_that("a released handle's finalizer does not release it again", {
+  # The finalizer of a released handle must not call its release again:
+  # a built stream, a reader's stream, an array and a schema cover each
+  # kind of release. A second release would free memory twice, which the
+  # sanitizer and valgrind legs report and which may crash here.
+  for (i in 1:20) {
+    handles <- list(
+      arrow_stream(data.frame(a = 1:3), batch = 1),
+      arrow_read(arrow_write(data.frame(a = 1:3), NULL), lazy = TRUE),
+      arrow_array(c("x", "y")),
+      arrow_schema(data.frame(a = 1))
+    )
+    for (h in handles) {
+      arrow_release(h)
+    }
+    rm(h, handles)
+  }
+  # A double release crashes, which a finalizer's error would not show.
+  expect_no_error(gc())
+})

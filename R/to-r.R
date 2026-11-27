@@ -26,9 +26,13 @@ zar_lossy_policies <- c("error", "character", "warn", "allow")
 #' * `"allow"` converts to the nearest R type silently. An `int64` column
 #'   becomes `bit64`'s `integer64`, exactly, when `bit64` is loaded.
 #'
-#' Intervals and unions have no R form and always fail, unless a handler
-#' registered with [arrow_register()] for the column's extension name
-#' converts it.
+#' Unions have no R form and always fail, unless a handler registered with
+#' [arrow_register()] for the column's extension name converts it.
+#' Intervals fail too, under every policy but `"character"`, which gives
+#' the text Arrow's own formatter writes: `"14M"` for `interval_months`,
+#' `"3d1500ms"` (days and milliseconds) for `interval_day_time`, and
+#' `"1M-2d3ns"` (months, days and nanoseconds) for
+#' `interval_month_day_nano`. Every component is written, with its sign.
 #'
 #' Any other column with no values loses nothing, so it neither fails nor
 #' warns. Under `"error"` and `"warn"` it takes the form `"allow"` gives, so
@@ -767,12 +771,17 @@ zar_raise_conversion <- function(failure, call, prefix = "") {
   # A dictionary's target is its value type's (#144).
   value_format <- failure$value_format %||% ""
   target <- zar_exact_target(if (nzchar(value_format)) value_format else format)
-  never <- grepl("^(\\+u|ti)", format)
   # A string with an embedded NUL has no text form, so lossy = "character"
   # cannot help it.
   text <- !isFALSE(failure$text)
-  hint <- if (never) {
-    "Arrow intervals and unions have no R form."
+  hint <- if (startsWith(format, "+u")) {
+    "Arrow unions have no R form."
+  } else if (startsWith(format, "ti")) {
+    # Intervals have their exact text and no other R form (2026-11-26).
+    paste(
+      "Use `lossy = \"character\"` for its exact text:",
+      "Arrow intervals have no other R form."
+    )
   } else {
     paste0(
       if (!is.null(target)) {

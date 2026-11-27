@@ -12,7 +12,9 @@ arrow_stream(x, batch = 65536L, schema = NULL)
 \arguments{
 \item{x}{An R vector or a data frame.}
 
-\item{schema}{\code{NULL}, a format string or a schema handle.}
+\item{schema}{\code{NULL}, a format string or a schema handle; for a data
+frame, also a named character vector of format strings, one per
+column it names.}
 
 \item{batch}{The largest number of rows in one batch, a positive whole
 number. \code{Inf} is a \code{zuarrow_type_error}.}
@@ -43,6 +45,10 @@ another length is then a \code{zuarrow_type_error}.
 gives a map to \code{map}.
 \item Any other list to \verb{list<T>}, with \code{T} from its elements.
 \item A data frame to a \code{struct}.
+\item \code{bit64}'s \code{integer64} to \code{int64}. Its \code{NA} is the bit pattern of
+\code{INT64_MIN}, which is therefore always a null. 'bit64' need not be
+loaded.
+\item A column marked with \code{\link[=I]{I()}} as its value without the mark.
 }
 
 A class registered with \code{\link[=arrow_register]{arrow_register()}} goes through its \code{from}
@@ -62,7 +68,28 @@ no exact UTF-8 form, as any non-ASCII one in a C locale, is a
 With a \code{schema}, the values are written as that type and checked: an
 integer that does not fit \code{int8}, or a double that is not a whole
 number for \code{int64}, is a \code{zuarrow_lossy_error} naming the row. \code{POSIXct}
-and \code{difftime} values are rounded to the schema's unit.
+and \code{difftime} values are rounded to the schema's unit. An \code{integer64}
+writes as any integer type the same way, and only its non-negative
+values as an unsigned one.
+
+A double, or an integer, writes as \code{half_float} (\code{"e"}) only when the
+half float holds it exactly: within +/-65504, with at most 11
+significant bits, and no smaller than 2^-24 in magnitude. Any other is
+a \code{zuarrow_lossy_error} naming the row; \code{NaN}, \code{Inf}, \code{-Inf} and both
+zeros stay what they are.
+
+A character vector writes as \code{string_view} (\code{"vu"}) and a list of raw
+vectors as \code{binary_view} (\code{"vz"}), with a value of at most 12 bytes
+inlined in its view and a longer one in a data buffer. The IPC writer
+does not write the view types; \code{\link[=arrow_stream]{arrow_stream()}} passes them on.
+
+For a data frame, \code{schema} may also be a named character vector of
+format strings, such as \code{c(x = "e", y = "vu")}: each named column is
+written as that type and checked as above, and any other column as its
+own default type. A name that is not a column is a \code{zuarrow_type_error}.
+A format string names no children, so a nested column may be named only
+with the format it has anyway; to choose a nested type, pass a schema
+handle. \code{\link[=arrow_schema]{arrow_schema()}} of such a vector gives the \code{struct} itself.
 
 A character vector with an \code{arrow_type} attribute, as \code{arrow_to_r()}
 returns under \code{lossy = "character"}, is written back as that type: each
@@ -71,7 +98,11 @@ precision than the type, is an error. Only the canonical text that
 \code{arrow_to_r()} writes is read: other forms of the same value, such as
 \code{"+1"}, \code{"01"}, \code{"-0"} or \code{"1"} for a decimal of scale 2, are a
 \code{zuarrow_lossy_error}, and so is a time of day at or past \code{24:00:00}. So
-the exact text round-trips, at the ends of the int64 range too.
+the exact text round-trips, at the ends of the int64 range too. An
+interval is read from the text Arrow's own formatter writes, every
+component with its unit: \code{"14M"} for \code{interval_months} (\code{"tiM"}),
+\code{"3d1500ms"} for \code{interval_day_time} (\code{"tiD"}) and \code{"1M-2d3ns"} for
+\code{interval_month_day_nano} (\code{"tin"}), each component in its type's range.
 
 Every \code{NA} becomes a null with a zeroed slot. \code{NaN} stays a value.
 }
