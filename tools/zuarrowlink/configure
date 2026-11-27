@@ -1,0 +1,26 @@
+#!/bin/sh
+# Resolves the static archive that LinkingTo cannot point at, as zukomp's
+# tools/zukomplink does for libzukomp.a: LinkingTo puts zuarrow's headers
+# on the include path (zuarrow.h, zuarrow/nanoarrow.h and the zukomp.h it
+# was built against), but there is no LinkingTo for a library, and an
+# Imports: entry would add a run-time dependency the archive exists to
+# avoid. This is the wiring a reader copies.
+set -eu
+
+: "${R_HOME:?configure must be run by R CMD INSTALL, which sets R_HOME}"
+RSCRIPT="${R_HOME}/bin/Rscript"
+
+# zuarrow installs the archive under R_ARCH: lib/x64 on Windows, lib
+# elsewhere. Asked for the arch-specific directory first, then the plain
+# one. r_arch has no leading slash where R_ARCH has one.
+ZUARROW_LIB=$("${RSCRIPT}" --vanilla -e "arch <- .Platform\$r_arch; d <- if (nzchar(arch)) system.file('lib', arch, package = 'zuarrow') else ''; if (!nzchar(d)) d <- system.file('lib', package = 'zuarrow'); cat(d)")
+
+if [ -z "${ZUARROW_LIB}" ] || [ ! -f "${ZUARROW_LIB}/libzuarrow.a" ]; then
+  echo "configure: zuarrow's lib/libzuarrow.a was not found." >&2
+  echo "  It ships from zuarrow's C API stage on (pedrobtz/zuarrow#251)." >&2
+  exit 1
+fi
+
+sed -e "s|@ZUARROW_LIB@|${ZUARROW_LIB}|g" src/Makevars.in > src/Makevars
+
+echo "configure: linking ${ZUARROW_LIB}/libzuarrow.a"

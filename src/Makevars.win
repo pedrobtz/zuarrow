@@ -6,9 +6,10 @@
 # vendored symbol, flatcc's included, out of the export table and
 # R_init_zuarrow is the only exported symbol. FLATCC_NO_ASSERT compiles
 # flatcc's runtime assertions out in every build, not only under -DNDEBUG,
-# so no build links assert()'s abort path.
-PKG_CPPFLAGS = -Ivendor/nanoarrow -DNANOARROW_NAMESPACE=zuarrow -DNANOARROW_DLL= \
-  -DFLATCC_NO_ASSERT
+# so no build links assert()'s abort path. ../inst/include holds zuarrow.h,
+# the public C API that zar_api.c implements.
+PKG_CPPFLAGS = -I../inst/include -Ivendor/nanoarrow -DNANOARROW_NAMESPACE=zuarrow \
+  -DNANOARROW_DLL= -DFLATCC_NO_ASSERT
 PKG_CFLAGS = $(C_VISIBILITY)
 
 VENDOR_OBJECTS = vendor/nanoarrow/nanoarrow.o \
@@ -17,6 +18,74 @@ VENDOR_OBJECTS = vendor/nanoarrow/nanoarrow.o \
 
 ZAR_OBJECTS = zuarrow.o zar_xptr.o zar_validate.o zar_build.o zar_utf8.o \
   zar_to_r.o zar_from_r.o zar_parse.o \
-  zar_ipc_read.o zar_ipc_write.o zar_codecs.o zar_altrep.o
+  zar_ipc_read.o zar_ipc_write.o zar_codecs.o zar_altrep.o \
+  zar_api.o zar_api_r.o
 
 OBJECTS = $(ZAR_OBJECTS) $(VENDOR_OBJECTS)
+
+# ---------------------------------------------------------------------------
+# The LinkingTo surface: libzuarrow.a, installed to <pkg>/lib${R_ARCH} by
+# src/install.libs.R with the headers a reader needs (design section 14.1).
+#
+# A second compilation of the R-free sources with -DZAR_STANDALONE, so the
+# archive holds the IPC reader, the UTF-8 checks, the exact parsers, the
+# codec-table adapter, the public entry points and nanoarrow, and nothing
+# that calls R. It is compiled without R's include directory: -DNDEBUG is
+# the one thing of R_XTRA_CPPFLAGS it keeps, so a stray R header in any of
+# these files is a compile error here, not a symbol found later.
+# $(CLINK_CPPFLAGS) is the LinkingTo include path, for zukomp.h; zukomp-r.h,
+# which needs R, is never included under ZAR_STANDALONE.
+#
+# $(ALL_CFLAGS) carries $(C_VISIBILITY) and $(CPICFLAGS): the objects are
+# hidden and position independent, so a consumer links them into its own
+# shared object without re-exporting them. It also carries the CFLAGS R
+# was configured with, so under an LTO configuration the archive holds
+# bitcode for the same toolchain, as zukomp's does.
+#
+# "all" must be the first target in this file: make takes the first target
+# as the default goal (Writing R Extensions 1.2.1). Makevars and
+# Makevars.win are the same file.
+.PHONY: all zuarrow-archive-clean
+
+all: $(SHLIB) libzuarrow.a
+
+# The archive is not in OBJECTS, so R's shlib-clean would leave it, and an
+# in-tree rebuild would install a stale archive beside new headers (zukomp
+# #76). A target without a recipe adds prerequisites to R's rule.
+shlib-clean: zuarrow-archive-clean
+
+ZAR_ARCHIVE_OBJECTS = zar_ipc_read_sa.o zar_utf8_sa.o zar_parse_sa.o \
+  zar_codecs_sa.o zar_api_sa.o \
+  vendor/nanoarrow/nanoarrow_sa.o vendor/nanoarrow/nanoarrow_ipc_sa.o \
+  vendor/nanoarrow/flatcc_sa.o
+
+zuarrow-archive-clean:
+	rm -f libzuarrow.a $(ZAR_ARCHIVE_OBJECTS)
+
+libzuarrow.a: $(ZAR_ARCHIVE_OBJECTS)
+	rm -f libzuarrow.a
+	$(AR) rcs libzuarrow.a $(ZAR_ARCHIVE_OBJECTS)
+
+ZAR_SA_CPPFLAGS = -DNDEBUG -DZAR_STANDALONE $(PKG_CPPFLAGS) $(CLINK_CPPFLAGS) $(CPPFLAGS)
+ZAR_SA_HEADERS = zar.h ../inst/include/zuarrow.h vendor/nanoarrow/nanoarrow.h
+
+zar_ipc_read_sa.o: zar_ipc_read.c $(ZAR_SA_HEADERS) vendor/nanoarrow/nanoarrow_ipc.h
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c zar_ipc_read.c -o zar_ipc_read_sa.o
+zar_utf8_sa.o: zar_utf8.c $(ZAR_SA_HEADERS)
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c zar_utf8.c -o zar_utf8_sa.o
+zar_parse_sa.o: zar_parse.c $(ZAR_SA_HEADERS)
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c zar_parse.c -o zar_parse_sa.o
+zar_codecs_sa.o: zar_codecs.c $(ZAR_SA_HEADERS)
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c zar_codecs.c -o zar_codecs_sa.o
+zar_api_sa.o: zar_api.c $(ZAR_SA_HEADERS)
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c zar_api.c -o zar_api_sa.o
+vendor/nanoarrow/nanoarrow_sa.o: vendor/nanoarrow/nanoarrow.c vendor/nanoarrow/nanoarrow.h
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c vendor/nanoarrow/nanoarrow.c \
+	  -o vendor/nanoarrow/nanoarrow_sa.o
+vendor/nanoarrow/nanoarrow_ipc_sa.o: vendor/nanoarrow/nanoarrow_ipc.c \
+  vendor/nanoarrow/nanoarrow_ipc.h vendor/nanoarrow/nanoarrow.h
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c vendor/nanoarrow/nanoarrow_ipc.c \
+	  -o vendor/nanoarrow/nanoarrow_ipc_sa.o
+vendor/nanoarrow/flatcc_sa.o: vendor/nanoarrow/flatcc.c
+	$(CC) $(ZAR_SA_CPPFLAGS) $(ALL_CFLAGS) -c vendor/nanoarrow/flatcc.c \
+	  -o vendor/nanoarrow/flatcc_sa.o

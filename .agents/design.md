@@ -224,6 +224,15 @@ asked at each nanoarrow release (§15 Q1).
   `zutempo` and `qio` to call from C. The registry's R-level shape should
   settle first; RFC 0031 §7.3 needs only the handle layout, which v0.1.0
   provides (§14).
+- **A C API for readers** (*rewritten 2026-11-27*, #251): not in v0.1.0,
+  and the next minor version's. The family's text and file readers
+  (`zucsv`, `qio`, `zujson`) build their Arrow arrays with zuarrow's copy
+  of nanoarrow rather than vendor one each (decided 2026-11-18), and
+  `zugodb` reads Arrow IPC files without R in the loop. So zuarrow ships
+  an R-free header and static archive: the IPC reader as an
+  `ArrowArrayStream`, nanoarrow's builders, and the exact text parsers
+  (§14.1). It is not the conversion-kernel table above, which still
+  waits; no R function changes for it.
 - **Writing run-end-encoded, union and view types.** They are read
   (§6.7); writing them has no R source type.
 - **Parquet, Flight, ADBC, the device interface, Python** (§1.1).
@@ -232,12 +241,12 @@ asked at each nanoarrow release (§15 Q1).
 
 | | zuarrow |
 | --- | --- |
-| Role | format; provider of a C table after v0.1.0 (§14) |
+| Role | format; the family's Arrow layer in C from 0.2.0 (§14.1); a C table of conversion kernels later (§14) |
 | R prefix | `arrow_` (D12) |
 | Info function | `zuarrow_info()`: vendored versions, format version |
 | Root condition class | `zuarrow_error` |
-| Public C prefix | `zuarrow_` after v0.1.0; internal `zar_` / `ZAR_` |
-| From C | not in v0.1.0 (§14) |
+| Public C prefix | `zuarrow_` (§14.1); internal `zar_` / `ZAR_` |
+| From C | not in v0.1.0; from 0.2.0 `LinkingTo: zuarrow` gives `zuarrow.h`, `zuarrow/nanoarrow.h` and `libzuarrow.a`, R-free (§14.1) |
 | Hides symbols | yes, from Stage 0 (R3) |
 | Vendored code | nanoarrow core and ipc; testing header in tests (§7) |
 | `Depends: R` | 4.1 (R2) |
@@ -1344,6 +1353,16 @@ them. None was discussed before writing.
   equivalent is `$release()`. The struct stays allocated, released,
   until the finalizer frees it, so nothing is released twice.
 
+- **D25 (C).** The C API of §14.1 (added 2026-11-27, #251) is a static
+  archive and headers, not a table behind `R_GetCCallable()`: its callers
+  are C readers linked into other packages, which must not need R, and a
+  stream's callbacks may run on any thread. On failure the entry point
+  leaves an error stream rather than a second error channel, so a caller
+  reports through `get_last_error()` either way. The headers it installs
+  that come from elsewhere, nanoarrow's and zukomp's, are copied at
+  install from what the archive was built with, never kept twice in the
+  tree.
+
 ## 14. Later versions, in the order they are expected
 
 - **A C table**: `inst/include/zuarrow.h` and
@@ -1380,6 +1399,118 @@ them. None was discussed before writing.
 - **Parsing the printed type notation** in `arrow_schema()` (§6.11).
 - **Big-endian reading**, if a platform asks.
 
+### 14.1 The family's Arrow layer in C (#251, 2026-11-27)
+
+The first item of §14 that ships, ahead of the conversion-kernel table,
+because `zugodb` (pedrobtz/zugodb#60) reads files through the zu
+readers, linked at build time as static archives over one contract, the
+Arrow C stream, and the readers build their arrays with zuarrow's
+nanoarrow rather than vendor their own (the maintainer, 2026-11-18). It
+is C for C callers: no R at run time, no `R_GetCCallable()`, no
+`Imports`. The R package and every R function are unchanged; the R
+reader and the C entry point are the same reader over the same code.
+
+**What is installed** (`src/install.libs.R`), beside `zuarrow.so`:
+
+| Path in the installed package | What it is |
+| --- | --- |
+| `lib${R_ARCH}/libzuarrow.a` | `lib` on Unix, `lib/x64` on Windows |
+| `include/zuarrow.h` | the API below, from `inst/include/` |
+| `include/zuarrow/nanoarrow.h` | the vendored `nanoarrow.h`, copied at install |
+| `include/zukomp.h` | the `zukomp.h` this build compiled against, copied at install |
+| `licenses/nanoarrow-LICENSE.txt`, `nanoarrow-NOTICE.txt` | Apache-2.0 travels with the archive |
+
+`zuarrow/nanoarrow.h` sits in a subdirectory so it cannot shadow the
+`nanoarrow` package's own `nanoarrow.h` in a consumer that links both.
+`zukomp.h` is copied so a consumer needs only `LinkingTo: zuarrow`, and
+so the header that types the options' codec table is the one the
+archive was built with; `zuarrow.h` includes it by its quoted name, so
+the copy beside it is found first, and its include guard makes a second
+copy from `LinkingTo: zukomp` harmless.
+
+**The archive** is a second compilation, in `src/Makevars`, of
+`nanoarrow.c`, `nanoarrow_ipc.c`, `flatcc.c`, `zar_ipc_read.c`,
+`zar_utf8.c`, `zar_parse.c`, `zar_codecs.c` and `zar_api.c` with
+`-DZAR_STANDALONE`, `$(C_VISIBILITY)`, `$(CPICFLAGS)` and the `zuarrow`
+nanoarrow namespace, and without R's include directory, so an R header
+in any of them does not compile. It holds no codec, calls no R, aborts
+nowhere, writes to neither `stdout` nor `stderr`, and holds no mutable
+global (`test-abi.R` reads its symbol table for each). Its symbols are
+`zuarrow_*` (the API), `zuarrowArrow*` (nanoarrow), `zar_*` (internal)
+and flatcc's runtime, whose `flatcc_*` names nanoarrow's bundler does not
+namespace: hidden, but a static link that also pulls in another flatcc
+runtime would clash. No reader in the family has one (2026-11-27). A
+consumer that links several readers links `libzuarrow.a` once, last;
+a reader's own archive must not contain zuarrow's objects.
+
+**The API** (`inst/include/zuarrow.h`):
+
+- `ZUARROW_ABI_VERSION`, 1. It changes when a declaration a reader can
+  reach changes, in `zuarrow.h` or in `zuarrow/nanoarrow.h` through a
+  re-vendor or a patch; a reader built against one value is rebuilt for
+  the next. `zuarrow_abi_version()` reports the archive's.
+- The Arrow C data and stream structs, under the specification's guards
+  `ARROW_C_DATA_INTERFACE` and `ARROW_C_STREAM_INTERFACE`.
+- `zuarrow_options`: `struct_size` first, the columns to keep (by name,
+  the first field of that name, or by 0-based position, in the order
+  given; not both), the five limits of `arrow_limits()`, and
+  `const zukomp_api_v1 *codecs`. `zuarrow_options_init()` sets
+  `arrow_limits()`'s defaults. Fields are appended, never changed;
+  `ZUARROW_OPTIONS_REQUIRED_SIZE` is all of version 1.
+- `int zuarrow_open_stream(const char *path, const zuarrow_options
+  *options, struct ArrowArrayStream *out)`: `arrow_read()`'s reader, with
+  every check of §6.7, over the whole file read into memory. It returns 0
+  or an errno code. On failure `out` is still a stream, in an error
+  state whose callbacks repeat the code and whose `get_last_error()`
+  says why, so a caller has one way to report; only when that cannot be
+  allocated is `out->release` NULL. A failed `get_next()` stays failed,
+  as `arrow_read()`'s stream does (#207).
+- `zuarrow_error_kind()`: `"format"`, `"limit"`, `"codec"`, `"io"`,
+  `"type"` or `"memory"`, the condition `arrow_read()` raises for the
+  same input. `test-c-api.R` holds every input of the suite, the
+  arrow-testing corpus included, to the same values or the same class
+  through both.
+- The exact parsers of §6.3 under public names, so every text reader
+  applies the same rules: `zuarrow_parse_int64`, `_uint64`, `_decimal`,
+  `_date`, `_instant`, `_time`, and the strict UTF-8 check
+  `zuarrow_utf8_invalid_at`.
+
+**Codecs through a table pointer.** The archive cannot call
+`zukomp_api()`, which is R API. The options carry `zukomp`'s table,
+checked for ABI 1 and for the entries the reader calls; with none, a
+compressed body is a codec error, as in the fuzz target. An R package
+gets the table from `zukomp_api()` (`zukomp-r.h`) on R's main thread;
+the pointer is then good on any thread for the session. `libzukomp.a`
+holds miniz's ZIP reader only, not the codecs (zukomp 0.2.0), so a
+consumer that wants compressed bodies without loading zukomp has no
+table today (§15 Q7).
+
+**The nanoarrow copy is a contract.** `zuarrow/nanoarrow.h` is
+nanoarrow 0.9.0 as `src/vendor/PROVENANCE` records it. Of the patches,
+one changes code a reader compiles: 0021 (`ArrowArrayAddVariadicBuffers`,
+inline in `nanoarrow.h`, checks both reallocations). The rest change
+`nanoarrow.c`, `nanoarrow_ipc.c`, `nanoarrow_ipc.h` (not installed) or
+flatcc, which the archive holds. 0023 was added for the archive: the
+default allocator's static is `const`, so no writable global is left. A re-vendor, or a patch to
+`nanoarrow.h`, bumps `ZUARROW_ABI_VERSION`.
+
+**Builders.** A reader includes `<zuarrow/nanoarrow.h>` and calls
+`ArrowSchemaInit*`, `ArrowSchemaSetType*`, `ArrowArrayInitFromSchema`,
+`ArrowArrayStartAppending`, `ArrowArrayAppend*`,
+`ArrowArrayFinishElement`, `ArrowArrayFinishBuilding*` and
+`ArrowBasicArrayStreamInit`/`SetArray`/`Validate`; the inline ones
+compile into the reader, the rest are the archive's `zuarrowArrow*`.
+Defining `NANOARROW_DLL` empty keeps their declarations hidden too.
+
+**The consumer fixture** (family rule R10.4) is `tools/zuarrowlink`:
+`LinkingTo: zuarrow` and nothing else at run time, its `./configure`
+resolving the archive as zukomp's `tools/zukomplink` does. It builds a
+stream of `b`, `i`, `l`, `g`, `u`, `z`, `tdD` and `tsu:UTC` columns with
+the builders, reads IPC files through the entry point, converts both in
+its own C, and is compared with `arrow_read()`, then run again with
+zuarrow out of the library. `tools/ci/consumer.sh` is the check and
+`consumer.yaml` runs it on Linux, macOS and Windows.
+
 ## 15. Open questions
 
 - **Q1.** At each `nanoarrow` release: has its binding gained the file
@@ -1405,6 +1536,12 @@ them. None was discussed before writing.
   (2026-10-21) on a 10⁷-row stream of a double and a string column from
   `nanoarrow`: minimal 4 ms, default 11 ms, full 101 ms. Conversion uses
   `default`, which building the array view applies anyway.
+
+- **Q7** (2026-11-27, #251). Where does a static consumer get a codec
+  table without loading zukomp? The issue assumed `libzukomp.a`, which
+  in zukomp 0.2.0 holds miniz's ZIP reader and no codec. Until zukomp
+  says, a consumer passes `zukomp_api()`'s table (an `Imports: zukomp`
+  for the R package that resolves it) or none.
 
 ## 16. What this RFC does not decide
 

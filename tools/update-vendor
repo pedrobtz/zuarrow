@@ -134,6 +134,11 @@ PROV=src/vendor/PROVENANCE
   echo "      descriptor it had linked. Upstream returned -1, a nonzero"
   echo "      reference, so the encoder wrote a corrupt message and reported"
   echo "      success (#232). To be offered to flatcc upstream."
+  echo "  0023-const-default-allocator.patch  declares the default allocator's"
+  echo "      static ArrowBufferAllocatorMalloc const. It is only ever read, but"
+  echo "      as a non-const static it lands in a writable section, and the"
+  echo "      static archive libzuarrow.a holds no writable global (design"
+  echo "      section 14.1, #251). nanoarrow.c only; no declaration changes."
   echo
   echo "SHA-256 of every vendored file:"
   (cd src/vendor/nanoarrow && find . -type f ! -name '*.o' | LC_ALL=C sort |

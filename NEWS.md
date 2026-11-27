@@ -1,5 +1,12 @@
 # zuarrow (development version)
 
+* zuarrow ships a C API for other packages' C code, with `LinkingTo:
+  zuarrow` and no R at run time: the static archive `libzuarrow.a`,
+  `zuarrow.h` with `zuarrow_open_stream()`, which reads an Arrow IPC file
+  as an `ArrowArrayStream` with every check `arrow_read()` makes, the
+  bundled nanoarrow as `zuarrow/nanoarrow.h` for building arrays, and the
+  exact text parsers. No R function changes (#251).
+
 * `arrow_array()` and `arrow_stream()` write more of the types zuarrow
   reads:
   * `string_view` (`"vu"`) from a character vector and `binary_view`

@@ -16,6 +16,9 @@ permissions:
 # tests/testthat/crash-expected.csv or tools/fuzz/replay-expected.csv, so
 # it needs the arrow-testing fixtures, fetched before the build.
 #
+# zukomp.h comes from zukomp's 0.2.0 tag, cloned to .zukomp/, where
+# tools/fuzz/Makefile looks by default.
+#
 # CFLAGS is emptied so $MULL_CC's -O0 -g stands; the Makefile compiles each
 # source on its own, as Mull requires. The replay takes 0.05 s unmutated; a
 # mutant that loops is killed at mutant-timeout.
@@ -23,7 +26,10 @@ jobs:
   mutation:
     uses: pedrobtz/r-actions/.github/workflows/mutation.yml@v1
     with:
-      build: tools/fetch-fixtures && make -C tools/fuzz replay CC="$MULL_CC" CFLAGS=
+      build: >-
+        git clone --quiet --depth 1 --branch 0.2.0
+        https://github.com/pedrobtz/zukomp.git .zukomp &&
+        tools/fetch-fixtures && make -C tools/fuzz replay CC="$MULL_CC" CFLAGS=
       tests: tools/fuzz/replay
       include: |
         .*/src/zar_ipc_read\.c$
